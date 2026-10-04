@@ -1,0 +1,3 @@
+interface:
+  display_name: "Write Project Plan"
+  short_description: "Create correctly named local project plans"

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Feature Delivery"
+  short_description: "Branch, commit, test, push, and prepare PRs"

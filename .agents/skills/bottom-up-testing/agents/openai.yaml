@@ -1,0 +1,3 @@
+interface:
+  display_name: "Bottom-Up Testing"
+  short_description: "Apply layer-owned tests across the monorepo"

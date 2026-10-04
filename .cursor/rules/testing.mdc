@@ -1,0 +1,11 @@
+---
+description: "Bottom-up testing conventions for Go, TypeScript, Python, and repository integration tests"
+globs: ["**/*_test.go", "**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx", "**/test_*.py", "**/*_test.py", "**/tests/**"]
+---
+
+# Testing Conventions
+
+Load and follow `.agents/skills/bottom-up-testing/SKILL.md` whenever adding, changing, or reviewing tests.
+
+The governing principle is bottom-up coverage: persistence tests prove database behavior, service/use-case tests prove business combinations, and handler/API tests prove transport integration and transport-owned validation. Do not use high-level tests to duplicate branches owned by lower layers.
+
