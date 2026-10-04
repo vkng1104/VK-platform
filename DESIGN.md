@@ -111,6 +111,7 @@ Read-only endpoints still use response DTOs and explicit domain-to-transport map
 ### Services
 
 - Services own input validation, business rules, ordering, and collaborator orchestration.
+- Validate business-facing formats such as URLs, slugs, and non-blank text in the service layer so callers receive useful domain errors before persistence.
 - Services know nothing about HTTP status codes, JSON, or concrete database clients.
 - Accept application request structs and return domain/result structs.
 - Return sentinel or typed domain errors and wrap underlying causes with `%w` so callers can use `errors.Is`.
@@ -127,7 +128,8 @@ Read-only endpoints still use response DTOs and explicit domain-to-transport map
 ### Migrations and seed data
 
 - Use ordered `.up.sql` and `.down.sql` migration pairs.
-- Prefer UUID primary keys, plural `snake_case` table names, `TIMESTAMPTZ`, explicit foreign keys, and database-enforced `NOT NULL`, `CHECK`, `UNIQUE`, and relationship invariants.
+- Prefer UUID primary keys, plural `snake_case` table names, `TIMESTAMPTZ`, explicit foreign keys, and database-enforced structural invariants such as `NOT NULL`, `UNIQUE`, relationship integrity, and essential numeric ranges.
+- Do not duplicate application-owned URL, slug, or text-format validation as database checks unless the database must enforce the rule across multiple independent writers.
 - Add indexes for actual query shapes, not speculatively.
 - Keep migrations structural. Put development/demo records in an idempotent seed file or seed command.
 - Never auto-run migrations from the API process; migration and startup are separate operations.

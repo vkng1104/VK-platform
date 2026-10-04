@@ -4,8 +4,6 @@ import { PageIntro } from "@/components/molecules/PageIntro";
 import { ServiceStatusCard } from "@/components/molecules/ServiceStatusCard";
 import { checkApiHealth } from "@/lib/api-health";
 
-export const dynamic = "force-dynamic";
-
 export const metadata: Metadata = {
   title: "System Status",
   description: "Current VK Platform service health.",

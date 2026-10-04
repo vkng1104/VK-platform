@@ -4,8 +4,6 @@ import { notFound } from "next/navigation";
 import { ProjectDetails } from "@/components/organisms/ProjectDetails";
 import { getProjectBySlug } from "@/features/projects/queries";
 
-export const dynamic = "force-dynamic";
-
 interface ProjectPageProps {
   params: Promise<{ slug: string }>;
 }

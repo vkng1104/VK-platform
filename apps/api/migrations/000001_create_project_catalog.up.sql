@@ -13,24 +13,8 @@ CREATE TABLE projects (
     live_url TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT projects_slug_format_check
-        CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
-    CONSTRAINT projects_title_not_blank_check
-        CHECK (BTRIM(title) <> ''),
-    CONSTRAINT projects_summary_not_blank_check
-        CHECK (BTRIM(summary) <> ''),
-    CONSTRAINT projects_period_not_blank_check
-        CHECK (BTRIM(period) <> ''),
-    CONSTRAINT projects_role_not_blank_check
-        CHECK (BTRIM(role) <> ''),
-    CONSTRAINT projects_content_markdown_not_blank_check
-        CHECK (BTRIM(content_markdown) <> ''),
     CONSTRAINT projects_display_order_non_negative_check
-        CHECK (display_order >= 0),
-    CONSTRAINT projects_repository_url_http_check
-        CHECK (repository_url IS NULL OR repository_url ~* '^https?://[^[:space:]]+$'),
-    CONSTRAINT projects_live_url_http_check
-        CHECK (live_url IS NULL OR live_url ~* '^https?://[^[:space:]]+$')
+        CHECK (display_order >= 0)
 );
 
 CREATE INDEX projects_published_display_order_idx
@@ -47,13 +31,7 @@ CREATE TABLE technologies (
     name TEXT NOT NULL,
     category TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT technologies_slug_format_check
-        CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
-    CONSTRAINT technologies_name_not_blank_check
-        CHECK (BTRIM(name) <> ''),
-    CONSTRAINT technologies_category_not_blank_check
-        CHECK (BTRIM(category) <> '')
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE project_technologies (

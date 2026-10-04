@@ -2,8 +2,6 @@ import { FeaturedProjectsSection } from "@/components/organisms/FeaturedProjects
 import { HomeHero } from "@/components/organisms/HomeHero";
 import { getFeaturedProjects } from "@/features/projects/queries";
 
-export const dynamic = "force-dynamic";
-
 export default async function Home() {
   const featuredProjects = await getFeaturedProjects();
 

@@ -148,7 +148,7 @@ func TestPostgreSQLRepositoryFindPublishedBySlugIntegration(t *testing.T) {
 	}
 }
 
-func TestProjectCatalogMigrationConstraintsIntegration(t *testing.T) {
+func TestProjectCatalogStructuralConstraintsIntegration(t *testing.T) {
 	pool := newProjectIntegrationDatabase(t, true)
 
 	insertProject(t, pool, projectRow{
@@ -183,36 +183,12 @@ func TestProjectCatalogMigrationConstraintsIntegration(t *testing.T) {
 		wantConstraint string
 	}{
 		{
-			name: "slug must be lowercase kebab case",
-			arguments: []any{
-				"Invalid Slug", "Invalid Slug", "Summary", "2026", "Developer", "# Content", 1, nil, nil,
-			},
-			wantCode:       "23514",
-			wantConstraint: "projects_slug_format_check",
-		},
-		{
-			name: "title must not be blank",
-			arguments: []any{
-				"blank-title", "  ", "Summary", "2026", "Developer", "# Content", 1, nil, nil,
-			},
-			wantCode:       "23514",
-			wantConstraint: "projects_title_not_blank_check",
-		},
-		{
 			name: "display order must not be negative",
 			arguments: []any{
 				"negative-order", "Negative Order", "Summary", "2026", "Developer", "# Content", -1, nil, nil,
 			},
 			wantCode:       "23514",
 			wantConstraint: "projects_display_order_non_negative_check",
-		},
-		{
-			name: "repository URL must use HTTP",
-			arguments: []any{
-				"invalid-url", "Invalid URL", "Summary", "2026", "Developer", "# Content", 1, "ssh://example.com/project", nil,
-			},
-			wantCode:       "23514",
-			wantConstraint: "projects_repository_url_http_check",
 		},
 		{
 			name: "slug must be unique",

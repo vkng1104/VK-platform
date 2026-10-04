@@ -4,8 +4,6 @@ import { PageIntro } from "@/components/molecules/PageIntro";
 import { ProjectGrid } from "@/components/organisms/ProjectGrid";
 import { getProjects } from "@/features/projects/queries";
 
-export const dynamic = "force-dynamic";
-
 export const metadata: Metadata = {
   title: "Projects",
   description: "Software systems and engineering projects by VK.",
