@@ -2,6 +2,9 @@
 /plans/
 /docs/
 
+# Local restricted CV data (the fake example remains tracked)
+/internal/private/cv/private-profile.json
+
 # OS metadata
 .DS_Store
 

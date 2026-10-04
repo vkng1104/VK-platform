@@ -67,3 +67,8 @@ body {
 .project-content a:hover {
   color: #bae6fd;
 }
+
+.cv-access-dialog::backdrop {
+  background: rgb(2 6 23 / 82%);
+  backdrop-filter: blur(6px);
+}

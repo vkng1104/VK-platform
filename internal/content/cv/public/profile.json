@@ -1,0 +1,43 @@
+{
+  "name": "Vu-Khanh Nguyen",
+  "headline": "Backend-focused software engineer",
+  "summary": "Backend-focused software engineer passionate about building reliable services and developer-friendly platforms, with 2.5+ years of experience across fintech, IoT, and Web3. Experienced in API design, distributed systems, payment workflows, cloud migration, and production operations, with hands-on frontend experience for end-to-end product delivery.",
+  "experience": [
+    {
+      "id": "spartan-software-engineer",
+      "employer": "Spartan (c0x12c, Inc)",
+      "role": "Software Engineer",
+      "start_date": "2024-01",
+      "end_date": null,
+      "highlights": [
+        "Ensured smooth releases and cross-team alignment through sprint planning, backlog grooming, standups, and technical discussions with internal and client stakeholders.",
+        "Accelerated onboarding and knowledge sharing by mentoring new hires and interns through codebase ramp-up, engineering workflows, and implementation practices.",
+        "Strengthened system reliability by applying design patterns to standardize lifecycle transitions, improve maintainability, and align cross-team engineering practices.",
+        "Improved production stability through on-call rotations, incident triage, hotfix delivery, RCA documentation, alert tuning, and dashboard refinement."
+      ],
+      "technologies": [
+        "Go",
+        "Kotlin",
+        "Node.js",
+        "React",
+        "PostgreSQL",
+        "Redis",
+        "AWS",
+        "GCP",
+        "Datadog"
+      ]
+    },
+    {
+      "id": "nguyen-quoc-chi-teaching-assistant",
+      "employer": "Nguyen Quoc Chi Education Center",
+      "role": "Mathematics Teaching Assistant",
+      "start_date": "2021-11",
+      "end_date": "2024-03",
+      "highlights": [
+        "Provided academic support to students and assisted with problem-solving.",
+        "Maintained educational resources and contributed to improving online teaching methods."
+      ],
+      "technologies": []
+    }
+  ]
+}
