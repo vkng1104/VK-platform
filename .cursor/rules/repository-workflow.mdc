@@ -1,0 +1,13 @@
+---
+description: "Repository-wide feature delivery, commit, PR handoff, and planning rules"
+alwaysApply: true
+---
+
+# Repository Workflow
+
+Follow `AGENTS.md` as the repository-wide contract.
+
+- For feature work, load `.agents/skills/feature-delivery/SKILL.md`.
+- For test work, load `.agents/skills/bottom-up-testing/SKILL.md`.
+- For AI-authored plans, load `.agents/skills/write-project-plan/SKILL.md`.
+

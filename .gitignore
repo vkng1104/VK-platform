@@ -1,0 +1,7 @@
+# Local planning and reference material (kept readable by local AI agents)
+/plans/
+/docs/
+
+# OS metadata
+.DS_Store
+
