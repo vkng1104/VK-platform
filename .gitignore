@@ -5,3 +5,11 @@
 # OS metadata
 .DS_Store
 
+# Root workspace dependencies and generated output
+/node_modules/
+/.next/
+/coverage/
+
+# Go build and coverage output
+*.test
+coverage.out
