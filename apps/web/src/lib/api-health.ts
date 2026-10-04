@@ -1,6 +1,4 @@
-const defaultApiBaseUrl = "http://localhost:8080";
-
-type Fetcher = typeof fetch;
+import { getJson, type ApiRequestOptions } from "./api";
 
 interface ApiHealthPayload {
   status?: string;
@@ -13,26 +11,13 @@ export interface ApiHealth {
   detail: string;
 }
 
-interface CheckApiHealthOptions {
-  baseUrl?: string;
-  fetcher?: Fetcher;
-}
+type CheckApiHealthOptions = ApiRequestOptions;
 
 export async function checkApiHealth({
-  baseUrl = process.env.API_BASE_URL ?? defaultApiBaseUrl,
-  fetcher = fetch,
+  ...requestOptions
 }: CheckApiHealthOptions = {}): Promise<ApiHealth> {
   try {
-    const response = await fetcher(new URL("/healthz", baseUrl), {
-      cache: "no-store",
-      signal: AbortSignal.timeout(3000),
-    });
-
-    if (!response.ok) {
-      return unavailableHealth;
-    }
-
-    const payload = (await response.json()) as ApiHealthPayload;
+    const payload = await getJson<ApiHealthPayload>("/healthz", requestOptions);
     if (payload.status !== "ok") {
       return unavailableHealth;
     }

@@ -1,0 +1,13 @@
+---
+description: "Frontend Atomic Design and Go modular-monolith application boundaries"
+globs: ["apps/web/src/**/*.ts", "apps/web/src/**/*.tsx", "apps/api/**/*.go", "apps/api/migrations/**/*.sql"]
+---
+
+# Application Architecture
+
+Before implementing or reviewing matched application files:
+
+1. Read `DESIGN.md`.
+2. Load `.agents/skills/application-architecture/SKILL.md`.
+
+Frontend work follows pragmatic Atomic Design with route orchestration and feature API code kept outside visual component layers. Backend HTTP work follows the strict flow: decode bounded JSON, reject unknown fields, map DTOs, invoke services, map domain errors, and serialize explicit `snake_case` response DTOs.

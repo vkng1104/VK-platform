@@ -10,6 +10,11 @@
 /.next/
 /coverage/
 
+# Local environment values
+.env
+.env.local
+.env.*.local
+
 # Go build and coverage output
 *.test
 coverage.out

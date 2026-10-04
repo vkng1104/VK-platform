@@ -1,8 +1,9 @@
 package httpserver
 
 import (
-	"encoding/json"
 	"net/http"
+
+	"github.com/vkng1104/VK-platform/apps/api/internal/platform/httpx"
 )
 
 type healthResponse struct {
@@ -10,18 +11,24 @@ type healthResponse struct {
 	Service string `json:"service"`
 }
 
-func NewHandler() http.Handler {
+type RouteRegistrar interface {
+	RegisterRoutes(mux *http.ServeMux)
+}
+
+func NewHandler(registrars ...RouteRegistrar) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealth)
+	for _, registrar := range registrars {
+		if registrar != nil {
+			registrar.RegisterRoutes(mux)
+		}
+	}
 
 	return mux
 }
 
 func handleHealth(writer http.ResponseWriter, _ *http.Request) {
-	writer.Header().Set("Content-Type", "application/json")
-	writer.WriteHeader(http.StatusOK)
-
-	_ = json.NewEncoder(writer).Encode(healthResponse{
+	_ = httpx.WriteJSON(writer, http.StatusOK, healthResponse{
 		Status:  "ok",
 		Service: "api",
 	})
