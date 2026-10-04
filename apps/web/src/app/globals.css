@@ -26,3 +26,44 @@ body {
   background: #38bdf8;
   color: #020617;
 }
+
+.project-content {
+  color: #cbd5e1;
+  line-height: 1.8;
+}
+
+.project-content h2 {
+  margin-top: 2.5rem;
+  color: #f8fafc;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+.project-content h2:first-child {
+  margin-top: 0;
+}
+
+.project-content p,
+.project-content ul {
+  margin-top: 1rem;
+}
+
+.project-content ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+
+.project-content li + li {
+  margin-top: 0.5rem;
+}
+
+.project-content a {
+  color: #7dd3fc;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.project-content a:hover {
+  color: #bae6fd;
+}

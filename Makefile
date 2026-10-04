@@ -1,4 +1,4 @@
-.PHONY: install dev-web dev-api build lint typecheck test check
+.PHONY: install dev-web dev-api db-migrate-up db-migrate-down db-seed build lint typecheck test check
 
 install:
 	npm install
@@ -8,6 +8,15 @@ dev-web:
 
 dev-api:
 	cd apps/api && go run ./cmd/server
+
+db-migrate-up:
+	cd apps/api && go run ./cmd/migrate up
+
+db-migrate-down:
+	cd apps/api && go run ./cmd/migrate down
+
+db-seed:
+	cd apps/api && go run ./cmd/seed
 
 build:
 	npm run build:web
