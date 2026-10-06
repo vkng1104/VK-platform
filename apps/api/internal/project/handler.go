@@ -14,9 +14,10 @@ import (
 const handlerTimeout = 5 * time.Second
 
 const (
-	invalidRequestCode  = "INVALID_REQUEST"
-	internalErrorCode   = "INTERNAL_ERROR"
-	projectNotFoundCode = "PROJECT_NOT_FOUND"
+	invalidFeaturedFilterCode = "INVALID_FEATURED_FILTER"
+	invalidProjectSlugCode    = "INVALID_PROJECT_SLUG"
+	internalErrorCode         = "INTERNAL_ERROR"
+	projectNotFoundCode       = "PROJECT_NOT_FOUND"
 )
 
 type ProjectService interface {
@@ -51,9 +52,16 @@ func (handler *Handler) list(writer http.ResponseWriter, request *http.Request) 
 	if err != nil {
 		handler.writePublicError(
 			writer,
+			request,
 			http.StatusBadRequest,
-			invalidRequestCode,
-			"The request is invalid.",
+			httpx.PublicError{
+				Code:      invalidFeaturedFilterCode,
+				Message:   "The featured filter must be either true or false.",
+				Retryable: false,
+				Fields: map[string][]string{
+					"featured": {"Use true or false and provide the filter at most once."},
+				},
+			},
 		)
 		return
 	}
@@ -68,18 +76,28 @@ func (handler *Handler) list(writer http.ResponseWriter, request *http.Request) 
 			"list projects failed",
 			"error", err,
 			"path", request.URL.Path,
+			"request_id", httpx.RequestID(request.Context()),
 		)
 		handler.writePublicError(
 			writer,
+			request,
 			http.StatusInternalServerError,
-			internalErrorCode,
-			"An unexpected error occurred.",
+			httpx.PublicError{
+				Code:      internalErrorCode,
+				Message:   "Something went wrong. Try again later or contact support with the request ID.",
+				Retryable: true,
+			},
 		)
 		return
 	}
 
 	if err := httpx.WriteJSON(writer, http.StatusOK, newListResponse(projects)); err != nil {
-		handler.logger.ErrorContext(request.Context(), "write project list response failed", "error", err)
+		handler.logger.ErrorContext(
+			request.Context(),
+			"write project list response failed",
+			"error", err,
+			"request_id", httpx.RequestID(request.Context()),
+		)
 	}
 }
 
@@ -93,16 +111,24 @@ func (handler *Handler) getBySlug(writer http.ResponseWriter, request *http.Requ
 		case errors.Is(err, ErrInvalidSlug):
 			handler.writePublicError(
 				writer,
+				request,
 				http.StatusBadRequest,
-				invalidRequestCode,
-				"The request is invalid.",
+				httpx.PublicError{
+					Code:      invalidProjectSlugCode,
+					Message:   "The project slug is invalid.",
+					Retryable: false,
+				},
 			)
 		case errors.Is(err, ErrProjectNotFound):
 			handler.writePublicError(
 				writer,
+				request,
 				http.StatusNotFound,
-				projectNotFoundCode,
-				"The requested project was not found.",
+				httpx.PublicError{
+					Code:      projectNotFoundCode,
+					Message:   "The requested project was not found.",
+					Retryable: false,
+				},
 			)
 		default:
 			handler.logger.ErrorContext(
@@ -110,12 +136,17 @@ func (handler *Handler) getBySlug(writer http.ResponseWriter, request *http.Requ
 				"get project failed",
 				"error", err,
 				"path", request.URL.Path,
+				"request_id", httpx.RequestID(request.Context()),
 			)
 			handler.writePublicError(
 				writer,
+				request,
 				http.StatusInternalServerError,
-				internalErrorCode,
-				"An unexpected error occurred.",
+				httpx.PublicError{
+					Code:      internalErrorCode,
+					Message:   "Something went wrong. Try again later or contact support with the request ID.",
+					Retryable: true,
+				},
 			)
 		}
 
@@ -123,18 +154,29 @@ func (handler *Handler) getBySlug(writer http.ResponseWriter, request *http.Requ
 	}
 
 	if err := httpx.WriteJSON(writer, http.StatusOK, newDetailEnvelope(result)); err != nil {
-		handler.logger.ErrorContext(request.Context(), "write project detail response failed", "error", err)
+		handler.logger.ErrorContext(
+			request.Context(),
+			"write project detail response failed",
+			"error", err,
+			"request_id", httpx.RequestID(request.Context()),
+		)
 	}
 }
 
 func (handler *Handler) writePublicError(
 	writer http.ResponseWriter,
+	request *http.Request,
 	status int,
-	code string,
-	message string,
+	publicError httpx.PublicError,
 ) {
-	if err := httpx.WriteError(writer, status, code, message); err != nil {
-		handler.logger.Error("write public error response failed", "error", err, "code", code)
+	if err := httpx.WriteError(writer, request, status, publicError); err != nil {
+		handler.logger.ErrorContext(
+			request.Context(),
+			"write public error response failed",
+			"error", err,
+			"code", publicError.Code,
+			"request_id", httpx.RequestID(request.Context()),
+		)
 	}
 }
 

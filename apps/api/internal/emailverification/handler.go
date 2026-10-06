@@ -22,11 +22,15 @@ const (
 )
 
 const (
-	invalidRequestCode          = "INVALID_REQUEST"
-	rateLimitedCode             = "EMAIL_VERIFICATION_RATE_LIMITED"
-	deliveryUnavailableCode     = "EMAIL_DELIVERY_UNAVAILABLE"
-	invalidOrExpiredCode        = "INVALID_OR_EXPIRED_CODE"
-	verificationUnavailableCode = "EMAIL_VERIFICATION_UNAVAILABLE"
+	invalidRequestBodyCode  = "INVALID_REQUEST_BODY"
+	invalidEmailCode        = "INVALID_EMAIL"
+	invalidPurposeCode      = "INVALID_VERIFICATION_PURPOSE"
+	rateLimitedCode         = "EMAIL_VERIFICATION_RATE_LIMITED"
+	deliveryUnavailableCode = "EMAIL_DELIVERY_UNAVAILABLE"
+	invalidChallengeIDCode  = "INVALID_VERIFICATION_ID"
+	invalidCodeFormatCode   = "INVALID_CODE_FORMAT"
+	invalidOrExpiredCode    = "INVALID_OR_EXPIRED_CODE"
+	internalErrorCode       = "INTERNAL_ERROR"
 )
 
 type ApplicationService interface {
@@ -61,7 +65,10 @@ func (handler *Handler) start(writer http.ResponseWriter, request *http.Request)
 
 	var payload startRequestDTO
 	if err := httpx.DecodeJSON(writer, request, &payload); err != nil {
-		handler.writePublicError(writer, http.StatusBadRequest, invalidRequestCode, "The request is invalid.")
+		handler.writePublicError(writer, request, http.StatusBadRequest, httpx.PublicError{
+			Code:    invalidRequestBodyCode,
+			Message: "The request body is invalid.",
+		})
 		return
 	}
 
@@ -79,7 +86,12 @@ func (handler *Handler) start(writer http.ResponseWriter, request *http.Request)
 	}
 
 	if err := httpx.WriteJSON(writer, http.StatusAccepted, newChallengeEnvelope(result)); err != nil {
-		handler.logger.ErrorContext(request.Context(), "write email verification start response failed", "error", err)
+		handler.logger.ErrorContext(
+			request.Context(),
+			"write email verification start response failed",
+			"error", err,
+			"request_id", httpx.RequestID(request.Context()),
+		)
 	}
 }
 
@@ -89,7 +101,10 @@ func (handler *Handler) verify(writer http.ResponseWriter, request *http.Request
 
 	var payload verifyRequestDTO
 	if err := httpx.DecodeJSON(writer, request, &payload); err != nil {
-		handler.writePublicError(writer, http.StatusBadRequest, invalidRequestCode, "The request is invalid.")
+		handler.writePublicError(writer, request, http.StatusBadRequest, httpx.PublicError{
+			Code:    invalidRequestBodyCode,
+			Message: "The request body is invalid.",
+		})
 		return
 	}
 
@@ -106,7 +121,12 @@ func (handler *Handler) verify(writer http.ResponseWriter, request *http.Request
 	}
 
 	if err := httpx.WriteJSON(writer, http.StatusOK, newVerificationEnvelope(result)); err != nil {
-		handler.logger.ErrorContext(request.Context(), "write email verification response failed", "error", err)
+		handler.logger.ErrorContext(
+			request.Context(),
+			"write email verification response failed",
+			"error", err,
+			"request_id", httpx.RequestID(request.Context()),
+		)
 	}
 }
 
@@ -116,8 +136,24 @@ func (handler *Handler) handleStartError(
 	err error,
 ) {
 	switch {
-	case errors.Is(err, ErrInvalidEmail), errors.Is(err, ErrInvalidPurpose):
-		handler.writePublicError(writer, http.StatusBadRequest, invalidRequestCode, "The request is invalid.")
+	case errors.Is(err, ErrInvalidEmail):
+		handler.writePublicError(writer, request, http.StatusBadRequest, httpx.PublicError{
+			Code:      invalidEmailCode,
+			Message:   "Enter a valid email address.",
+			Retryable: false,
+			Fields: map[string][]string{
+				"email": {"Enter a valid email address."},
+			},
+		})
+	case errors.Is(err, ErrInvalidPurpose):
+		handler.writePublicError(writer, request, http.StatusBadRequest, httpx.PublicError{
+			Code:      invalidPurposeCode,
+			Message:   "The requested verification purpose is not supported.",
+			Retryable: false,
+			Fields: map[string][]string{
+				"purpose": {"Choose a supported verification purpose."},
+			},
+		})
 	case errors.Is(err, ErrRateLimited):
 		var rateLimitError *RateLimitError
 		if errors.As(err, &rateLimitError) {
@@ -129,9 +165,13 @@ func (handler *Handler) handleStartError(
 		}
 		handler.writePublicError(
 			writer,
+			request,
 			http.StatusTooManyRequests,
-			rateLimitedCode,
-			"Please wait before requesting another verification code.",
+			httpx.PublicError{
+				Code:      rateLimitedCode,
+				Message:   "Please wait before requesting another verification code.",
+				Retryable: true,
+			},
 		)
 	case errors.Is(err, ErrDeliveryUnavailable):
 		handler.logger.WarnContext(
@@ -139,20 +179,29 @@ func (handler *Handler) handleStartError(
 			"email verification delivery unavailable",
 			"error", err,
 			"path", request.URL.Path,
+			"request_id", httpx.RequestID(request.Context()),
 		)
 		handler.writePublicError(
 			writer,
+			request,
 			http.StatusServiceUnavailable,
-			deliveryUnavailableCode,
-			"The verification email could not be sent. Please try again later.",
+			httpx.PublicError{
+				Code:      deliveryUnavailableCode,
+				Message:   "We could not send the verification email. Try again later.",
+				Retryable: true,
+			},
 		)
 	default:
 		handler.logUnexpected(request, "start email verification failed", err)
 		handler.writePublicError(
 			writer,
+			request,
 			http.StatusInternalServerError,
-			verificationUnavailableCode,
-			"Email verification is temporarily unavailable.",
+			httpx.PublicError{
+				Code:      internalErrorCode,
+				Message:   "Something went wrong. Try again later or contact support with the request ID.",
+				Retryable: true,
+			},
 		)
 	}
 }
@@ -163,22 +212,46 @@ func (handler *Handler) handleVerificationError(
 	err error,
 ) {
 	switch {
-	case errors.Is(err, ErrInvalidChallengeID), errors.Is(err, ErrInvalidCode):
-		handler.writePublicError(writer, http.StatusBadRequest, invalidRequestCode, "The request is invalid.")
+	case errors.Is(err, ErrInvalidChallengeID):
+		handler.writePublicError(writer, request, http.StatusBadRequest, httpx.PublicError{
+			Code:      invalidChallengeIDCode,
+			Message:   "The verification request is invalid. Request a new code and try again.",
+			Retryable: false,
+			Fields: map[string][]string{
+				"id": {"Use the verification ID returned when the code was requested."},
+			},
+		})
+	case errors.Is(err, ErrInvalidCode):
+		handler.writePublicError(writer, request, http.StatusBadRequest, httpx.PublicError{
+			Code:      invalidCodeFormatCode,
+			Message:   "Enter the six-digit verification code.",
+			Retryable: false,
+			Fields: map[string][]string{
+				"code": {"Enter exactly six digits."},
+			},
+		})
 	case errors.Is(err, ErrInvalidOrExpiredCode):
 		handler.writePublicError(
 			writer,
+			request,
 			http.StatusUnprocessableEntity,
-			invalidOrExpiredCode,
-			"The verification code is invalid or expired.",
+			httpx.PublicError{
+				Code:      invalidOrExpiredCode,
+				Message:   "The verification code is invalid or expired. Request a new code and try again.",
+				Retryable: false,
+			},
 		)
 	default:
 		handler.logUnexpected(request, "verify email challenge failed", err)
 		handler.writePublicError(
 			writer,
+			request,
 			http.StatusInternalServerError,
-			verificationUnavailableCode,
-			"Email verification is temporarily unavailable.",
+			httpx.PublicError{
+				Code:      internalErrorCode,
+				Message:   "Something went wrong. Try again later or contact support with the request ID.",
+				Retryable: true,
+			},
 		)
 	}
 }
@@ -189,17 +262,24 @@ func (handler *Handler) logUnexpected(request *http.Request, message string, err
 		message,
 		"error", err,
 		"path", request.URL.Path,
+		"request_id", httpx.RequestID(request.Context()),
 	)
 }
 
 func (handler *Handler) writePublicError(
 	writer http.ResponseWriter,
+	request *http.Request,
 	status int,
-	code string,
-	message string,
+	publicError httpx.PublicError,
 ) {
-	if err := httpx.WriteError(writer, status, code, message); err != nil {
-		handler.logger.Error("write email verification error response failed", "error", err, "code", code)
+	if err := httpx.WriteError(writer, request, status, publicError); err != nil {
+		handler.logger.ErrorContext(
+			request.Context(),
+			"write email verification error response failed",
+			"error", err,
+			"code", publicError.Code,
+			"request_id", httpx.RequestID(request.Context()),
+		)
 	}
 }
 

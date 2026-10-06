@@ -2,11 +2,14 @@ package emailverification_test
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -14,6 +17,7 @@ import (
 
 	"github.com/vkng1104/VK-platform/apps/api/internal/emailverification"
 	"github.com/vkng1104/VK-platform/apps/api/internal/platform/httpserver"
+	"github.com/vkng1104/VK-platform/apps/api/internal/platform/httpx"
 )
 
 func TestHandlerStartsEmailVerification(t *testing.T) {
@@ -91,7 +95,15 @@ func TestHandlerRejectsInvalidStartBodiesBeforeService(t *testing.T) {
 				"/api/v1/email-verifications",
 				test.body,
 			)
-			assertOTPError(t, response, http.StatusBadRequest, "INVALID_REQUEST", "The request is invalid.")
+			assertOTPError(
+				t,
+				response,
+				http.StatusBadRequest,
+				"INVALID_REQUEST_BODY",
+				"The request body is invalid.",
+				false,
+				nil,
+			)
 		})
 	}
 }
@@ -106,11 +118,14 @@ func TestHandlerMapsStartErrorsWithoutLeakingCauses(t *testing.T) {
 		status     int
 		code       string
 		message    string
+		retryable  bool
+		fields     map[string][]string
 	}{
-		{name: "invalid email", serviceErr: emailverification.ErrInvalidEmail, status: http.StatusBadRequest, code: "INVALID_REQUEST", message: "The request is invalid."},
-		{name: "rate limited", serviceErr: &emailverification.RateLimitError{RetryAt: retryAt}, status: http.StatusTooManyRequests, code: "EMAIL_VERIFICATION_RATE_LIMITED", message: "Please wait before requesting another verification code."},
-		{name: "delivery unavailable", serviceErr: errors.Join(emailverification.ErrDeliveryUnavailable, errors.New("oauth body secret-value")), status: http.StatusServiceUnavailable, code: "EMAIL_DELIVERY_UNAVAILABLE", message: "The verification email could not be sent. Please try again later."},
-		{name: "internal", serviceErr: errors.New("postgres password=secret"), status: http.StatusInternalServerError, code: "EMAIL_VERIFICATION_UNAVAILABLE", message: "Email verification is temporarily unavailable."},
+		{name: "invalid email", serviceErr: emailverification.ErrInvalidEmail, status: http.StatusBadRequest, code: "INVALID_EMAIL", message: "Enter a valid email address.", fields: map[string][]string{"email": {"Enter a valid email address."}}},
+		{name: "invalid purpose", serviceErr: emailverification.ErrInvalidPurpose, status: http.StatusBadRequest, code: "INVALID_VERIFICATION_PURPOSE", message: "The requested verification purpose is not supported.", fields: map[string][]string{"purpose": {"Choose a supported verification purpose."}}},
+		{name: "rate limited", serviceErr: &emailverification.RateLimitError{RetryAt: retryAt}, status: http.StatusTooManyRequests, code: "EMAIL_VERIFICATION_RATE_LIMITED", message: "Please wait before requesting another verification code.", retryable: true},
+		{name: "delivery unavailable", serviceErr: errors.Join(emailverification.ErrDeliveryUnavailable, errors.New("oauth body secret-value")), status: http.StatusServiceUnavailable, code: "EMAIL_DELIVERY_UNAVAILABLE", message: "We could not send the verification email. Try again later.", retryable: true},
+		{name: "internal", serviceErr: errors.New("postgres password=secret"), status: http.StatusInternalServerError, code: "INTERNAL_ERROR", message: "Something went wrong. Try again later or contact support with the request ID.", retryable: true},
 	}
 
 	for _, test := range tests {
@@ -128,7 +143,7 @@ func TestHandlerMapsStartErrorsWithoutLeakingCauses(t *testing.T) {
 				"/api/v1/email-verifications",
 				`{"email":"visitor@example.com","purpose":"restricted_resource_access"}`,
 			)
-			assertOTPError(t, response, test.status, test.code, test.message)
+			assertOTPError(t, response, test.status, test.code, test.message, test.retryable, test.fields)
 			if strings.Contains(response.Body.String(), "secret") || strings.Contains(response.Body.String(), "postgres") || strings.Contains(response.Body.String(), "oauth") {
 				t.Fatalf("response leaked internal cause: %s", response.Body.String())
 			}
@@ -187,10 +202,13 @@ func TestHandlerMapsVerificationErrors(t *testing.T) {
 		status     int
 		code       string
 		message    string
+		retryable  bool
+		fields     map[string][]string
 	}{
-		{name: "invalid transport value", serviceErr: emailverification.ErrInvalidCode, status: http.StatusBadRequest, code: "INVALID_REQUEST", message: "The request is invalid."},
-		{name: "invalid or expired", serviceErr: emailverification.ErrInvalidOrExpiredCode, status: http.StatusUnprocessableEntity, code: "INVALID_OR_EXPIRED_CODE", message: "The verification code is invalid or expired."},
-		{name: "internal", serviceErr: errors.New("database secret"), status: http.StatusInternalServerError, code: "EMAIL_VERIFICATION_UNAVAILABLE", message: "Email verification is temporarily unavailable."},
+		{name: "invalid verification ID", serviceErr: emailverification.ErrInvalidChallengeID, status: http.StatusBadRequest, code: "INVALID_VERIFICATION_ID", message: "The verification request is invalid. Request a new code and try again.", fields: map[string][]string{"id": {"Use the verification ID returned when the code was requested."}}},
+		{name: "invalid code format", serviceErr: emailverification.ErrInvalidCode, status: http.StatusBadRequest, code: "INVALID_CODE_FORMAT", message: "Enter the six-digit verification code.", fields: map[string][]string{"code": {"Enter exactly six digits."}}},
+		{name: "invalid or expired", serviceErr: emailverification.ErrInvalidOrExpiredCode, status: http.StatusUnprocessableEntity, code: "INVALID_OR_EXPIRED_CODE", message: "The verification code is invalid or expired. Request a new code and try again."},
+		{name: "internal", serviceErr: errors.New("database secret"), status: http.StatusInternalServerError, code: "INTERNAL_ERROR", message: "Something went wrong. Try again later or contact support with the request ID.", retryable: true},
 	}
 
 	for _, test := range tests {
@@ -208,7 +226,7 @@ func TestHandlerMapsVerificationErrors(t *testing.T) {
 				"/api/v1/email-verifications/"+testChallengeID+"/verify",
 				`{"code":"123456"}`,
 			)
-			assertOTPError(t, response, test.status, test.code, test.message)
+			assertOTPError(t, response, test.status, test.code, test.message, test.retryable, test.fields)
 			if strings.Contains(response.Body.String(), "database") || strings.Contains(response.Body.String(), "secret") {
 				t.Fatalf("response leaked internal cause: %s", response.Body.String())
 			}
@@ -293,17 +311,33 @@ func assertOTPError(
 	status int,
 	code string,
 	message string,
+	retryable bool,
+	fields map[string][]string,
 ) {
 	t.Helper()
 
 	if response.Code != status {
 		t.Fatalf("status = %d, want %d", response.Code, status)
 	}
-	wantBody := `{"code":"` + code + `","message":"` + message + `"}` + "\n"
-	if response.Body.String() != wantBody {
-		t.Fatalf("body = %s, want %s", response.Body.String(), wantBody)
-	}
 	if response.Header().Get("Content-Type") != "application/json" {
 		t.Fatalf("Content-Type = %q", response.Header().Get("Content-Type"))
+	}
+
+	var actual httpx.ErrorResponse
+	if err := json.NewDecoder(response.Body).Decode(&actual); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if actual.Code != code || actual.Message != message || actual.Retryable != retryable {
+		t.Fatalf("error response = %#v", actual)
+	}
+	if !reflect.DeepEqual(actual.Fields, fields) {
+		t.Fatalf("fields = %#v, want %#v", actual.Fields, fields)
+	}
+	if actual.RequestID == "" || actual.RequestID != response.Header().Get(httpx.RequestIDHeader) {
+		t.Fatalf("request_id = %q, header = %q", actual.RequestID, response.Header().Get(httpx.RequestIDHeader))
+	}
+	decodedRequestID, err := hex.DecodeString(actual.RequestID)
+	if err != nil || len(decodedRequestID) != 16 {
+		t.Fatalf("request_id = %q, want 128-bit hexadecimal value", actual.RequestID)
 	}
 }

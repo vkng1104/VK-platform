@@ -66,6 +66,35 @@ The start request accepts an email and the supported `restricted_resource_access
 
 Verification-email copy lives under `apps/api/internal/platform/mail/email_templates/`. Subject, plain-text, and HTML files use Go template fields such as `{{ .Code }}` and `{{ .ExpiresAt }}` and are embedded in the API binary at build time, so deployment does not require mounting template files.
 
+## API error contract
+
+Every API response includes a server-generated `X-Request-ID`. Public JSON errors repeat that value so a user can provide it when asking for support:
+
+```json
+{
+  "code": "INVALID_OR_EXPIRED_CODE",
+  "message": "The verification code is invalid or expired. Request a new code and try again.",
+  "request_id": "0a1b2c3d4e5f67890123456789abcdef",
+  "retryable": false
+}
+```
+
+Clients must branch on the stable `code`, not the human-readable `message`. Validation failures can also include a `fields` object. Internal database, email-provider, and configuration details are logged with the same request ID but are never returned to clients.
+
+Email verification uses these public errors:
+
+| HTTP | Code | Client action |
+| --- | --- | --- |
+| 400 | `INVALID_REQUEST_BODY` | Send one valid JSON request object. |
+| 400 | `INVALID_EMAIL` | Correct the email address. |
+| 400 | `INVALID_VERIFICATION_PURPOSE` | Use a supported verification purpose. |
+| 400 | `INVALID_VERIFICATION_ID` | Start a new verification request. |
+| 400 | `INVALID_CODE_FORMAT` | Enter exactly six digits. |
+| 422 | `INVALID_OR_EXPIRED_CODE` | Request a new code and try again. Missing, incorrect, expired, used, and attempt-exhausted challenges intentionally share this response. |
+| 429 | `EMAIL_VERIFICATION_RATE_LIMITED` | Wait for the `Retry-After` period. |
+| 503 | `EMAIL_DELIVERY_UNAVAILABLE` | Retry later. |
+| 500 | `INTERNAL_ERROR` | Retry later or provide `request_id` to support. |
+
 ## Seed local data from another environment
 
 Set one or both read-only source URLs in the ignored `.env` file:
