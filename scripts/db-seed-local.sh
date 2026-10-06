@@ -42,6 +42,7 @@ pg_dump \
   --no-owner \
   --no-privileges \
   --exclude-table-data=public.schema_migrations \
+  --exclude-table-data=public.email_verification_challenges \
   --file="$dump_path"
 
 echo "Clearing local application data..."

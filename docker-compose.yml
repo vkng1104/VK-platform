@@ -41,6 +41,13 @@ services:
     environment:
       API_ADDR: :8080
       DATABASE_URL: postgres://vk_platform:vk_platform@postgres:5432/vk_platform?sslmode=disable
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-disabled}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-}
+      GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
+      GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET:-}
+      GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN:-}
+      EMAIL_OTP_PEPPER: ${EMAIL_OTP_PEPPER:-}
+      EMAIL_RATE_LIMIT_SECRET: ${EMAIL_RATE_LIMIT_SECRET:-}
     ports:
       - "${API_PORT:-8080}:8080"
     volumes:
@@ -126,6 +133,7 @@ services:
     profiles: ["test"]
     environment:
       TEST_DATABASE_URL: postgres://vk_platform:vk_platform@postgres-test:5432/vk_platform_test?sslmode=disable
+      EMAIL_PROVIDER: disabled
     depends_on:
       migrate-test:
         condition: service_completed_successfully

@@ -5,7 +5,7 @@ VK Platform is a systems-focused engineering portfolio. The monorepo contains a 
 ## Applications
 
 - `apps/web` — Next.js portfolio with project pages and a service status page.
-- `apps/api` — Go HTTP API with the platform health endpoint and database-backed project catalog.
+- `apps/api` — Go HTTP API with health, project-catalog, and reusable email-verification domains.
 
 ## Requirements
 
@@ -37,6 +37,33 @@ The frontend is available at `http://localhost:3000`, the API at `http://localho
 
 The API never runs migrations automatically. Compose runs the migration command as a separate one-shot process before application startup.
 
+## Email OTP verification
+
+Email verification is disabled by default. When enabled, the Go API creates short-lived, purpose-bound challenges in PostgreSQL and sends six-digit codes through the Gmail API. It does not grant access to a resource by itself; a consuming feature decides what a successful verification authorizes.
+
+Create a Google Cloud OAuth client, enable the Gmail API, and authorize the sender account once with offline access and only the `https://www.googleapis.com/auth/gmail.send` scope. Follow Google's [Gmail API authorization guide](https://developers.google.com/workspace/gmail/api/auth/web-server) to obtain a refresh token. Then set these values in the ignored `.env` file:
+
+```dotenv
+EMAIL_PROVIDER=gmail
+EMAIL_FROM_ADDRESS=owner@gmail.com
+GMAIL_CLIENT_ID=...
+GMAIL_CLIENT_SECRET=...
+GMAIL_REFRESH_TOKEN=...
+EMAIL_OTP_PEPPER=replace-with-at-least-32-random-characters
+EMAIL_RATE_LIMIT_SECRET=replace-with-a-different-32-character-secret
+```
+
+Use different random values for the OTP pepper and rate-limit secret. Never use the regular Gmail password, commit working credentials, or expose these variables to the frontend. Personal Gmail is intended only for the low-volume portfolio flow; the sender is isolated behind an interface so it can be replaced by a transactional provider later.
+
+When configured, the API exposes:
+
+```text
+POST /api/v1/email-verifications
+POST /api/v1/email-verifications/{id}/verify
+```
+
+The start request accepts an email and the supported `restricted_resource_access` purpose. Codes expire after five minutes, allow five attempts, enforce resend and destination/requester/global throttles, and can succeed only once.
+
 ## Seed local data from another environment
 
 Set one or both read-only source URLs in the ignored `.env` file:
@@ -53,7 +80,7 @@ make db-seed-local SOURCE_ENV=development
 make db-seed-local SOURCE_ENV=production
 ```
 
-The command exports the source before changing anything locally, never writes to the source database, preserves the local migration version, and replaces all other local public-table data. Only use production data when you are authorized to store it locally.
+The command exports the source before changing anything locally, never writes to the source database, preserves the local migration version, excludes transient email-verification challenges, and replaces the remaining local public-table data. Only use production data when you are authorized to store it locally.
 
 ## Verification
 
