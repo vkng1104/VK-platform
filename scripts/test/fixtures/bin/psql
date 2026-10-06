@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -eu
+
+while IFS= read -r _line; do
+  :
+done
+
+printf 'psql' >>"$CALL_LOG"
+for argument in "$@"; do
+  printf '\t%s' "$argument" >>"$CALL_LOG"
+done
+printf '\n' >>"$CALL_LOG"
