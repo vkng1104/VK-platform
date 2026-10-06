@@ -24,7 +24,7 @@ func NewHandler(registrars ...RouteRegistrar) http.Handler {
 		}
 	}
 
-	return mux
+	return httpx.WithRequestID(mux)
 }
 
 func handleHealth(writer http.ResponseWriter, _ *http.Request) {

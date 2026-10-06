@@ -2,16 +2,20 @@ package project_test
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/vkng1104/VK-platform/apps/api/internal/platform/httpserver"
+	"github.com/vkng1104/VK-platform/apps/api/internal/platform/httpx"
 	"github.com/vkng1104/VK-platform/apps/api/internal/project"
 )
 
@@ -124,7 +128,12 @@ func TestHandlerRejectsInvalidFeaturedQueries(t *testing.T) {
 				t,
 				response,
 				http.StatusBadRequest,
-				`{"code":"INVALID_REQUEST","message":"The request is invalid."}`+"\n",
+				"INVALID_FEATURED_FILTER",
+				"The featured filter must be either true or false.",
+				false,
+				map[string][]string{
+					"featured": {"Use true or false and provide the filter at most once."},
+				},
 			)
 		})
 	}
@@ -176,25 +185,31 @@ func TestHandlerMapsProjectErrors(t *testing.T) {
 		name       string
 		serviceErr error
 		status     int
-		body       string
+		code       string
+		message    string
+		retryable  bool
 	}{
 		{
 			name:       "invalid slug",
 			serviceErr: fmt.Errorf("validate project: %w", project.ErrInvalidSlug),
 			status:     http.StatusBadRequest,
-			body:       `{"code":"INVALID_REQUEST","message":"The request is invalid."}` + "\n",
+			code:       "INVALID_PROJECT_SLUG",
+			message:    "The project slug is invalid.",
 		},
 		{
 			name:       "not found",
 			serviceErr: fmt.Errorf("get project: %w", project.ErrProjectNotFound),
 			status:     http.StatusNotFound,
-			body:       `{"code":"PROJECT_NOT_FOUND","message":"The requested project was not found."}` + "\n",
+			code:       "PROJECT_NOT_FOUND",
+			message:    "The requested project was not found.",
 		},
 		{
 			name:       "internal failure",
 			serviceErr: errors.New("password=secret database unavailable"),
 			status:     http.StatusInternalServerError,
-			body:       `{"code":"INTERNAL_ERROR","message":"An unexpected error occurred."}` + "\n",
+			code:       "INTERNAL_ERROR",
+			message:    "Something went wrong. Try again later or contact support with the request ID.",
+			retryable:  true,
 		},
 	}
 
@@ -214,7 +229,15 @@ func TestHandlerMapsProjectErrors(t *testing.T) {
 				http.MethodGet,
 				"/api/v1/projects/vk-platform",
 			)
-			assertErrorResponse(t, response, testCase.status, testCase.body)
+			assertErrorResponse(
+				t,
+				response,
+				testCase.status,
+				testCase.code,
+				testCase.message,
+				testCase.retryable,
+				nil,
+			)
 
 			if strings.Contains(response.Body.String(), "password=secret") {
 				t.Fatalf("response leaked internal error: %s", response.Body.String())
@@ -237,7 +260,10 @@ func TestHandlerMapsListFailureWithoutLeakingCause(t *testing.T) {
 		t,
 		response,
 		http.StatusInternalServerError,
-		`{"code":"INTERNAL_ERROR","message":"An unexpected error occurred."}`+"\n",
+		"INTERNAL_ERROR",
+		"Something went wrong. Try again later or contact support with the request ID.",
+		true,
+		nil,
 	)
 
 	if strings.Contains(response.Body.String(), "postgres") {
@@ -314,7 +340,10 @@ func assertErrorResponse(
 	t *testing.T,
 	response *httptest.ResponseRecorder,
 	status int,
-	body string,
+	code string,
+	message string,
+	retryable bool,
+	fields map[string][]string,
 ) {
 	t.Helper()
 
@@ -326,7 +355,21 @@ func assertErrorResponse(
 		t.Fatalf("expected application/json, got %q", response.Header().Get("Content-Type"))
 	}
 
-	if response.Body.String() != body {
-		t.Fatalf("expected body %s, got %s", body, response.Body.String())
+	var actual httpx.ErrorResponse
+	if err := json.NewDecoder(response.Body).Decode(&actual); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if actual.Code != code || actual.Message != message || actual.Retryable != retryable {
+		t.Fatalf("error response = %#v", actual)
+	}
+	if !reflect.DeepEqual(actual.Fields, fields) {
+		t.Fatalf("fields = %#v, want %#v", actual.Fields, fields)
+	}
+	if actual.RequestID == "" || actual.RequestID != response.Header().Get(httpx.RequestIDHeader) {
+		t.Fatalf("request_id = %q, header = %q", actual.RequestID, response.Header().Get(httpx.RequestIDHeader))
+	}
+	decodedRequestID, err := hex.DecodeString(actual.RequestID)
+	if err != nil || len(decodedRequestID) != 16 {
+		t.Fatalf("request_id = %q, want 128-bit hexadecimal value", actual.RequestID)
 	}
 }

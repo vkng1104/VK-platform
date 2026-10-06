@@ -10,9 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/vkng1104/VK-platform/apps/api/internal/emailverification"
 	"github.com/vkng1104/VK-platform/apps/api/internal/platform/config"
 	"github.com/vkng1104/VK-platform/apps/api/internal/platform/database"
 	"github.com/vkng1104/VK-platform/apps/api/internal/platform/httpserver"
+	platformmail "github.com/vkng1104/VK-platform/apps/api/internal/platform/mail"
 	"github.com/vkng1104/VK-platform/apps/api/internal/project"
 )
 
@@ -60,10 +62,56 @@ func main() {
 		slog.Error("construct project handler failed", "error", err)
 		os.Exit(1)
 	}
+	registrars := []httpserver.RouteRegistrar{projectHandler}
+
+	if configuration.EmailVerification.Enabled {
+		emailRepository, err := emailverification.NewPostgreSQLRepository(pool)
+		if err != nil {
+			slog.Error("construct email verification repository failed", "error", err)
+			os.Exit(1)
+		}
+
+		emailSender, err := platformmail.NewGmailSender(platformmail.GmailConfig{
+			ClientID:     configuration.EmailVerification.GmailClientID,
+			ClientSecret: configuration.EmailVerification.GmailClientSecret,
+			RefreshToken: configuration.EmailVerification.GmailRefreshToken,
+			FromAddress:  configuration.EmailVerification.FromAddress,
+		})
+		if err != nil {
+			slog.Error("construct Gmail verification sender failed", "error", err)
+			os.Exit(1)
+		}
+
+		emailService, err := emailverification.NewService(
+			emailverification.ServiceDependencies{
+				Repository:    emailRepository,
+				Sender:        emailSender,
+				Clock:         time.Now,
+				IDGenerator:   emailverification.NewSecureID,
+				CodeGenerator: emailverification.NewSixDigitCode,
+			},
+			emailverification.ServiceConfig{
+				OTPPepper:      []byte(configuration.EmailVerification.OTPPepper),
+				FingerprintKey: []byte(configuration.EmailVerification.RateLimitSecret),
+				Policy:         emailverification.DefaultStartPolicy(),
+			},
+		)
+		if err != nil {
+			slog.Error("construct email verification service failed", "error", err)
+			os.Exit(1)
+		}
+
+		emailHandler, err := emailverification.NewHandler(emailService, slog.Default())
+		if err != nil {
+			slog.Error("construct email verification handler failed", "error", err)
+			os.Exit(1)
+		}
+		registrars = append(registrars, emailHandler)
+	}
 
 	server := &http.Server{
 		Addr:              configuration.Address,
-		Handler:           httpserver.NewHandler(projectHandler),
+		Handler:           httpserver.NewHandler(registrars...),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,

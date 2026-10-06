@@ -16,8 +16,18 @@ var (
 )
 
 type ErrorResponse struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code      string              `json:"code"`
+	Message   string              `json:"message"`
+	RequestID string              `json:"request_id"`
+	Retryable bool                `json:"retryable"`
+	Fields    map[string][]string `json:"fields,omitempty"`
+}
+
+type PublicError struct {
+	Code      string
+	Message   string
+	Retryable bool
+	Fields    map[string][]string
 }
 
 func DecodeJSON(writer http.ResponseWriter, request *http.Request, destination any) error {
@@ -63,9 +73,17 @@ func WriteJSON(writer http.ResponseWriter, status int, value any) error {
 	return nil
 }
 
-func WriteError(writer http.ResponseWriter, status int, code string, message string) error {
+func WriteError(
+	writer http.ResponseWriter,
+	request *http.Request,
+	status int,
+	publicError PublicError,
+) error {
 	return WriteJSON(writer, status, ErrorResponse{
-		Code:    code,
-		Message: message,
+		Code:      publicError.Code,
+		Message:   publicError.Message,
+		RequestID: RequestID(request.Context()),
+		Retryable: publicError.Retryable,
+		Fields:    publicError.Fields,
 	})
 }

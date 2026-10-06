@@ -1,6 +1,7 @@
 package httpx_test
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -93,5 +94,44 @@ func TestDecodeJSONRejectsBodyLargerThanLimit(t *testing.T) {
 			httpx.DefaultMaxBodyBytes,
 			maximumBytesError.Limit,
 		)
+	}
+}
+
+func TestWriteErrorIncludesActionableMetadata(t *testing.T) {
+	t.Parallel()
+
+	handler := httpx.WithRequestID(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		err := httpx.WriteError(writer, request, http.StatusBadRequest, httpx.PublicError{
+			Code:      "INVALID_EMAIL",
+			Message:   "Enter a valid email address.",
+			Retryable: false,
+			Fields: map[string][]string{
+				"email": {"Enter a valid email address."},
+			},
+		})
+		if err != nil {
+			t.Errorf("write error response: %v", err)
+		}
+	}))
+	request := httptest.NewRequest(http.MethodPost, "/", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+	var body httpx.ErrorResponse
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if body.Code != "INVALID_EMAIL" || body.Message != "Enter a valid email address." || body.Retryable {
+		t.Fatalf("error response = %#v", body)
+	}
+	if len(body.Fields["email"]) != 1 || body.Fields["email"][0] != "Enter a valid email address." {
+		t.Fatalf("fields = %#v", body.Fields)
+	}
+	if body.RequestID == "" || body.RequestID != response.Header().Get(httpx.RequestIDHeader) {
+		t.Fatalf("request_id = %q, header = %q", body.RequestID, response.Header().Get(httpx.RequestIDHeader))
 	}
 }
