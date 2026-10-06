@@ -18,3 +18,7 @@
 # Go build and coverage output
 *.test
 coverage.out
+
+# This repository has one Go module; do not create a root workspace.
+/go.work
+/go.work.sum
