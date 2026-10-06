@@ -49,6 +49,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
+      - name: Test local and CI setup
+        run: make test-setup
+
       - name: Run backend unit tests in Docker
         run: make test-api
 

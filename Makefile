@@ -3,7 +3,7 @@ SOURCE_ENV ?=
 
 .PHONY: install dev dev-reset dev-prepare dev-web dev-api down logs \
 	db-migrate-up db-migrate-down db-seed db-seed-local build \
-	lint lint-web lint-api typecheck test test-web test-api test-integration check
+	lint lint-web lint-api typecheck test test-setup test-web test-api test-integration check
 
 install:
 	npm install
@@ -76,7 +76,10 @@ lint-api:
 typecheck:
 	npm run typecheck:web
 
-test: test-web test-api
+test: test-setup test-web test-api
+
+test-setup:
+	./scripts/test/local-setup_test.sh
 
 test-web:
 	npm run test:web

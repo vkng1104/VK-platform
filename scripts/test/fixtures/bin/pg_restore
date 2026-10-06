@@ -1,0 +1,9 @@
+#!/bin/sh
+
+set -eu
+
+printf 'pg_restore' >>"$CALL_LOG"
+for argument in "$@"; do
+  printf '\t%s' "$argument" >>"$CALL_LOG"
+done
+printf '\n' >>"$CALL_LOG"
