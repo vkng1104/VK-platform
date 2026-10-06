@@ -64,6 +64,8 @@ POST /api/v1/email-verifications/{id}/verify
 
 The start request accepts an email and the supported `restricted_resource_access` purpose. Codes expire after five minutes, allow five attempts, enforce resend and destination/requester/global throttles, and can succeed only once.
 
+Verification-email copy lives under `apps/api/internal/platform/mail/email_templates/`. Subject, plain-text, and HTML files use Go template fields such as `{{ .Code }}` and `{{ .ExpiresAt }}` and are embedded in the API binary at build time, so deployment does not require mounting template files.
+
 ## Seed local data from another environment
 
 Set one or both read-only source URLs in the ignored `.env` file:

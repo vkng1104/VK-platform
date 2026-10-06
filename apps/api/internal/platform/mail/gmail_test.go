@@ -24,7 +24,7 @@ func TestBuildVerificationMessageCreatesPlainTextAndHTMLParts(t *testing.T) {
 		To:        "visitor@example.com",
 		Code:      "123456",
 		ExpiresAt: time.Date(2026, time.October, 6, 9, 5, 0, 0, time.UTC),
-	})
+	}, newTestEmailRenderer(t))
 	if err != nil {
 		t.Fatalf("buildVerificationMessage() error = %v", err)
 	}
@@ -120,6 +120,7 @@ func TestGmailSenderPostsBase64URLMessage(t *testing.T) {
 		client:      client,
 		fromAddress: "owner@gmail.com",
 		endpoint:    "https://gmail.example/gmail/v1/users/me/messages/send",
+		renderer:    newTestEmailRenderer(t),
 	}
 	err := sender.SendVerificationCode(context.Background(), emailverification.EmailMessage{
 		To:        "visitor@example.com",
@@ -159,7 +160,12 @@ func TestGmailSenderMapsStatusWithoutResponseBody(t *testing.T) {
 					Header:     make(http.Header),
 				}, nil
 			})}
-			sender := &GmailSender{client: client, fromAddress: "owner@gmail.com", endpoint: "https://gmail.example/send"}
+			sender := &GmailSender{
+				client:      client,
+				fromAddress: "owner@gmail.com",
+				endpoint:    "https://gmail.example/send",
+				renderer:    newTestEmailRenderer(t),
+			}
 			err := sender.SendVerificationCode(context.Background(), validEmailMessage())
 			if !errors.Is(err, test.wantErr) {
 				t.Fatalf("SendVerificationCode() error = %v, want %v", err, test.wantErr)
@@ -177,7 +183,12 @@ func TestGmailSenderHidesTransportErrorDetails(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, errors.New("refresh_token=secret-value")
 	})}
-	sender := &GmailSender{client: client, fromAddress: "owner@gmail.com", endpoint: "https://example.com/send"}
+	sender := &GmailSender{
+		client:      client,
+		fromAddress: "owner@gmail.com",
+		endpoint:    "https://example.com/send",
+		renderer:    newTestEmailRenderer(t),
+	}
 
 	err := sender.SendVerificationCode(context.Background(), validEmailMessage())
 	if !errors.Is(err, ErrGmailUnavailable) {
@@ -196,7 +207,7 @@ func TestBuildVerificationMessageRejectsHeaderAndCodeInjection(t *testing.T) {
 		{To: "visitor@example.com", Code: "12\n456", ExpiresAt: time.Now()},
 	}
 	for _, message := range tests {
-		if _, err := buildVerificationMessage("owner@gmail.com", message); err == nil {
+		if _, err := buildVerificationMessage("owner@gmail.com", message, newTestEmailRenderer(t)); err == nil {
 			t.Fatalf("buildVerificationMessage(%#v) accepted injection", message)
 		}
 	}
@@ -230,4 +241,14 @@ func validEmailMessage() emailverification.EmailMessage {
 		Code:      "123456",
 		ExpiresAt: time.Date(2026, time.October, 6, 9, 5, 0, 0, time.UTC),
 	}
+}
+
+func newTestEmailRenderer(t *testing.T) *verificationEmailRenderer {
+	t.Helper()
+
+	renderer, err := newVerificationEmailRenderer()
+	if err != nil {
+		t.Fatalf("newVerificationEmailRenderer() error = %v", err)
+	}
+	return renderer
 }

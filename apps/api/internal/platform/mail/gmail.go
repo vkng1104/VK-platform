@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -46,6 +45,7 @@ type GmailSender struct {
 	client      *http.Client
 	fromAddress string
 	endpoint    string
+	renderer    *verificationEmailRenderer
 }
 
 func NewGmailSender(configuration GmailConfig) (*GmailSender, error) {
@@ -65,11 +65,16 @@ func NewGmailSender(configuration GmailConfig) (*GmailSender, error) {
 	})
 	client := oauth2.NewClient(context.Background(), tokenSource)
 	client.Timeout = gmailTimeout
+	renderer, err := newVerificationEmailRenderer()
+	if err != nil {
+		return nil, fmt.Errorf("%w: load embedded email templates: %v", ErrGmailConfiguration, err)
+	}
 
 	return &GmailSender{
 		client:      client,
 		fromAddress: configuration.FromAddress,
 		endpoint:    gmailSendEndpoint,
+		renderer:    renderer,
 	}, nil
 }
 
@@ -77,11 +82,11 @@ func (sender *GmailSender) SendVerificationCode(
 	ctx context.Context,
 	message emailverification.EmailMessage,
 ) error {
-	if sender == nil || sender.client == nil {
+	if sender == nil || sender.client == nil || sender.renderer == nil {
 		return ErrGmailConfiguration
 	}
 
-	rawMessage, err := buildVerificationMessage(sender.fromAddress, message)
+	rawMessage, err := buildVerificationMessage(sender.fromAddress, message, sender.renderer)
 	if err != nil {
 		return err
 	}
@@ -126,6 +131,7 @@ func (sender *GmailSender) SendVerificationCode(
 func buildVerificationMessage(
 	fromAddress string,
 	message emailverification.EmailMessage,
+	renderer *verificationEmailRenderer,
 ) ([]byte, error) {
 	from, err := exactMailbox(fromAddress)
 	if err != nil {
@@ -139,17 +145,13 @@ func buildVerificationMessage(
 		return nil, errors.New("verification email code is invalid")
 	}
 
-	expiresAt := message.ExpiresAt.UTC().Format("15:04 MST")
-	plainText := fmt.Sprintf(
-		"Your VK Platform verification code is %s.\n\nThis code expires at %s. If you did not request it, you can ignore this email.\n",
-		message.Code,
-		expiresAt,
-	)
-	htmlText := fmt.Sprintf(
-		"<p>Your VK Platform verification code is:</p><p><strong>%s</strong></p><p>This code expires at %s.</p><p>If you did not request it, you can ignore this email.</p>",
-		html.EscapeString(message.Code),
-		html.EscapeString(expiresAt),
-	)
+	rendered, err := renderer.Render(verificationEmailTemplateData{
+		Code:      message.Code,
+		ExpiresAt: message.ExpiresAt.UTC().Format("15:04 MST"),
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	var body bytes.Buffer
 	multipartWriter := multipart.NewWriter(&body)
@@ -161,7 +163,7 @@ func buildVerificationMessage(
 	if err != nil {
 		return nil, fmt.Errorf("create plain-text verification email: %w", err)
 	}
-	if _, err := io.WriteString(plainPart, plainText); err != nil {
+	if _, err := io.WriteString(plainPart, rendered.PlainText); err != nil {
 		return nil, fmt.Errorf("write plain-text verification email: %w", err)
 	}
 
@@ -173,7 +175,7 @@ func buildVerificationMessage(
 	if err != nil {
 		return nil, fmt.Errorf("create HTML verification email: %w", err)
 	}
-	if _, err := io.WriteString(htmlPart, htmlText); err != nil {
+	if _, err := io.WriteString(htmlPart, rendered.HTML); err != nil {
 		return nil, fmt.Errorf("write HTML verification email: %w", err)
 	}
 	if err := multipartWriter.Close(); err != nil {
@@ -183,7 +185,7 @@ func buildVerificationMessage(
 	var raw bytes.Buffer
 	fmt.Fprintf(&raw, "From: %s\r\n", from.String())
 	fmt.Fprintf(&raw, "To: %s\r\n", to.String())
-	fmt.Fprint(&raw, "Subject: Your VK Platform verification code\r\n")
+	fmt.Fprintf(&raw, "Subject: %s\r\n", rendered.Subject)
 	fmt.Fprint(&raw, "MIME-Version: 1.0\r\n")
 	fmt.Fprintf(&raw, "Content-Type: multipart/alternative; boundary=%q\r\n", multipartWriter.Boundary())
 	fmt.Fprint(&raw, "\r\n")
