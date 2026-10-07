@@ -17,15 +17,15 @@ export function HomeHero() {
         <div className="mt-10 flex flex-wrap gap-4">
           <Link
             className="rounded-full bg-sky-300 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-200 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-300"
-            href="/projects"
+            href="/experience"
           >
-            Explore projects
+            Explore experience
           </Link>
           <Link
             className="rounded-full border border-white/15 px-6 py-3 text-sm font-medium text-slate-200 transition hover:border-sky-300/60 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-300"
-            href="/status"
+            href="/projects"
           >
-            View system status
+            View projects
           </Link>
         </div>
       </div>

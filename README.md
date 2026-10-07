@@ -4,7 +4,7 @@ VK Platform is a systems-focused engineering portfolio. The monorepo contains a 
 
 ## Applications
 
-- `apps/web` — Next.js portfolio with project pages and a service status page.
+- `apps/web` — Next.js portfolio with project, public experience, gated CV, and service status pages.
 - `apps/api` — Go HTTP API with health, project-catalog, and reusable email-verification domains.
 
 ## Requirements
@@ -33,7 +33,7 @@ For later starts, keep the current database data while applying any new migratio
 make dev
 ```
 
-The frontend is available at `http://localhost:3000`, the API at `http://localhost:8080`, and PostgreSQL at `localhost:5434` by default. Use `make down` to stop the stack and `make logs` to follow its logs.
+The frontend is available at `http://localhost:3000`, public experience at `http://localhost:3000/experience`, verified CV access at `http://localhost:3000/cv`, the API at `http://localhost:8080`, and PostgreSQL at `localhost:5434` by default. In a second terminal, use `make dev-monitor` to follow only backend logs while testing, `make logs` to follow every service, or `make down` to stop the stack.
 
 The API never runs migrations automatically. Compose runs the migration command as a separate one-shot process before application startup.
 
@@ -65,6 +65,21 @@ POST /api/v1/email-verifications/{id}/verify
 The start request accepts an email and the supported `restricted_resource_access` purpose. Codes expire after five minutes, allow five attempts, enforce resend and destination/requester/global throttles, and can succeed only once.
 
 Verification-email copy lives under `apps/api/internal/platform/mail/email_templates/`. Subject, plain-text, and HTML files use Go template fields such as `{{ .Code }}` and `{{ .ExpiresAt }}` and are embedded in the API binary at build time, so deployment does not require mounting template files.
+
+## Experience and verified CV access
+
+`/experience` renders approved public professional content from `internal/content/cv/public/profile.json`. The `/cv` route never stores, renders, proxies, or downloads the CV document. It reveals a configured public Google Drive URL only after the visitor completes the reusable email OTP flow.
+
+Configure these server-only values in the ignored `.env` file:
+
+```dotenv
+CV_ACCESS_SECRET=replace-with-at-least-32-random-characters
+CV_GOOGLE_DRIVE_URL=https://drive.google.com/file/d/your-public-file-id/view
+```
+
+`CV_GOOGLE_DRIVE_URL` must use HTTPS and a supported `drive.google.com/file/d/...` or `drive.google.com/open?id=...` form. Never prefix either variable with `NEXT_PUBLIC_`, commit the real Drive URL, or include it in public content. The signed access cookie expires after 30 minutes and contains no email address, OTP, Drive URL, or personal data.
+
+After verification, the dialog exposes Copy and Open controls plus an optional link to VirusTotal's URL scanner. The application does not automatically submit the CV URL to VirusTotal or any other third party.
 
 ## API error contract
 

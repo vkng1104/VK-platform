@@ -15,6 +15,18 @@ make -n dev >/dev/null
 make -n dev-reset >/dev/null
 make -n db-seed-local SOURCE_ENV=development >/dev/null
 
+monitor_command="$(make -n dev-monitor)"
+case "$monitor_command" in
+  *"docker compose logs --follow api"*) ;;
+  *) fail "dev-monitor does not follow backend logs" ;;
+esac
+
+grep -Fq 'npm run dev --workspace @vk-platform/web -- --hostname 0.0.0.0' docker-compose.yml ||
+  fail "the Compose web service does not forward Next.js arguments correctly"
+if grep -Fq 'npm run dev:web -- --hostname' docker-compose.yml; then
+  fail "the Compose web service still uses the broken nested npm argument forwarding"
+fi
+
 if git ls-files --error-unmatch go.work >/dev/null 2>&1; then
   fail "go.work is still tracked"
 fi
