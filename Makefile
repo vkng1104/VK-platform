@@ -1,7 +1,7 @@
 TEST_COMPOSE_PROJECT ?= vk-platform-test
 SOURCE_ENV ?=
 
-.PHONY: install dev dev-reset dev-prepare dev-web dev-api down logs \
+.PHONY: install dev dev-reset dev-prepare dev-web dev-api dev-monitor down logs \
 	db-migrate-up db-migrate-down db-seed db-seed-local build \
 	lint lint-web lint-api typecheck test test-setup test-web test-api test-integration check
 
@@ -29,6 +29,9 @@ dev-web:
 
 dev-api:
 	cd apps/api && go run ./cmd/server
+
+dev-monitor:
+	docker compose logs --follow api
 
 down:
 	docker compose down

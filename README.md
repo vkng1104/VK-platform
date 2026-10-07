@@ -33,7 +33,7 @@ For later starts, keep the current database data while applying any new migratio
 make dev
 ```
 
-The frontend is available at `http://localhost:3000`, public experience at `http://localhost:3000/experience`, verified CV access at `http://localhost:3000/cv`, the API at `http://localhost:8080`, and PostgreSQL at `localhost:5434` by default. Use `make down` to stop the stack and `make logs` to follow its logs.
+The frontend is available at `http://localhost:3000`, public experience at `http://localhost:3000/experience`, verified CV access at `http://localhost:3000/cv`, the API at `http://localhost:8080`, and PostgreSQL at `localhost:5434` by default. In a second terminal, use `make dev-monitor` to follow only backend logs while testing, `make logs` to follow every service, or `make down` to stop the stack.
 
 The API never runs migrations automatically. Compose runs the migration command as a separate one-shot process before application startup.
 

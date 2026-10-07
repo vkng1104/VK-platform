@@ -67,7 +67,7 @@ services:
     command:
       - /bin/sh
       - -c
-      - npm ci && npm run dev:web -- --hostname 0.0.0.0
+      - npm ci && npm run dev --workspace @vk-platform/web -- --hostname 0.0.0.0
     environment:
       API_BASE_URL: http://api:8080
       CV_ACCESS_SECRET: ${CV_ACCESS_SECRET:-}
