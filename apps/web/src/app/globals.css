@@ -27,12 +27,12 @@ body {
   color: #020617;
 }
 
-.project-content {
+.markdown-content {
   color: #cbd5e1;
   line-height: 1.8;
 }
 
-.project-content h2 {
+.markdown-content h2 {
   margin-top: 2.5rem;
   color: #f8fafc;
   font-size: 1.5rem;
@@ -40,32 +40,80 @@ body {
   letter-spacing: -0.025em;
 }
 
-.project-content h2:first-child {
+.markdown-content h2:first-child {
   margin-top: 0;
 }
 
-.project-content p,
-.project-content ul {
+.markdown-content h3 {
+  margin-top: 2rem;
+  color: #f8fafc;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.markdown-content p,
+.markdown-content ol,
+.markdown-content ul,
+.markdown-content pre,
+.markdown-content blockquote {
   margin-top: 1rem;
 }
 
-.project-content ul {
-  list-style: disc;
+.markdown-content ol,
+.markdown-content ul {
   padding-left: 1.5rem;
 }
 
-.project-content li + li {
+.markdown-content ul {
+  list-style: disc;
+}
+
+.markdown-content ol {
+  list-style: decimal;
+}
+
+.markdown-content li + li {
   margin-top: 0.5rem;
 }
 
-.project-content a {
+.markdown-content a {
   color: #7dd3fc;
   text-decoration: underline;
   text-underline-offset: 0.2em;
 }
 
-.project-content a:hover {
+.markdown-content a:hover {
   color: #bae6fd;
+}
+
+.markdown-content code {
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 0.4rem;
+  background: rgb(15 23 42 / 75%);
+  padding: 0.1rem 0.35rem;
+  color: #e0f2fe;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.markdown-content pre {
+  overflow-x: auto;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 1rem;
+  background: rgb(15 23 42 / 85%);
+  padding: 1rem;
+}
+
+.markdown-content pre code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.markdown-content blockquote {
+  border-left: 3px solid #38bdf8;
+  padding-left: 1rem;
+  color: #94a3b8;
 }
 
 .cv-access-dialog::backdrop {

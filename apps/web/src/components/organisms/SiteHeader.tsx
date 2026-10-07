@@ -4,6 +4,8 @@ const navigation = [
   { href: "/", label: "Home" },
   { href: "/experience", label: "Experience" },
   { href: "/projects", label: "Projects" },
+  { href: "/knowledge", label: "Knowledge" },
+  { href: "/blog", label: "Notes" },
   { href: "/cv", label: "CV" },
   { href: "/status", label: "System status" },
 ];

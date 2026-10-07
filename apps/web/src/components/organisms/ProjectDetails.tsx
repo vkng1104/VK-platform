@@ -1,8 +1,8 @@
 import Link from "next/link";
-import ReactMarkdown from "react-markdown";
 
 import type { ProjectDetail } from "@/features/projects/model";
 
+import { MarkdownContent } from "../molecules/MarkdownContent";
 import { TechnologyTag } from "../atoms/TechnologyTag";
 
 export interface ProjectDetailsProps {
@@ -31,8 +31,8 @@ export function ProjectDetails({ project }: Readonly<ProjectDetailsProps>) {
             {project.summary}
           </p>
 
-          <div className="project-content mt-14 border-t border-white/10 pt-10">
-            <ReactMarkdown>{project.contentMarkdown}</ReactMarkdown>
+          <div className="mt-14 border-t border-white/10 pt-10">
+            <MarkdownContent content={project.contentMarkdown} />
           </div>
         </div>
 

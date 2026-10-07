@@ -1,0 +1,22 @@
+{
+  "notes": [
+    {
+      "slug": "designing-reusable-email-verification",
+      "title": "Designing Reusable Email Verification Without Hiding Authorization Inside It",
+      "summary": "How VK Platform separates mailbox proof, delivery infrastructure, abuse controls, and the feature-specific decision to reveal a restricted resource.",
+      "status": "published",
+      "published_at": "2026-10-08",
+      "updated_at": null,
+      "tags": [
+        "Go",
+        "API design",
+        "Security"
+      ],
+      "topic_slugs": [
+        "email-verification",
+        "api-design",
+        "postgresql"
+      ]
+    }
+  ]
+}

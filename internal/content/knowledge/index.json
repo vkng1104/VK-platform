@@ -1,0 +1,72 @@
+{
+  "topics": [
+    {
+      "slug": "api-design",
+      "title": "API Design",
+      "summary": "Explicit transport contracts, stable errors, and clear layer boundaries for HTTP services that remain understandable as they grow.",
+      "category": "backend",
+      "status": "published",
+      "concepts": [
+        "Contract-first thinking",
+        "Strict decoding",
+        "Stable errors",
+        "Request tracing"
+      ],
+      "related_topic_slugs": [
+        "email-verification",
+        "postgresql"
+      ],
+      "related_projects": [
+        {
+          "slug": "vk-platform",
+          "title": "VK Platform"
+        }
+      ],
+      "display_order": 10
+    },
+    {
+      "slug": "email-verification",
+      "title": "Email Verification",
+      "summary": "Purpose-bound, short-lived mailbox verification with explicit abuse controls and a clean boundary between identity proof and authorization.",
+      "category": "backend",
+      "status": "published",
+      "concepts": [
+        "Purpose binding",
+        "One-time challenges",
+        "Rate limiting",
+        "Provider isolation"
+      ],
+      "related_topic_slugs": [
+        "postgresql"
+      ],
+      "related_projects": [
+        {
+          "slug": "vk-platform",
+          "title": "VK Platform"
+        }
+      ],
+      "display_order": 20
+    },
+    {
+      "slug": "postgresql",
+      "title": "PostgreSQL",
+      "summary": "Relational persistence built around explicit schemas, reversible migrations, query-shaped indexes, and real database integration tests.",
+      "category": "data",
+      "status": "published",
+      "concepts": [
+        "Schema invariants",
+        "Reversible migrations",
+        "Transactions",
+        "Integration testing"
+      ],
+      "related_topic_slugs": [],
+      "related_projects": [
+        {
+          "slug": "vk-platform",
+          "title": "VK Platform"
+        }
+      ],
+      "display_order": 10
+    }
+  ]
+}
