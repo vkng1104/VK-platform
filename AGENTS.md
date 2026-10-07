@@ -16,5 +16,5 @@ Keep this file small. Load the relevant repository skill for detailed workflow g
 - Follow `DESIGN.md` for frontend Atomic Design boundaries and backend modular-monolith request flow.
 - When the branch is complete and verified, prepare a concise PR title and a bullet-based PR body that follows `.github/pull_request_template.md`, then push the branch to `origin`.
 - Never open or merge a pull request unless the user explicitly asks. The user owns PR creation by default.
-- Store every new AI-authored plan at `plans/<Mon-YYYY>/<Weekday>-<DD>-<kebab-case-purpose>.md`. Use the plan's local creation date in `Asia/Ho_Chi_Minh`.
+- Store every new AI-authored plan at `plans/<Mon-YYYY>/<DD>-<Weekday>-<kebab-case-purpose>.md`. Use the plan's local creation date in `Asia/Ho_Chi_Minh`.
 - `plans/` and `docs/` are intentionally Git-ignored but remain available locally. Do not force-add their contents unless the user explicitly asks.
