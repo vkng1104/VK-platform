@@ -2,8 +2,9 @@ import "server-only";
 
 import { readFile } from "node:fs/promises";
 
+import { repositoryPath } from "@/lib/repository-path.server";
+
 import type { PublicProfile } from "./model";
-import { repositoryPath } from "./content-path.server";
 import { sortExperienceNewestFirst } from "./format";
 import { parsePublicProfile } from "./validation";
 

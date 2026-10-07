@@ -4,7 +4,7 @@ VK Platform is a systems-focused engineering portfolio. The monorepo contains a 
 
 ## Applications
 
-- `apps/web` — Next.js portfolio with project, public experience, gated CV, and service status pages.
+- `apps/web` — Next.js portfolio with project, public experience, gated CV, knowledge graph, engineering notes, and service status pages.
 - `apps/api` — Go HTTP API with health, project-catalog, and reusable email-verification domains.
 
 ## Requirements
@@ -33,7 +33,15 @@ For later starts, keep the current database data while applying any new migratio
 make dev
 ```
 
-The frontend is available at `http://localhost:3000`, public experience at `http://localhost:3000/experience`, verified CV access at `http://localhost:3000/cv`, the API at `http://localhost:8080`, and PostgreSQL at `localhost:5434` by default. In a second terminal, use `make dev-monitor` to follow only backend logs while testing, `make logs` to follow every service, or `make down` to stop the stack.
+The frontend is available at `http://localhost:3000`, public experience at `http://localhost:3000/experience`, verified CV access at `http://localhost:3000/cv`, the knowledge graph at `http://localhost:3000/knowledge`, engineering notes at `http://localhost:3000/blog`, the API at `http://localhost:8080`, and PostgreSQL at `localhost:5434` by default. In a second terminal, use `make dev-monitor` to follow only backend logs while testing, `make logs` to follow every service, or `make down` to stop the stack.
+
+## Knowledge and engineering notes
+
+Public knowledge topics live in `internal/content/knowledge` and engineering notes live in `internal/content/blog`. Each content type has a JSON metadata index and slug-named Markdown bodies. Slugs use lowercase kebab-case, publication dates use `YYYY-MM-DD`, and body paths are derived from validated slugs rather than configured in metadata.
+
+Use `status: "draft"` while content is not ready. Draft topics and notes are excluded from indexes, detail routes, generated metadata, static route parameters, relationship counts, and homepage discovery. A published topic may reference only other published topics, and a published note may reference only published topics. Topic relationships are authored once and displayed in both directions; note-to-topic backlinks are derived automatically.
+
+Repository content is trusted Markdown, but raw HTML and arbitrary components are not rendered. Run the normal frontend test, type-check, lint, and build commands after editing content because malformed metadata, dangling relationships, missing bodies, or invalid dates fail validation.
 
 The API never runs migrations automatically. Compose runs the migration command as a separate one-shot process before application startup.
 
