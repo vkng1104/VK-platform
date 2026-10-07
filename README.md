@@ -37,6 +37,17 @@ The frontend is available at `http://localhost:3000`, public experience at `http
 
 The API never runs migrations automatically. Compose runs the migration command as a separate one-shot process before application startup.
 
+## API documentation
+
+The Go API serves its OpenAPI 3.1 contract and a self-contained Swagger UI from the same binary:
+
+- Swagger UI: `http://localhost:8080/api/docs/`
+- OpenAPI YAML: `http://localhost:8080/api/docs/openapi.yaml`
+
+The contract describes the complete public API. Email-verification routes appear in the documentation even when that feature is disabled by local server configuration. Swagger UI permits `Try it out` only for GET operations; mutating email-verification requests must be sent deliberately with another HTTP client after the feature is configured.
+
+Update `apps/api/internal/platform/apidocs/openapi.yaml` and its contract tests whenever a public handler contract changes.
+
 ## Email OTP verification
 
 Email verification is disabled by default. When enabled, the Go API creates short-lived, purpose-bound challenges in PostgreSQL and sends six-digit codes through the Gmail API. It does not grant access to a resource by itself; a consuming feature decides what a successful verification authorizes.
