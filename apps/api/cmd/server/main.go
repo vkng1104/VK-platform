@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/vkng1104/VK-platform/apps/api/internal/emailverification"
+	"github.com/vkng1104/VK-platform/apps/api/internal/platform/apidocs"
 	"github.com/vkng1104/VK-platform/apps/api/internal/platform/config"
 	"github.com/vkng1104/VK-platform/apps/api/internal/platform/database"
 	"github.com/vkng1104/VK-platform/apps/api/internal/platform/httpserver"
@@ -62,7 +63,7 @@ func main() {
 		slog.Error("construct project handler failed", "error", err)
 		os.Exit(1)
 	}
-	registrars := []httpserver.RouteRegistrar{projectHandler}
+	registrars := []httpserver.RouteRegistrar{apidocs.NewHandler(), projectHandler}
 
 	if configuration.EmailVerification.Enabled {
 		emailRepository, err := emailverification.NewPostgreSQLRepository(pool)
