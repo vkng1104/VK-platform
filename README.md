@@ -39,6 +39,8 @@ The frontend is available at `http://localhost:3000`, public experience at `http
 
 Neither service runs migrations automatically. Compose runs each service's migration command as a separate one-shot process before application startup.
 
+Both backend services keep PostgreSQL credentials separate from their connection URLs. The Go resource API uses `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD`; IAM uses the equivalent `IAM_DATABASE_*` variables. Local examples are defined in `.env.example`, while deployed passwords should come from the platform's secret store rather than a committed environment file.
+
 ## API documentation
 
 Each backend service serves its own OpenAPI 3.1 contract and Swagger UI:

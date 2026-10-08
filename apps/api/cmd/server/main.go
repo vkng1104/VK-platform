@@ -37,7 +37,7 @@ func main() {
 	startupContext, cancelStartup := context.WithTimeout(context.Background(), startupTimeout)
 	defer cancelStartup()
 
-	pool, err := database.Open(startupContext, configuration.DatabaseURL)
+	pool, err := database.Open(startupContext, configuration.Database)
 	if err != nil {
 		slog.Error("open API database failed", "error", err)
 		os.Exit(1)
