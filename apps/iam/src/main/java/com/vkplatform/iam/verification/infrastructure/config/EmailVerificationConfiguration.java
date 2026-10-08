@@ -5,6 +5,7 @@ import com.vkplatform.iam.verification.application.port.out.EmailVerificationRep
 import com.vkplatform.iam.verification.application.port.out.VerificationCodeGenerator;
 import com.vkplatform.iam.verification.application.port.out.VerificationCodeHasher;
 import com.vkplatform.iam.verification.application.port.out.VerificationEmailSender;
+import com.vkplatform.iam.verification.application.service.EmailVerificationCleanupService;
 import com.vkplatform.iam.verification.application.service.EmailVerificationService;
 import com.vkplatform.iam.verification.domain.VerificationPolicy;
 import com.vkplatform.iam.verification.infrastructure.crypto.HmacVerificationCodeHasher;
@@ -13,6 +14,7 @@ import com.vkplatform.iam.verification.infrastructure.mail.GmailVerificationEmai
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
@@ -23,6 +25,7 @@ import java.time.Duration;
 import tools.jackson.databind.ObjectMapper;
 
 @Configuration(proxyBeanMethods = false)
+@EnableScheduling
 public class EmailVerificationConfiguration {
     @Bean
     SecureRandom secureRandom() {
@@ -67,13 +70,43 @@ public class EmailVerificationConfiguration {
     }
 
     @Bean
+    VerificationPolicy verificationPolicy() {
+        return VerificationPolicy.defaults();
+    }
+
+    @Bean
+    EmailVerificationCleanupService emailVerificationCleanupService(
+            EmailVerificationRepository repository,
+            Clock clock,
+            EmailVerificationProperties properties,
+            VerificationPolicy policy
+    ) {
+        Duration retention = properties.cleanupRetention();
+        if (retention == null || retention.compareTo(policy.globalWindow()) < 0) {
+            throw new IllegalStateException(
+                    "EMAIL_VERIFICATION_RETENTION must be at least " + policy.globalWindow()
+            );
+        }
+        if (properties.cleanupBatchSize() <= 0) {
+            throw new IllegalStateException("EMAIL_VERIFICATION_CLEANUP_BATCH_SIZE must be positive");
+        }
+        return new EmailVerificationCleanupService(
+                repository,
+                clock,
+                retention,
+                properties.cleanupBatchSize()
+        );
+    }
+
+    @Bean
     @ConditionalOnProperty(name = "iam.email.provider", havingValue = "gmail")
     EmailVerificationOperations emailVerificationOperations(
             EmailVerificationRepository repository,
             VerificationEmailSender sender,
             Clock clock,
             VerificationCodeGenerator codeGenerator,
-            VerificationCodeHasher hasher
+            VerificationCodeHasher hasher,
+            VerificationPolicy policy
     ) {
         return new EmailVerificationService(
                 repository,
@@ -81,7 +114,7 @@ public class EmailVerificationConfiguration {
                 clock,
                 codeGenerator,
                 hasher,
-                VerificationPolicy.defaults()
+                policy
         );
     }
 

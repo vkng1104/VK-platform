@@ -134,6 +134,36 @@ public class JpaEmailVerificationRepository implements EmailVerificationReposito
         return VerificationAttempt.success(VerificationPurpose.fromStoredValue(challenge.purpose()));
     }
 
+    @Override
+    @Transactional
+    public int deleteTerminalBefore(Instant cutoff, int batchSize) {
+        return entityManager.createNativeQuery("""
+                        DELETE FROM iam_identity.email_verification_challenges challenge
+                        WHERE challenge.id IN (
+                            SELECT candidate.id
+                            FROM iam_identity.email_verification_challenges candidate
+                            WHERE candidate.expires_at < :cutoff
+                               OR candidate.verified_at < :cutoff
+                               OR candidate.invalidated_at < :cutoff
+                               OR (
+                                   candidate.delivery_status = 'failed'
+                                   AND candidate.created_at < :cutoff
+                               )
+                            ORDER BY COALESCE(
+                                candidate.verified_at,
+                                candidate.invalidated_at,
+                                candidate.expires_at,
+                                candidate.created_at
+                            ), candidate.id
+                            LIMIT :batchSize
+                            FOR UPDATE SKIP LOCKED
+                        )
+                        """)
+                .setParameter("cutoff", cutoff)
+                .setParameter("batchSize", batchSize)
+                .executeUpdate();
+    }
+
     private Instant retryAtForEmail(VerificationChallenge challenge, VerificationPolicy policy) {
         return retryAt(
                 entityManager.createQuery("""

@@ -9,7 +9,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "email_verification_challenges")
+@Table(name = "email_verification_challenges", schema = "iam_identity")
 public class EmailVerificationChallengeEntity {
     @Id
     private UUID id;
