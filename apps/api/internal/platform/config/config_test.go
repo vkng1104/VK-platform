@@ -5,10 +5,11 @@ import (
 	"testing"
 
 	"github.com/vkng1104/VK-platform/apps/api/internal/platform/config"
+	"github.com/vkng1104/VK-platform/apps/api/internal/platform/database"
 )
 
 func TestLoadUsesDefaultAddress(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://example")
+	setDatabaseEnvironment(t)
 	t.Setenv("API_ADDR", "")
 
 	configuration, err := config.Load()
@@ -18,30 +19,87 @@ func TestLoadUsesDefaultAddress(t *testing.T) {
 	if configuration.Address != ":8080" {
 		t.Fatalf("Address = %q, want :8080", configuration.Address)
 	}
-	if configuration.DatabaseURL != "postgres://example" {
-		t.Fatalf("DatabaseURL = %q", configuration.DatabaseURL)
+	wantDatabase := database.Settings{
+		URL:      "postgres://database.example/vk_platform",
+		Username: "api-user",
+		Password: "api-password",
 	}
+	assertDatabaseSettings(t, configuration.Database, wantDatabase)
 }
 
 func TestLoadTrimsConfiguredValues(t *testing.T) {
-	t.Setenv("DATABASE_URL", " postgres://example ")
+	t.Setenv("DATABASE_URL", " postgres://database.example/vk_platform ")
+	t.Setenv("DATABASE_USERNAME", " api-user ")
+	t.Setenv("DATABASE_PASSWORD", " api-password ")
 	t.Setenv("API_ADDR", " :9090 ")
 
 	configuration, err := config.Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if configuration.Address != ":9090" || configuration.DatabaseURL != "postgres://example" {
-		t.Fatalf("configuration = %#v", configuration)
+	wantDatabase := database.Settings{
+		URL:      "postgres://database.example/vk_platform",
+		Username: "api-user",
+		Password: "api-password",
+	}
+	if configuration.Address != ":9090" {
+		t.Fatalf("Address = %q, want :9090", configuration.Address)
+	}
+	assertDatabaseSettings(t, configuration.Database, wantDatabase)
+}
+
+func TestLoadDatabaseRequiresEveryValue(t *testing.T) {
+	tests := []struct {
+		name        string
+		environment string
+		wantError   error
+	}{
+		{
+			name:        "URL",
+			environment: "DATABASE_URL",
+			wantError:   config.ErrMissingDatabaseURL,
+		},
+		{
+			name:        "username",
+			environment: "DATABASE_USERNAME",
+			wantError:   config.ErrMissingDatabaseUsername,
+		},
+		{
+			name:        "password",
+			environment: "DATABASE_PASSWORD",
+			wantError:   config.ErrMissingDatabasePassword,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			setDatabaseEnvironment(t)
+			t.Setenv(test.environment, " ")
+
+			_, err := config.LoadDatabase()
+			if !errors.Is(err, test.wantError) {
+				t.Fatalf("LoadDatabase() error = %v, want %v", err, test.wantError)
+			}
+		})
 	}
 }
 
-func TestLoadRequiresDatabaseURL(t *testing.T) {
-	t.Setenv("DATABASE_URL", "")
-	t.Setenv("API_ADDR", "")
+func setDatabaseEnvironment(t *testing.T) {
+	t.Helper()
+	t.Setenv("DATABASE_URL", "postgres://database.example/vk_platform")
+	t.Setenv("DATABASE_USERNAME", "api-user")
+	t.Setenv("DATABASE_PASSWORD", "api-password")
+}
 
-	_, err := config.Load()
-	if !errors.Is(err, config.ErrMissingDatabaseURL) {
-		t.Fatalf("Load() error = %v", err)
+func assertDatabaseSettings(t *testing.T, got database.Settings, want database.Settings) {
+	t.Helper()
+	if got.URL != want.URL {
+		t.Errorf("database URL = %q, want %q", got.URL, want.URL)
+	}
+	if got.Username != want.Username {
+		t.Errorf("database username = %q, want %q", got.Username, want.Username)
+	}
+	if got.Password != want.Password {
+		t.Error("database password did not match")
 	}
 }
