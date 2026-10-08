@@ -1,0 +1,3 @@
+Your VK Platform verification code is {{CODE}}.
+
+This code expires at {{EXPIRES_AT}}. If you did not request it, you can ignore this email.

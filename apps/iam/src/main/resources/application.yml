@@ -1,0 +1,51 @@
+spring:
+  application:
+    name: iam
+  datasource:
+    url: ${IAM_DATABASE_URL:jdbc:postgresql://localhost:5436/vk_platform_iam}
+    username: ${IAM_DATABASE_USERNAME:vk_platform_iam}
+    password: ${IAM_DATABASE_PASSWORD:vk_platform_iam}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 1
+      connection-timeout: 5000
+  flyway:
+    enabled: false
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+      fail-on-trailing-tokens: true
+    default-property-inclusion: non_null
+
+server:
+  port: ${IAM_PORT:8081}
+  shutdown: graceful
+  max-http-request-header-size: 1MB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+iam:
+  email:
+    provider: ${EMAIL_PROVIDER:disabled}
+    from-address: ${EMAIL_FROM_ADDRESS:}
+    gmail-client-id: ${GMAIL_CLIENT_ID:}
+    gmail-client-secret: ${GMAIL_CLIENT_SECRET:}
+    gmail-refresh-token: ${GMAIL_REFRESH_TOKEN:}
+    otp-pepper: ${EMAIL_OTP_PEPPER:}
+    rate-limit-secret: ${EMAIL_RATE_LIMIT_SECRET:}

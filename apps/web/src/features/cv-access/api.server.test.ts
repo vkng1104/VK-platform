@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -13,6 +13,36 @@ const baseUrl = "https://api.example.test";
 const challengeID = "123e4567-e89b-42d3-a456-426614174000";
 
 describe("CV email verification API", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("uses the IAM service base URL by default", async () => {
+    vi.stubEnv("IAM_BASE_URL", "https://iam.example.test");
+    vi.stubEnv("API_BASE_URL", "https://legacy-api.example.test");
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      Response.json(
+        {
+          verification: {
+            id: challengeID,
+            masked_email: "r******r@example.com",
+            expires_at: "2026-10-07T01:05:00Z",
+            resend_after: "2026-10-07T01:01:00Z",
+          },
+        },
+        { status: 202 },
+      ),
+    );
+
+    await startEmailVerification("reviewer@example.com", {
+      fetcher: fetcher as typeof fetch,
+    });
+
+    expect(fetcher.mock.calls[0][0].toString()).toBe(
+      "https://iam.example.test/api/v1/email-verifications",
+    );
+  });
+
   it("starts a purpose-bound challenge with the exact wire contract", async () => {
     const fetcher = vi.fn<typeof fetch>(async () =>
       Response.json(

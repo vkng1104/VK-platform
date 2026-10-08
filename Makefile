@@ -1,28 +1,31 @@
 TEST_COMPOSE_PROJECT ?= vk-platform-test
 SOURCE_ENV ?=
 
-.PHONY: install dev dev-reset dev-prepare dev-web dev-api dev-monitor down logs \
-	db-migrate-up db-migrate-down db-seed db-seed-local build \
-	lint lint-web lint-api typecheck test test-setup test-web test-api test-integration check
+.PHONY: install dev dev-reset dev-prepare dev-web dev-api dev-iam dev-monitor down logs \
+	db-migrate-up db-migrate-down db-migrate-iam-up db-seed db-seed-local build \
+	lint lint-web lint-api lint-iam typecheck test test-setup test-web test-api test-iam \
+	test-integration check
 
 install:
 	npm install
 
 dev-prepare:
-	docker compose build api
-	docker compose up --detach --wait postgres
+	docker compose build api iam
+	docker compose up --detach --wait postgres iam-postgres
 	docker compose run --rm migrate
+	docker compose run --rm iam-migrate
 
 dev: dev-prepare
-	docker compose up api web
+	docker compose up api iam web
 
 dev-reset:
 	docker compose down --volumes --remove-orphans
-	docker compose build api
-	docker compose up --detach --wait postgres
+	docker compose build api iam
+	docker compose up --detach --wait postgres iam-postgres
 	docker compose run --rm migrate
+	docker compose run --rm iam-migrate
 	docker compose run --rm seed
-	docker compose up api web
+	docker compose up api iam web
 
 dev-web:
 	npm run dev:web
@@ -30,8 +33,11 @@ dev-web:
 dev-api:
 	cd apps/api && go run ./cmd/server
 
+dev-iam:
+	cd apps/iam && ./gradlew bootRun
+
 dev-monitor:
-	docker compose logs --follow api
+	docker compose logs --follow api iam
 
 down:
 	docker compose down
@@ -44,6 +50,9 @@ db-migrate-up:
 
 db-migrate-down:
 	cd apps/api && go run ./cmd/migrate down
+
+db-migrate-iam-up:
+	cd apps/iam && ./gradlew migrate
 
 db-seed:
 	cd apps/api && go run ./cmd/seed
@@ -61,8 +70,9 @@ db-seed-local:
 build:
 	npm run build:web
 	docker build --target runtime --tag vk-platform-api:local apps/api
+	docker build --target runtime --tag vk-platform-iam:local apps/iam
 
-lint: lint-web lint-api
+lint: lint-web lint-api lint-iam
 
 lint-web:
 	npm run lint:web
@@ -76,10 +86,13 @@ lint-api:
 		fi
 	cd apps/api && go vet ./...
 
+lint-iam:
+	docker build --target build --tag vk-platform-iam:build apps/iam
+
 typecheck:
 	npm run typecheck:web
 
-test: test-setup test-web test-api
+test: test-setup test-web test-api test-iam
 
 test-setup:
 	./scripts/test/local-setup_test.sh
@@ -90,11 +103,17 @@ test-web:
 test-api:
 	docker build --target test --tag vk-platform-api:test apps/api
 
+test-iam:
+	docker build --target test --tag vk-platform-iam:test apps/iam
+
 test-integration:
 	@status=0; \
-		docker compose --project-name $(TEST_COMPOSE_PROJECT) --profile test build migrate-test backend-integration || status=$$?; \
+		docker compose --project-name $(TEST_COMPOSE_PROJECT) --profile test build migrate-test iam-migrate-test backend-integration iam-integration || status=$$?; \
 		if [ $$status -eq 0 ]; then \
 			docker compose --project-name $(TEST_COMPOSE_PROJECT) --profile test run --rm backend-integration || status=$$?; \
+		fi; \
+		if [ $$status -eq 0 ]; then \
+			docker compose --project-name $(TEST_COMPOSE_PROJECT) --profile test run --rm iam-integration || status=$$?; \
 		fi; \
 		docker compose --project-name $(TEST_COMPOSE_PROJECT) --profile test down --volumes --remove-orphans; \
 		exit $$status
