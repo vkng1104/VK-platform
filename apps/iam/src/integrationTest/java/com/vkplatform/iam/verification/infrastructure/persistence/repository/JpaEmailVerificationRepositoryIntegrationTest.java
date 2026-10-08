@@ -1,6 +1,6 @@
-package com.vkplatform.iam.verification.infrastructure.persistence;
+package com.vkplatform.iam.verification.infrastructure.persistence.repository;
 
-import com.vkplatform.iam.verification.application.EmailVerificationRepository;
+import com.vkplatform.iam.verification.application.port.out.EmailVerificationRepository;
 import com.vkplatform.iam.verification.domain.VerificationChallenge;
 import com.vkplatform.iam.verification.domain.VerificationFailure;
 import com.vkplatform.iam.verification.domain.VerificationPolicy;
@@ -58,6 +58,7 @@ class JpaEmailVerificationRepositoryIntegrationTest {
 
         assertThat(incorrect.verified()).isFalse();
         assertThat(correct.verified()).isTrue();
+        assertThat(correct.purpose()).isEqualTo(VerificationPurpose.RESTRICTED_RESOURCE_ACCESS);
         assertThat(replay.verified()).isFalse();
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT attempt_count FROM email_verification_challenges WHERE id = ?",
@@ -119,8 +120,8 @@ class JpaEmailVerificationRepositoryIntegrationTest {
     }
 
     private static byte[] bytes(int value) {
-        byte[] bytes = new byte[32];
-        Arrays.fill(bytes, (byte) value);
-        return bytes;
+        byte[] result = new byte[32];
+        Arrays.fill(result, (byte) value);
+        return result;
     }
 }
