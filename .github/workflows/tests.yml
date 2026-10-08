@@ -40,10 +40,40 @@ jobs:
       - name: Run frontend tests
         run: make test-web
 
-  backend:
-    name: Backend tests
+  backend-unit:
+    name: ${{ matrix.service }} unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - api
+          - iam
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Run backend unit tests in Docker
+        run: make test-${{ matrix.service }}
+
+  backend-integration:
+    name: Backend integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Run backend integration tests in Docker
+        run: make test-integration
+
+  setup:
+    name: Local and CI setup tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Check out repository
@@ -51,9 +81,3 @@ jobs:
 
       - name: Test local and CI setup
         run: make test-setup
-
-      - name: Run backend unit tests in Docker
-        run: make test-api
-
-      - name: Run backend integration tests in Docker
-        run: make test-integration

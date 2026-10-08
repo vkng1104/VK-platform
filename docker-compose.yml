@@ -15,6 +15,22 @@ services:
       timeout: 3s
       retries: 15
 
+  iam-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: vk_platform_iam
+      POSTGRES_USER: vk_platform_iam
+      POSTGRES_PASSWORD: vk_platform_iam
+    ports:
+      - "${IAM_POSTGRES_PORT:-5436}:5432"
+    volumes:
+      - iam_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vk_platform_iam -d vk_platform_iam"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
   migrate:
     image: vk-platform-api:development
     environment:
@@ -22,6 +38,17 @@ services:
     command: ["go", "run", "./cmd/migrate", "up"]
     depends_on:
       postgres:
+        condition: service_healthy
+
+  iam-migrate:
+    image: vk-platform-iam:development
+    environment:
+      IAM_DATABASE_URL: jdbc:postgresql://iam-postgres:5432/vk_platform_iam
+      IAM_DATABASE_USERNAME: vk_platform_iam
+      IAM_DATABASE_PASSWORD: vk_platform_iam
+    command: ["./gradlew", "migrate", "--no-daemon"]
+    depends_on:
+      iam-postgres:
         condition: service_healthy
 
   seed:
@@ -41,13 +68,6 @@ services:
     environment:
       API_ADDR: :8080
       DATABASE_URL: postgres://vk_platform:vk_platform@postgres:5432/vk_platform?sslmode=disable
-      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-disabled}
-      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-}
-      GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
-      GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET:-}
-      GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN:-}
-      EMAIL_OTP_PEPPER: ${EMAIL_OTP_PEPPER:-}
-      EMAIL_RATE_LIMIT_SECRET: ${EMAIL_RATE_LIMIT_SECRET:-}
     ports:
       - "${API_PORT:-8080}:8080"
     volumes:
@@ -61,6 +81,37 @@ services:
       timeout: 3s
       retries: 15
 
+  iam:
+    image: vk-platform-iam:development
+    build:
+      context: ./apps/iam
+      target: development
+    environment:
+      IAM_PORT: 8081
+      IAM_DATABASE_URL: jdbc:postgresql://iam-postgres:5432/vk_platform_iam
+      IAM_DATABASE_USERNAME: vk_platform_iam
+      IAM_DATABASE_PASSWORD: vk_platform_iam
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-disabled}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-}
+      GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
+      GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET:-}
+      GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN:-}
+      EMAIL_OTP_PEPPER: ${EMAIL_OTP_PEPPER:-}
+      EMAIL_RATE_LIMIT_SECRET: ${EMAIL_RATE_LIMIT_SECRET:-}
+    ports:
+      - "${IAM_PORT:-8081}:8081"
+    volumes:
+      - ./apps/iam:/app
+      - iam_gradle_cache:/root/.gradle
+    depends_on:
+      iam-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8081/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
   web:
     image: node:22-alpine
     working_dir: /workspace
@@ -70,6 +121,7 @@ services:
       - npm ci && npm run dev --workspace @vk-platform/web -- --hostname 0.0.0.0
     environment:
       API_BASE_URL: http://api:8080
+      IAM_BASE_URL: http://iam:8081
       CV_ACCESS_SECRET: ${CV_ACCESS_SECRET:-}
       CV_GOOGLE_DRIVE_URL: ${CV_GOOGLE_DRIVE_URL:-}
     ports:
@@ -80,6 +132,8 @@ services:
       - web_npm_cache:/root/.npm
     depends_on:
       api:
+        condition: service_healthy
+      iam:
         condition: service_healthy
 
   db-seed-local:
@@ -114,6 +168,23 @@ services:
       timeout: 3s
       retries: 15
 
+  iam-postgres-test:
+    image: postgres:17-alpine
+    profiles: ["test"]
+    environment:
+      POSTGRES_DB: vk_platform_iam_test
+      POSTGRES_USER: vk_platform_iam
+      POSTGRES_PASSWORD: vk_platform_iam
+    ports:
+      - "${IAM_POSTGRES_TEST_PORT:-5438}:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vk_platform_iam -d vk_platform_iam_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
   migrate-test:
     image: vk-platform-api:test-development
     build:
@@ -127,6 +198,21 @@ services:
       postgres-test:
         condition: service_healthy
 
+  iam-migrate-test:
+    image: vk-platform-iam:test-development
+    build:
+      context: ./apps/iam
+      target: development
+    profiles: ["test"]
+    environment:
+      IAM_DATABASE_URL: jdbc:postgresql://iam-postgres-test:5432/vk_platform_iam_test
+      IAM_DATABASE_USERNAME: vk_platform_iam
+      IAM_DATABASE_PASSWORD: vk_platform_iam
+    command: ["./gradlew", "migrate", "--no-daemon"]
+    depends_on:
+      iam-postgres-test:
+        condition: service_healthy
+
   backend-integration:
     image: vk-platform-api:integration-test
     build:
@@ -135,12 +221,28 @@ services:
     profiles: ["test"]
     environment:
       TEST_DATABASE_URL: postgres://vk_platform:vk_platform@postgres-test:5432/vk_platform_test?sslmode=disable
-      EMAIL_PROVIDER: disabled
     depends_on:
       migrate-test:
         condition: service_completed_successfully
 
+  iam-integration:
+    image: vk-platform-iam:integration-test
+    build:
+      context: ./apps/iam
+      target: integration-test
+    profiles: ["test"]
+    environment:
+      IAM_TEST_DATABASE_URL: jdbc:postgresql://iam-postgres-test:5432/vk_platform_iam_test
+      IAM_DATABASE_USERNAME: vk_platform_iam
+      IAM_DATABASE_PASSWORD: vk_platform_iam
+      EMAIL_PROVIDER: disabled
+    depends_on:
+      iam-migrate-test:
+        condition: service_completed_successfully
+
 volumes:
   postgres_data:
+  iam_postgres_data:
+  iam_gradle_cache:
   web_node_modules:
   web_npm_cache:

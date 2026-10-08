@@ -41,8 +41,8 @@ jobs:
       - name: Type-check frontend
         run: make typecheck
 
-  backend:
-    name: Backend lint
+  api:
+    name: API lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -56,5 +56,17 @@ jobs:
           go-version-file: apps/api/go.mod
           cache-dependency-path: apps/api/go.sum
 
-      - name: Lint backend
+      - name: Lint API
         run: make lint-api
+
+  iam:
+    name: IAM compile check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Compile IAM in Docker
+        run: make lint-iam

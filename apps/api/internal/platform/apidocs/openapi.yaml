@@ -2,10 +2,7 @@ openapi: 3.1.2
 info:
   title: VK Platform API
   version: v1
-  description: |
-    Public HTTP API for VK Platform. Email verification proves short-lived
-    control of a mailbox; it is not authentication and grants no resource
-    access by itself.
+  description: Public HTTP API for VK Platform resource domains.
 servers:
   - url: /
     description: Current API origin
@@ -14,10 +11,6 @@ tags:
     description: Service-level operations.
   - name: Projects
     description: Published portfolio project operations.
-  - name: Email Verification
-    description: |
-      Purpose-bound email verification operations. These routes are available
-      only when the server's email-verification feature is configured and enabled.
 paths:
   /healthz:
     get:
@@ -78,7 +71,7 @@ paths:
           required: true
           schema:
             type: string
-            pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
           example: vk-platform
       responses:
         "200":
@@ -96,92 +89,6 @@ paths:
           $ref: "#/components/responses/ProjectNotFound"
         "500":
           $ref: "#/components/responses/InternalError"
-  /api/v1/email-verifications:
-    post:
-      operationId: startEmailVerification
-      tags:
-        - Email Verification
-      summary: Start an email verification challenge
-      description: |
-        Creates a short-lived challenge and sends a six-digit code. The request
-        body is limited to 4 KiB and must contain exactly one JSON object with no
-        unknown fields. This operation is documented but disabled for execution
-        in the hosted Swagger UI.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/StartEmailVerificationRequest"
-            example:
-              email: visitor@example.com
-              purpose: restricted_resource_access
-      responses:
-        "202":
-          description: The challenge was created and its code was accepted for delivery.
-          headers:
-            X-Request-ID:
-              $ref: "#/components/headers/RequestID"
-            Cache-Control:
-              $ref: "#/components/headers/NoStore"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EmailChallengeResponse"
-        "400":
-          $ref: "#/components/responses/StartEmailVerificationBadRequest"
-        "429":
-          $ref: "#/components/responses/EmailVerificationRateLimited"
-        "503":
-          $ref: "#/components/responses/EmailDeliveryUnavailable"
-        "500":
-          $ref: "#/components/responses/EmailVerificationInternalError"
-  /api/v1/email-verifications/{id}/verify:
-    post:
-      operationId: verifyEmailChallenge
-      tags:
-        - Email Verification
-      summary: Verify an email challenge
-      description: |
-        Verifies an active challenge once. The request body is limited to 1 KiB
-        and must contain exactly one JSON object with no unknown fields. This
-        operation is documented but disabled for execution in the hosted Swagger UI.
-      parameters:
-        - name: id
-          in: path
-          description: Verification challenge UUID returned by the start operation.
-          required: true
-          schema:
-            type: string
-            format: uuid
-            pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-          example: 123e4567-e89b-42d3-a456-426614174000
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/VerifyEmailChallengeRequest"
-            example:
-              code: "123456"
-      responses:
-        "200":
-          description: The challenge was verified successfully.
-          headers:
-            X-Request-ID:
-              $ref: "#/components/headers/RequestID"
-            Cache-Control:
-              $ref: "#/components/headers/NoStore"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/VerifiedEmailResponse"
-        "400":
-          $ref: "#/components/responses/VerifyEmailChallengeBadRequest"
-        "422":
-          $ref: "#/components/responses/InvalidOrExpiredCode"
-        "500":
-          $ref: "#/components/responses/EmailVerificationInternalError"
 components:
   headers:
     RequestID:
@@ -189,22 +96,8 @@ components:
       required: true
       schema:
         type: string
-        pattern: "^[0-9a-f]{32}$"
+        pattern: ^[0-9a-f]{32}$
       example: 0a1b2c3d4e5f67890123456789abcdef
-    NoStore:
-      description: Prevents storage of email-verification responses.
-      required: true
-      schema:
-        type: string
-        const: no-store
-      example: no-store
-    RetryAfter:
-      description: Seconds to wait before requesting another verification challenge.
-      required: true
-      schema:
-        type: integer
-        minimum: 1
-      example: 60
   responses:
     InvalidFeaturedFilter:
       description: The featured filter was malformed, duplicated, or accompanied by another query parameter.
@@ -265,150 +158,6 @@ components:
             message: Something went wrong. Try again later or contact support with the request ID.
             request_id: 0a1b2c3d4e5f67890123456789abcdef
             retryable: true
-    StartEmailVerificationBadRequest:
-      description: The JSON body, email, or verification purpose is invalid.
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
-        Cache-Control:
-          $ref: "#/components/headers/NoStore"
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/PublicError"
-          examples:
-            invalidBody:
-              summary: Invalid request body
-              value:
-                code: INVALID_REQUEST_BODY
-                message: The request body is invalid.
-                request_id: 0a1b2c3d4e5f67890123456789abcdef
-                retryable: false
-            invalidEmail:
-              summary: Invalid email
-              value:
-                code: INVALID_EMAIL
-                message: Enter a valid email address.
-                request_id: 0a1b2c3d4e5f67890123456789abcdef
-                retryable: false
-                fields:
-                  email:
-                    - Enter a valid email address.
-            invalidPurpose:
-              summary: Unsupported verification purpose
-              value:
-                code: INVALID_VERIFICATION_PURPOSE
-                message: The requested verification purpose is not supported.
-                request_id: 0a1b2c3d4e5f67890123456789abcdef
-                retryable: false
-                fields:
-                  purpose:
-                    - Choose a supported verification purpose.
-    EmailVerificationRateLimited:
-      description: Another challenge cannot be requested yet.
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
-        Cache-Control:
-          $ref: "#/components/headers/NoStore"
-        Retry-After:
-          $ref: "#/components/headers/RetryAfter"
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/PublicError"
-          example:
-            code: EMAIL_VERIFICATION_RATE_LIMITED
-            message: Please wait before requesting another verification code.
-            request_id: 0a1b2c3d4e5f67890123456789abcdef
-            retryable: true
-    EmailDeliveryUnavailable:
-      description: The verification email could not be delivered.
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
-        Cache-Control:
-          $ref: "#/components/headers/NoStore"
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/PublicError"
-          example:
-            code: EMAIL_DELIVERY_UNAVAILABLE
-            message: We could not send the verification email. Try again later.
-            request_id: 0a1b2c3d4e5f67890123456789abcdef
-            retryable: true
-    VerifyEmailChallengeBadRequest:
-      description: The challenge ID, code, or JSON body is invalid.
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
-        Cache-Control:
-          $ref: "#/components/headers/NoStore"
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/PublicError"
-          examples:
-            invalidBody:
-              summary: Invalid request body
-              value:
-                code: INVALID_REQUEST_BODY
-                message: The request body is invalid.
-                request_id: 0a1b2c3d4e5f67890123456789abcdef
-                retryable: false
-            invalidID:
-              summary: Invalid challenge identifier
-              value:
-                code: INVALID_VERIFICATION_ID
-                message: The verification request is invalid. Request a new code and try again.
-                request_id: 0a1b2c3d4e5f67890123456789abcdef
-                retryable: false
-                fields:
-                  id:
-                    - Use the verification ID returned when the code was requested.
-            invalidCode:
-              summary: Invalid verification code format
-              value:
-                code: INVALID_CODE_FORMAT
-                message: Enter the six-digit verification code.
-                request_id: 0a1b2c3d4e5f67890123456789abcdef
-                retryable: false
-                fields:
-                  code:
-                    - Enter exactly six digits.
-    InvalidOrExpiredCode:
-      description: The challenge is missing, incorrect, expired, consumed, or attempt-exhausted.
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
-        Cache-Control:
-          $ref: "#/components/headers/NoStore"
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/PublicError"
-          example:
-            code: INVALID_OR_EXPIRED_CODE
-            message: The verification code is invalid or expired. Request a new code and try again.
-            request_id: 0a1b2c3d4e5f67890123456789abcdef
-            retryable: false
-    EmailVerificationInternalError:
-      description: An unexpected internal failure occurred.
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
-        Cache-Control:
-          $ref: "#/components/headers/NoStore"
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/PublicError"
-          example:
-            code: INTERNAL_ERROR
-            message: Something went wrong. Try again later or contact support with the request ID.
-            request_id: 0a1b2c3d4e5f67890123456789abcdef
-            retryable: true
   schemas:
     HealthResponse:
       type: object
@@ -439,7 +188,7 @@ components:
       properties:
         slug:
           type: string
-          pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
         title:
           type: string
         summary:
@@ -481,7 +230,7 @@ components:
       properties:
         slug:
           type: string
-          pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
         title:
           type: string
         summary:
@@ -526,84 +275,6 @@ components:
       properties:
         project:
           $ref: "#/components/schemas/ProjectDetail"
-    VerificationPurpose:
-      type: string
-      enum:
-        - restricted_resource_access
-    StartEmailVerificationRequest:
-      type: object
-      additionalProperties: false
-      required:
-        - email
-        - purpose
-      properties:
-        email:
-          type: string
-          format: email
-          maxLength: 254
-        purpose:
-          $ref: "#/components/schemas/VerificationPurpose"
-    VerifyEmailChallengeRequest:
-      type: object
-      additionalProperties: false
-      required:
-        - code
-      properties:
-        code:
-          type: string
-          pattern: "^[0-9]{6}$"
-    EmailChallenge:
-      type: object
-      additionalProperties: false
-      required:
-        - id
-        - masked_email
-        - expires_at
-        - resend_after
-      properties:
-        id:
-          type: string
-          format: uuid
-        masked_email:
-          type: string
-        expires_at:
-          type: string
-          format: date-time
-        resend_after:
-          type: string
-          format: date-time
-    EmailChallengeResponse:
-      type: object
-      additionalProperties: false
-      required:
-        - verification
-      properties:
-        verification:
-          $ref: "#/components/schemas/EmailChallenge"
-    VerifiedEmail:
-      type: object
-      additionalProperties: false
-      required:
-        - id
-        - purpose
-        - verified_at
-      properties:
-        id:
-          type: string
-          format: uuid
-        purpose:
-          $ref: "#/components/schemas/VerificationPurpose"
-        verified_at:
-          type: string
-          format: date-time
-    VerifiedEmailResponse:
-      type: object
-      additionalProperties: false
-      required:
-        - verification
-      properties:
-        verification:
-          $ref: "#/components/schemas/VerifiedEmail"
     PublicError:
       type: object
       additionalProperties: false
@@ -619,7 +290,7 @@ components:
           type: string
         request_id:
           type: string
-          pattern: "^[0-9a-f]{32}$"
+          pattern: ^[0-9a-f]{32}$
         retryable:
           type: boolean
         fields:

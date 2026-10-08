@@ -1,6 +1,6 @@
 import "server-only";
 
-const defaultApiBaseUrl = "http://localhost:8080";
+const defaultIamBaseUrl = "http://localhost:8081";
 const defaultTimeoutMs = 5_000;
 
 type Fetcher = typeof fetch;
@@ -138,7 +138,7 @@ async function postJson<T>(
   path: string,
   body: Record<string, string>,
   {
-    baseUrl = process.env.API_BASE_URL ?? defaultApiBaseUrl,
+    baseUrl = process.env.IAM_BASE_URL ?? defaultIamBaseUrl,
     fetcher = fetch,
     timeoutMs = defaultTimeoutMs,
   }: ApiRequestOptions = {},
