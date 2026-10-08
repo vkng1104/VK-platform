@@ -1,0 +1,8 @@
+{
+  "verification": {
+    "id": "123e4567-e89b-42d3-a456-426614174000",
+    "masked_email": "r****r@example.com",
+    "expires_at": "2026-10-08T02:05:00Z",
+    "resend_after": "2026-10-08T02:01:00Z"
+  }
+}
