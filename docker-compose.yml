@@ -232,7 +232,7 @@ services:
       target: integration-test
     profiles: ["test"]
     environment:
-      IAM_TEST_DATABASE_URL: jdbc:postgresql://iam-postgres-test:5432/vk_platform_iam_test
+      IAM_DATABASE_URL: jdbc:postgresql://iam-postgres-test:5432/vk_platform_iam_test
       IAM_DATABASE_USERNAME: vk_platform_iam
       IAM_DATABASE_PASSWORD: vk_platform_iam
       EMAIL_PROVIDER: disabled

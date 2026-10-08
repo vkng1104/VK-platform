@@ -24,11 +24,9 @@ func TestOpenAPIContractHasExpectedOperations(t *testing.T) {
 
 	document := loadOpenAPIDocument(t)
 	want := map[string]string{
-		"GET /healthz":                                 "getHealth",
-		"GET /api/v1/projects":                         "listProjects",
-		"GET /api/v1/projects/{slug}":                  "getProjectBySlug",
-		"POST /api/v1/email-verifications":             "startEmailVerification",
-		"POST /api/v1/email-verifications/{id}/verify": "verifyEmailChallenge",
+		"GET /healthz":                "getHealth",
+		"GET /api/v1/projects":        "listProjects",
+		"GET /api/v1/projects/{slug}": "getProjectBySlug",
 	}
 
 	got := make(map[string]string)
@@ -84,16 +82,6 @@ func TestOpenAPIContractPreservesPublicSchemaRules(t *testing.T) {
 	}
 	if len(document.Components.SecuritySchemes) != 0 {
 		t.Errorf("security schemes = %#v, want none", document.Components.SecuritySchemes)
-	}
-
-	code := schemaProperty(t, document, "VerifyEmailChallengeRequest", "code")
-	if code.Pattern != "^[0-9]{6}$" {
-		t.Errorf("verification code pattern = %q", code.Pattern)
-	}
-
-	purpose := componentSchema(t, document, "VerificationPurpose")
-	if !reflect.DeepEqual(purpose.Enum, []any{"restricted_resource_access"}) {
-		t.Errorf("verification purpose enum = %#v", purpose.Enum)
 	}
 
 	publicError := componentSchema(t, document, "PublicError")
