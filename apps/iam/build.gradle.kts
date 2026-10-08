@@ -71,7 +71,7 @@ tasks.register<JavaExec>("migrate") {
 	description = "Applies IAM database migrations."
 	group = "application"
 	classpath = sourceSets.main.get().runtimeClasspath
-	mainClass = "com.vkplatform.iam.platform.database.MigrationApplication"
+	mainClass = "com.vkplatform.iam.bootstrap.MigrationApplication"
 }
 
 tasks.withType<Test> {

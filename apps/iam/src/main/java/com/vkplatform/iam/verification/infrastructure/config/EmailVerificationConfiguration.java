@@ -1,10 +1,14 @@
 package com.vkplatform.iam.verification.infrastructure.config;
 
-import tools.jackson.databind.ObjectMapper;
-import com.vkplatform.iam.verification.application.EmailVerificationRepository;
-import com.vkplatform.iam.verification.application.EmailVerificationService;
-import com.vkplatform.iam.verification.application.VerificationEmailSender;
+import com.vkplatform.iam.verification.api.EmailVerificationOperations;
+import com.vkplatform.iam.verification.application.port.out.EmailVerificationRepository;
+import com.vkplatform.iam.verification.application.port.out.VerificationCodeGenerator;
+import com.vkplatform.iam.verification.application.port.out.VerificationCodeHasher;
+import com.vkplatform.iam.verification.application.port.out.VerificationEmailSender;
+import com.vkplatform.iam.verification.application.service.EmailVerificationService;
 import com.vkplatform.iam.verification.domain.VerificationPolicy;
+import com.vkplatform.iam.verification.infrastructure.crypto.HmacVerificationCodeHasher;
+import com.vkplatform.iam.verification.infrastructure.crypto.SecureVerificationCodeGenerator;
 import com.vkplatform.iam.verification.infrastructure.mail.GmailVerificationEmailSender;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -16,13 +20,10 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 
+import tools.jackson.databind.ObjectMapper;
+
 @Configuration(proxyBeanMethods = false)
 public class EmailVerificationConfiguration {
-    @Bean
-    Clock iamClock() {
-        return Clock.systemUTC();
-    }
-
     @Bean
     SecureRandom secureRandom() {
         return new SecureRandom();
@@ -31,7 +32,7 @@ public class EmailVerificationConfiguration {
     @Bean
     @ConditionalOnProperty(name = "iam.email.provider", havingValue = "gmail")
     VerificationEmailSender gmailVerificationEmailSender(
-            IamEmailProperties properties,
+            EmailVerificationProperties properties,
             ObjectMapper objectMapper
     ) {
         requireConfigured(properties.fromAddress(), "EMAIL_FROM_ADDRESS");
@@ -50,22 +51,36 @@ public class EmailVerificationConfiguration {
 
     @Bean
     @ConditionalOnProperty(name = "iam.email.provider", havingValue = "gmail")
-    EmailVerificationService emailVerificationService(
+    VerificationCodeGenerator verificationCodeGenerator(SecureRandom random) {
+        return new SecureVerificationCodeGenerator(random);
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "iam.email.provider", havingValue = "gmail")
+    VerificationCodeHasher verificationCodeHasher(EmailVerificationProperties properties) {
+        requireSecret(properties.otpPepper(), "EMAIL_OTP_PEPPER");
+        requireSecret(properties.rateLimitSecret(), "EMAIL_RATE_LIMIT_SECRET");
+        return new HmacVerificationCodeHasher(
+                properties.otpPepper().getBytes(StandardCharsets.UTF_8),
+                properties.rateLimitSecret().getBytes(StandardCharsets.UTF_8)
+        );
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "iam.email.provider", havingValue = "gmail")
+    EmailVerificationOperations emailVerificationOperations(
             EmailVerificationRepository repository,
             VerificationEmailSender sender,
             Clock clock,
-            SecureRandom random,
-            IamEmailProperties properties
+            VerificationCodeGenerator codeGenerator,
+            VerificationCodeHasher hasher
     ) {
-        requireSecret(properties.otpPepper(), "EMAIL_OTP_PEPPER");
-        requireSecret(properties.rateLimitSecret(), "EMAIL_RATE_LIMIT_SECRET");
         return new EmailVerificationService(
                 repository,
                 sender,
                 clock,
-                random,
-                properties.otpPepper().getBytes(StandardCharsets.UTF_8),
-                properties.rateLimitSecret().getBytes(StandardCharsets.UTF_8),
+                codeGenerator,
+                hasher,
                 VerificationPolicy.defaults()
         );
     }

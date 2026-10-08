@@ -1,6 +1,5 @@
 package com.vkplatform.iam.platform.web;
 
-import com.vkplatform.iam.platform.RequestContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

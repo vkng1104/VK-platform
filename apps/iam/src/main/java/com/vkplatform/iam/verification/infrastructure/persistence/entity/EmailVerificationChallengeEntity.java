@@ -1,6 +1,5 @@
-package com.vkplatform.iam.verification.infrastructure.persistence;
+package com.vkplatform.iam.verification.infrastructure.persistence.entity;
 
-import com.vkplatform.iam.verification.domain.VerificationChallenge;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -11,7 +10,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "email_verification_challenges")
-class EmailVerificationChallengeEntity {
+public class EmailVerificationChallengeEntity {
     @Id
     private UUID id;
 
@@ -57,57 +56,67 @@ class EmailVerificationChallengeEntity {
     protected EmailVerificationChallengeEntity() {
     }
 
-    static EmailVerificationChallengeEntity pending(VerificationChallenge challenge) {
-        EmailVerificationChallengeEntity entity = new EmailVerificationChallengeEntity();
-        entity.id = challenge.id();
-        entity.purpose = challenge.purpose().wireValue();
-        entity.emailFingerprint = challenge.emailFingerprint().clone();
-        entity.requesterFingerprint = challenge.requesterFingerprint() == null
-                ? null
-                : challenge.requesterFingerprint().clone();
-        entity.otpDigest = challenge.otpDigest().clone();
-        entity.attemptCount = 0;
-        entity.maxAttempts = (short) challenge.maxAttempts();
-        entity.expiresAt = challenge.expiresAt();
-        entity.resendNotBefore = challenge.resendNotBefore();
-        entity.deliveryStatus = "pending";
-        entity.createdAt = challenge.createdAt();
-        return entity;
+    public EmailVerificationChallengeEntity(
+            UUID id,
+            String purpose,
+            byte[] emailFingerprint,
+            byte[] requesterFingerprint,
+            byte[] otpDigest,
+            short maxAttempts,
+            Instant expiresAt,
+            Instant resendNotBefore,
+            Instant createdAt
+    ) {
+        this.id = id;
+        this.purpose = purpose;
+        this.emailFingerprint = emailFingerprint.clone();
+        this.requesterFingerprint = requesterFingerprint == null ? null : requesterFingerprint.clone();
+        this.otpDigest = otpDigest.clone();
+        this.attemptCount = 0;
+        this.maxAttempts = maxAttempts;
+        this.expiresAt = expiresAt;
+        this.resendNotBefore = resendNotBefore;
+        this.deliveryStatus = "pending";
+        this.createdAt = createdAt;
     }
 
-    byte[] otpDigest() {
-        return otpDigest;
+    public String purpose() {
+        return purpose;
     }
 
-    short attemptCount() {
+    public byte[] otpDigest() {
+        return otpDigest.clone();
+    }
+
+    public short attemptCount() {
         return attemptCount;
     }
 
-    short maxAttempts() {
+    public short maxAttempts() {
         return maxAttempts;
     }
 
-    Instant expiresAt() {
+    public Instant expiresAt() {
         return expiresAt;
     }
 
-    String deliveryStatus() {
+    public String deliveryStatus() {
         return deliveryStatus;
     }
 
-    Instant verifiedAt() {
+    public Instant verifiedAt() {
         return verifiedAt;
     }
 
-    Instant invalidatedAt() {
+    public Instant invalidatedAt() {
         return invalidatedAt;
     }
 
-    void recordFailedAttempt() {
+    public void recordFailedAttempt() {
         attemptCount++;
     }
 
-    void markVerified(Instant at) {
+    public void markVerified(Instant at) {
         verifiedAt = at;
     }
 }

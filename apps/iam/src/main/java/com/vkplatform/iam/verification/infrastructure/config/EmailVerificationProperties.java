@@ -3,7 +3,7 @@ package com.vkplatform.iam.verification.infrastructure.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties("iam.email")
-public record IamEmailProperties(
+public record EmailVerificationProperties(
         String provider,
         String fromAddress,
         String gmailClientId,

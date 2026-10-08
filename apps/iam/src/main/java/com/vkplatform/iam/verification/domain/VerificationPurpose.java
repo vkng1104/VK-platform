@@ -21,4 +21,13 @@ public enum VerificationPurpose {
         }
         throw VerificationFailure.invalidPurpose();
     }
+
+    public static VerificationPurpose fromStoredValue(String value) {
+        for (VerificationPurpose purpose : values()) {
+            if (purpose.wireValue.equals(value)) {
+                return purpose;
+            }
+        }
+        throw new IllegalStateException("unsupported stored verification purpose");
+    }
 }

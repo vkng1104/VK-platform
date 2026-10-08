@@ -14,4 +14,24 @@ public record VerificationChallenge(
         Instant resendNotBefore,
         Instant createdAt
 ) {
+    public VerificationChallenge {
+        emailFingerprint = emailFingerprint.clone();
+        requesterFingerprint = requesterFingerprint == null ? null : requesterFingerprint.clone();
+        otpDigest = otpDigest.clone();
+    }
+
+    @Override
+    public byte[] emailFingerprint() {
+        return emailFingerprint.clone();
+    }
+
+    @Override
+    public byte[] requesterFingerprint() {
+        return requesterFingerprint == null ? null : requesterFingerprint.clone();
+    }
+
+    @Override
+    public byte[] otpDigest() {
+        return otpDigest.clone();
+    }
 }

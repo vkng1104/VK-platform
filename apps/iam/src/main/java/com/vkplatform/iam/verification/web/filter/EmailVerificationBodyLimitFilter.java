@@ -1,4 +1,4 @@
-package com.vkplatform.iam.platform.web;
+package com.vkplatform.iam.verification.web.filter;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ReadListener;

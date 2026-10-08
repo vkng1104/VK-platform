@@ -1,12 +1,14 @@
-package com.vkplatform.iam.verification.infrastructure.persistence;
+package com.vkplatform.iam.verification.infrastructure.persistence.repository;
 
-import com.vkplatform.iam.verification.application.EmailVerificationRepository;
+import com.vkplatform.iam.verification.application.port.out.EmailVerificationRepository;
 import com.vkplatform.iam.verification.domain.VerificationChallenge;
 import com.vkplatform.iam.verification.domain.VerificationFailure;
 import com.vkplatform.iam.verification.domain.VerificationPolicy;
+import com.vkplatform.iam.verification.domain.VerificationPurpose;
+import com.vkplatform.iam.verification.infrastructure.persistence.entity.EmailVerificationChallengeEntity;
+import com.vkplatform.iam.verification.infrastructure.persistence.mapper.EmailVerificationPersistenceMapper;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
-import jakarta.persistence.PersistenceContext;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,8 +22,16 @@ import java.util.UUID;
 public class JpaEmailVerificationRepository implements EmailVerificationRepository {
     private static final long START_ADVISORY_LOCK_ID = 836_472_901L;
 
-    @PersistenceContext
-    private EntityManager entityManager;
+    private final EntityManager entityManager;
+    private final EmailVerificationPersistenceMapper mapper;
+
+    public JpaEmailVerificationRepository(
+            EntityManager entityManager,
+            EmailVerificationPersistenceMapper mapper
+    ) {
+        this.entityManager = entityManager;
+        this.mapper = mapper;
+    }
 
     @Override
     @Transactional
@@ -66,7 +76,7 @@ public class JpaEmailVerificationRepository implements EmailVerificationReposito
                 .setParameter("purpose", challenge.purpose().wireValue())
                 .executeUpdate();
 
-        entityManager.persist(EmailVerificationChallengeEntity.pending(challenge));
+        entityManager.persist(mapper.toPendingEntity(challenge));
     }
 
     @Override
@@ -121,7 +131,7 @@ public class JpaEmailVerificationRepository implements EmailVerificationReposito
         }
 
         challenge.markVerified(now);
-        return VerificationAttempt.success();
+        return VerificationAttempt.success(VerificationPurpose.fromStoredValue(challenge.purpose()));
     }
 
     private Instant retryAtForEmail(VerificationChallenge challenge, VerificationPolicy policy) {

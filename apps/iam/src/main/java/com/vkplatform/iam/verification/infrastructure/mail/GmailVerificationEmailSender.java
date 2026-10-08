@@ -1,6 +1,8 @@
 package com.vkplatform.iam.verification.infrastructure.mail;
 
-import com.vkplatform.iam.verification.application.VerificationEmailSender;
+import com.vkplatform.iam.verification.application.port.out.VerificationEmailSender;
+import com.vkplatform.iam.verification.domain.EmailAddress;
+import com.vkplatform.iam.verification.domain.VerificationCode;
 import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
@@ -60,15 +62,12 @@ public final class GmailVerificationEmailSender implements VerificationEmailSend
     }
 
     @Override
-    public void send(String recipient, String code, Instant expiresAt) {
-        String to = exactMailbox(recipient);
-        if (code == null || !code.matches("^[0-9]{6}$")) {
-            throw new IllegalArgumentException("verification email code is invalid");
-        }
+    public void send(EmailAddress recipient, VerificationCode code, Instant expiresAt) {
+        String to = exactMailbox(recipient.value());
         try {
             String accessToken = fetchAccessToken();
             String raw = Base64.getUrlEncoder().withoutPadding().encodeToString(
-                    buildMessage(to, code, expiresAt).getBytes(StandardCharsets.UTF_8)
+                    buildMessage(to, code.value(), expiresAt).getBytes(StandardCharsets.UTF_8)
             );
             byte[] payload = objectMapper.writeValueAsBytes(Map.of("raw", raw));
             HttpRequest request = HttpRequest.newBuilder(SEND_ENDPOINT)

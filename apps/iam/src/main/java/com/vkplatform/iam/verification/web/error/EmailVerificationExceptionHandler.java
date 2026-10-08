@@ -1,16 +1,17 @@
-package com.vkplatform.iam.verification.api;
+package com.vkplatform.iam.verification.web.error;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.vkplatform.iam.platform.RequestContext;
+import com.vkplatform.iam.platform.web.ApiError;
+import com.vkplatform.iam.platform.web.RequestContext;
 import com.vkplatform.iam.verification.domain.VerificationFailure;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -19,7 +20,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
-@RestControllerAdvice(assignableTypes = EmailVerificationController.class)
+@Order(Ordered.HIGHEST_PRECEDENCE)
+@RestControllerAdvice
 public class EmailVerificationExceptionHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(EmailVerificationExceptionHandler.class);
     private final Clock clock;
@@ -28,21 +30,8 @@ public class EmailVerificationExceptionHandler {
         this.clock = clock;
     }
 
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    ResponseEntity<PublicError> invalidBody(HttpServletRequest request) {
-        return response(
-                request,
-                HttpStatus.BAD_REQUEST,
-                "INVALID_REQUEST_BODY",
-                "The request body is invalid.",
-                false,
-                null,
-                null
-        );
-    }
-
     @ExceptionHandler(VerificationFailure.class)
-    ResponseEntity<PublicError> verificationFailure(
+    ResponseEntity<ApiError> verificationFailure(
             VerificationFailure failure,
             HttpServletRequest request
     ) {
@@ -105,7 +94,11 @@ public class EmailVerificationExceptionHandler {
                 );
             }
             case DELIVERY_UNAVAILABLE -> {
-                LOGGER.warn("Email verification delivery unavailable; request_id={}", requestId(request), failure);
+                LOGGER.warn(
+                        "Email verification delivery unavailable; request_id={}",
+                        RequestContext.requestId(request),
+                        failure
+                );
                 yield response(
                         request,
                         HttpStatus.SERVICE_UNAVAILABLE,
@@ -119,21 +112,7 @@ public class EmailVerificationExceptionHandler {
         };
     }
 
-    @ExceptionHandler(Exception.class)
-    ResponseEntity<PublicError> internal(Exception failure, HttpServletRequest request) {
-        LOGGER.error("Email verification request failed; request_id={}", requestId(request), failure);
-        return response(
-                request,
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "INTERNAL_ERROR",
-                "Something went wrong. Try again later or contact support with the request ID.",
-                true,
-                null,
-                null
-        );
-    }
-
-    private static ResponseEntity<PublicError> response(
+    private static ResponseEntity<ApiError> response(
             HttpServletRequest request,
             HttpStatus status,
             String code,
@@ -146,20 +125,12 @@ public class EmailVerificationExceptionHandler {
         if (retryAfter != null) {
             builder.header(HttpHeaders.RETRY_AFTER, Long.toString(retryAfter));
         }
-        return builder.body(new PublicError(code, message, requestId(request), retryable, fields));
-    }
-
-    private static String requestId(HttpServletRequest request) {
-        Object value = request.getAttribute(RequestContext.REQUEST_ID_ATTRIBUTE);
-        return value == null ? "unknown" : value.toString();
-    }
-
-    record PublicError(
-            String code,
-            String message,
-            @JsonProperty("request_id") String requestId,
-            boolean retryable,
-            Map<String, List<String>> fields
-    ) {
+        return builder.body(new ApiError(
+                code,
+                message,
+                RequestContext.requestId(request),
+                retryable,
+                fields
+        ));
     }
 }

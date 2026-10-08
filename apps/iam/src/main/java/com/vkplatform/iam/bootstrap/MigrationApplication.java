@@ -1,4 +1,4 @@
-package com.vkplatform.iam.platform.database;
+package com.vkplatform.iam.bootstrap;
 
 import org.flywaydb.core.Flyway;
 
