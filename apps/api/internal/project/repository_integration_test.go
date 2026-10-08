@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/vkng1104/VK-platform/apps/api/internal/platform/database"
 	"github.com/vkng1104/VK-platform/apps/api/internal/project"
 )
 
@@ -379,15 +380,25 @@ func seedProjectCatalog(t *testing.T, pool *pgxpool.Pool) {
 func newProjectIntegrationDatabase(t *testing.T, migrate bool) *pgxpool.Pool {
 	t.Helper()
 
-	databaseURL := strings.TrimSpace(os.Getenv("TEST_DATABASE_URL"))
-	if databaseURL == "" {
+	databaseSettings := database.Settings{
+		URL:      strings.TrimSpace(os.Getenv("TEST_DATABASE_URL")),
+		Username: strings.TrimSpace(os.Getenv("TEST_DATABASE_USERNAME")),
+		Password: strings.TrimSpace(os.Getenv("TEST_DATABASE_PASSWORD")),
+	}
+	if databaseSettings.URL == "" {
 		t.Skip("TEST_DATABASE_URL is required for PostgreSQL integration tests")
+	}
+	if databaseSettings.Username == "" {
+		t.Fatal("TEST_DATABASE_USERNAME is required for PostgreSQL integration tests")
+	}
+	if databaseSettings.Password == "" {
+		t.Fatal("TEST_DATABASE_PASSWORD is required for PostgreSQL integration tests")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), integrationOperationTimeout)
 	defer cancel()
 
-	adminConfiguration, err := pgxpool.ParseConfig(databaseURL)
+	adminConfiguration, err := database.ParsePoolConfig(databaseSettings)
 	if err != nil {
 		t.Fatalf("parse TEST_DATABASE_URL: %v", err)
 	}
@@ -421,7 +432,7 @@ func newProjectIntegrationDatabase(t *testing.T, migrate bool) *pgxpool.Pool {
 		adminPool.Close()
 	})
 
-	testConfiguration, err := pgxpool.ParseConfig(databaseURL)
+	testConfiguration, err := database.ParsePoolConfig(databaseSettings)
 	if err != nil {
 		t.Fatalf("parse TEST_DATABASE_URL for isolated pool: %v", err)
 	}

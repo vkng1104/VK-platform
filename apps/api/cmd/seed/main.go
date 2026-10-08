@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,6 +9,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/vkng1104/VK-platform/apps/api/internal/platform/config"
+	"github.com/vkng1104/VK-platform/apps/api/internal/platform/database"
 )
 
 const (
@@ -26,9 +27,9 @@ func main() {
 }
 
 func run() error {
-	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
-	if databaseURL == "" {
-		return errors.New("DATABASE_URL is required")
+	databaseSettings, err := config.LoadDatabase()
+	if err != nil {
+		return err
 	}
 
 	seedPath := strings.TrimSpace(os.Getenv("SEED_PATH"))
@@ -41,7 +42,7 @@ func run() error {
 		return fmt.Errorf("read seed file: %w", err)
 	}
 
-	configuration, err := pgx.ParseConfig(databaseURL)
+	configuration, err := database.ParseConnectionConfig(databaseSettings)
 	if err != nil {
 		return fmt.Errorf("parse database configuration: %w", err)
 	}

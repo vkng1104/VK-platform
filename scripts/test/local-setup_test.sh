@@ -34,6 +34,20 @@ grep -Fq 'context: ./apps/iam' docker-compose.yml ||
   fail "the Compose IAM service is missing"
 grep -Fq 'iam-postgres:' docker-compose.yml ||
   fail "the Compose IAM database is missing"
+if grep -Eq '^[[:space:]]+(DATABASE_URL|TEST_DATABASE_URL): postgres://[^[:space:]]+@' docker-compose.yml; then
+  fail "a Compose API runtime database URL still contains credentials"
+fi
+grep -Fq 'DATABASE_USERNAME: vk_platform' docker-compose.yml ||
+  fail "the Compose API database username is missing"
+grep -Fq 'DATABASE_PASSWORD: vk_platform' docker-compose.yml ||
+  fail "the Compose API database password is missing"
+grep -Fq 'TEST_DATABASE_USERNAME: vk_platform' docker-compose.yml ||
+  fail "the Compose API test database username is missing"
+grep -Fq 'TEST_DATABASE_PASSWORD: vk_platform' docker-compose.yml ||
+  fail "the Compose API test database password is missing"
+if grep -Eq '^(DATABASE_URL|TEST_DATABASE_URL)=postgres://[^[:space:]]+@' .env.example; then
+  fail "an example API runtime database URL still contains credentials"
+fi
 
 if git ls-files --error-unmatch go.work >/dev/null 2>&1; then
   fail "go.work is still tracked"

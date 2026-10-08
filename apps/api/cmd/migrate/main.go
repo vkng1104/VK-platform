@@ -8,8 +8,11 @@ import (
 	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	migratepostgres "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/vkng1104/VK-platform/apps/api/internal/platform/config"
+	"github.com/vkng1104/VK-platform/apps/api/internal/platform/database"
 )
 
 const defaultMigrationsURL = "file://migrations"
@@ -26,9 +29,13 @@ func run(arguments []string) error {
 		return errors.New("usage: go run ./cmd/migrate [up|down]")
 	}
 
-	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
-	if databaseURL == "" {
-		return errors.New("DATABASE_URL is required")
+	databaseSettings, err := config.LoadDatabase()
+	if err != nil {
+		return err
+	}
+	connectionConfiguration, err := database.ParseConnectionConfig(databaseSettings)
+	if err != nil {
+		return err
 	}
 
 	migrationsURL := strings.TrimSpace(os.Getenv("MIGRATIONS_URL"))
@@ -36,8 +43,16 @@ func run(arguments []string) error {
 		migrationsURL = defaultMigrationsURL
 	}
 
-	runner, err := migrate.New(migrationsURL, databaseURL)
+	sqlDatabase := stdlib.OpenDB(*connectionConfiguration)
+	migrationDriver, err := migratepostgres.WithInstance(sqlDatabase, &migratepostgres.Config{})
 	if err != nil {
+		_ = sqlDatabase.Close()
+		return fmt.Errorf("construct migration database: %w", err)
+	}
+
+	runner, err := migrate.NewWithDatabaseInstance(migrationsURL, "postgres", migrationDriver)
+	if err != nil {
+		_ = migrationDriver.Close()
 		return fmt.Errorf("construct migration runner: %w", err)
 	}
 	defer func() {
