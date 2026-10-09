@@ -93,7 +93,7 @@ lint-iam:
 typecheck:
 	npm run typecheck:web
 
-test: test-setup test-web test-api test-iam
+test: test-setup test-persistence test-web test-api test-iam
 
 test-setup:
 	./scripts/test/local-setup_test.sh
@@ -128,7 +128,9 @@ check-persistence-generation:
 check-persistence-boundaries:
 	./scripts/check-persistence-boundaries.sh
 
-test-persistence: check-persistence-boundaries
+test-persistence:
+	./scripts/test/persistence-boundaries_test.sh
+	./scripts/test/persistence-generation_test.sh
 
 check-persistence: check-persistence-boundaries check-persistence-generation
 

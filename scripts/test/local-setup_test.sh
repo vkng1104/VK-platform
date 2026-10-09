@@ -16,6 +16,9 @@ make -n dev-reset >/dev/null
 make -n dev-iam IAM_DATABASE_URL=jdbc:postgresql://example >/dev/null
 make -n db-migrate-iam-up IAM_DATABASE_URL=jdbc:postgresql://example >/dev/null
 make -n db-seed-local SOURCE_ENV=development >/dev/null
+make -n generate-persistence >/dev/null
+make -n check-persistence >/dev/null
+make -n test-persistence >/dev/null
 
 monitor_command="$(make -n dev-monitor)"
 case "$monitor_command" in
@@ -63,6 +66,12 @@ grep -q '^  pull_request:' .github/workflows/lint.yml || fail "PR lint trigger i
 grep -q '^  push:' .github/workflows/lint.yml || fail "master lint trigger is missing"
 grep -q '^          - iam$' .github/workflows/tests.yml || fail "IAM tests are missing from CI"
 grep -q '^  iam:$' .github/workflows/lint.yml || fail "IAM compile checks are missing from CI"
+grep -q '^  persistence:$' .github/workflows/lint.yml || fail "persistence architecture checks are missing from CI"
+grep -Fq 'config/persistence/custom-query-registry.txt' README.md ||
+  fail "the reviewed custom-query registry is not documented"
+if [ -e config/persistence/raw-query-allowlist.txt ]; then
+  fail "the obsolete raw-query allow-list still exists"
+fi
 
 "$repository_root/scripts/test/db-seed-local_test.sh"
 
