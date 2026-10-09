@@ -4,7 +4,8 @@ SOURCE_ENV ?=
 .PHONY: install dev dev-reset dev-prepare dev-web dev-api dev-iam dev-monitor down logs \
 	db-migrate-up db-migrate-down db-migrate-iam-up db-seed db-seed-local build \
 	lint lint-web lint-api lint-iam typecheck test test-setup test-web test-api test-iam \
-	test-integration check
+	test-integration generate-persistence check-persistence-generation \
+	check-persistence-boundaries test-persistence check-persistence check
 
 install:
 	npm install
@@ -118,4 +119,17 @@ test-integration:
 		docker compose --project-name $(TEST_COMPOSE_PROJECT) --profile test down --volumes --remove-orphans; \
 		exit $$status
 
-check: lint typecheck test test-integration build
+generate-persistence:
+	./scripts/generate-persistence.sh
+
+check-persistence-generation:
+	./scripts/check-persistence-generation.sh
+
+check-persistence-boundaries:
+	./scripts/check-persistence-boundaries.sh
+
+test-persistence: check-persistence-boundaries
+
+check-persistence: check-persistence-boundaries check-persistence-generation
+
+check: lint typecheck check-persistence test test-integration build

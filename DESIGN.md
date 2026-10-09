@@ -12,7 +12,7 @@ Next.js route
   -> Go HTTP handler
   -> application service
   -> domain repository interface
-  -> PostgreSQL repository
+  -> ORM-backed PostgreSQL repository adapter
 ```
 
 Transport, application, domain, and persistence models are separate when their responsibilities differ. Dependencies point inward; infrastructure does not define business behavior.
@@ -78,7 +78,7 @@ apps/api/
       model.go                  Domain entities and value types
       dto.go                    HTTP request/response DTOs and mappings
       errors.go                 Sentinel or typed domain errors
-      repository.go             Persistence implementation
+      repository.go             Narrow persistence port/adapter and domain mapping
       service.go                Validation and application orchestration
       handler.go                HTTP adapter and route mounting
     platform/
@@ -87,7 +87,7 @@ apps/api/
   migrations/                  Ordered reversible SQL
 ```
 
-Keep domain packages focused. Do not create a generic repository or generic service framework. Define narrow interfaces near the consumer that needs them and inject implementations through constructors.
+Keep domain packages focused. Do not create a generic repository or generic service framework at the domain/application boundary. Define narrow interfaces near the consumer that needs them and inject implementations through constructors. Framework-generated CRUD remains an infrastructure detail and must not replace use-case-specific repository ports.
 
 ### HTTP handler contract
 
@@ -119,11 +119,32 @@ Read-only endpoints still use response DTOs and explicit domain-to-transport map
 
 ### Repositories and PostgreSQL
 
-- Repositories own parameterized SQL, scans, persistence record mapping, and database error translation.
-- Map `pgx.ErrNoRows` and relevant SQLSTATE values to domain errors. Never expose raw database errors through HTTP.
+- Repository adapters own ORM use, persistence-to-domain mapping, and database error translation.
+- Use Spring Data JPA/Hibernate for Java services and Ent-generated persistence for Go services by default.
+- Keep JPA entities, Spring Data repositories, Ent nodes, and generated mutation/query builders inside infrastructure. Never return them from application services or serialize them through HTTP/gRPC.
+- Generated infrastructure persistence should provide routine create, update-by-ID, find-by-ID, find-by-IDs, delete-by-ID, and delete-by-IDs capabilities when the entity supports those operations. Application services still call narrow methods named for domain use cases; do not expose arbitrary `save`, `update`, or table-oriented operations across the repository port.
+- Treat generated access patterns as explicit contracts. A unique lookup returns zero or one result and requires a matching database `UNIQUE` constraint; a non-unique lookup is named as a many-result operation and must be bounded or paginated. Do not change a method's return cardinality implicitly from metadata such as `unique=true`.
+- Name destructive multi-row operations explicitly, return their affected-row count, and bound their scope. Generate an upsert only for a database-enforced unique conflict target, and declare which mutable fields may be updated on conflict.
+- Map ORM not-found, constraint, locking, and driver failures to domain errors. Never expose raw database errors through HTTP.
 - Accept a transaction explicitly for atomic multi-write operations.
-- Keep queries explicit and aligned with indexes; avoid generic CRUD abstractions.
+- Keep ORM queries bounded and aligned with indexes. Review generated SQL, fetch plans, query counts, and execution plans for security-critical or hot paths.
+- Prefer generated repository methods, ORM predicates/specifications, typed criteria, eager-loading plans, and generated mutations before a lower-level query tool.
+- Use a type-safe SQL DSL or handwritten SQL/JPQL/HQL when generated ORM APIs cannot express a complex operation clearly and correctly, or when measurement proves that a lower-level query is required for acceptable performance.
+- Register every handwritten application query location in `config/persistence/custom-query-registry.txt`. The registry records ownership, why custom persistence is justified, whether it is retained or scheduled for migration, and its test coverage. Registration makes the decision reviewable; it does not make unsafe SQL acceptable.
+- Require bound values, bounded work, safe identifier/order construction, real PostgreSQL coverage, and execution-plan/index review for hot or performance-motivated custom queries. Never construct SQL by concatenating untrusted input.
 - Use bounded contexts for connection startup, queries, and shutdown.
+
+The persistence capability names are semantic rather than a shared generated API. Java normally declares Spring Data repository methods; Go normally uses Ent schema metadata and typed builders. If repeated project-specific access patterns later justify generation, Java may use a service-local annotation processor and Go may use Ent annotations/templates. Do not create one cross-language persistence annotation model.
+
+### Persistence code generation
+
+- Keep Java and Go persistence generation service-local; do not create a cross-language database model.
+- Keep the same cardinality and safety semantics across languages, but use each ecosystem's native declaration mechanism. A Java annotation and a Go Ent annotation/template may describe equivalent behavior without sharing implementation code.
+- Java builds generate JPA static metamodel sources from service-owned entities. Build-generated Java sources are not committed.
+- Go services commit deterministic Ent-generated sources so ordinary builds do not run or download generators implicitly.
+- Pin generator dependencies and expose generation through root `make generate-persistence` and `make check-persistence-generation` commands.
+- CI regenerates persistence artifacts and fails on drift.
+- Generated persistence code is not a network contract. Cross-service models come only from versioned HTTP/OpenAPI or Protobuf/gRPC contracts.
 
 ### Migrations and seed data
 
@@ -133,6 +154,8 @@ Read-only endpoints still use response DTOs and explicit domain-to-transport map
 - Add indexes for actual query shapes, not speculatively.
 - Keep migrations structural. Put development/demo records in an idempotent seed file or seed command.
 - Never auto-run migrations from the API process; migration and startup are separate operations.
+- Never enable Hibernate or Ent automatic schema mutation in deployed application startup. Flyway and `golang-migrate` remain the production migration histories/runners.
+- Generated migration SQL may be used as a starting point, but it must be reviewed, constrained, versioned, and paired with the repository's required rollback before merge.
 
 ### Composition root
 
@@ -153,7 +176,9 @@ Messages are safe for clients. Logs retain the wrapped internal cause.
 
 ## 5. Testing Ownership
 
-- **Persistence integration tests** run real repository code and migrations against PostgreSQL. They prove scans, filters, ordering, nullable values, constraints, and database-owned invariants.
+- **Generation checks** prove persistence generation is deterministic and committed generated artifacts are current.
+- **Persistence integration tests** run real repository adapters and migrations against PostgreSQL. They prove mappings, filters, ordering, nullable values, constraints, transactions, locking, and database-owned invariants.
+- **Query-shape tests** cover representative collection/detail paths where N+1 behavior or unbounded loading is a material risk.
 - **Service tests** instantiate services with focused fakes or stubs and prove validation, business combinations, orchestration, and error propagation.
 - **Handler tests** use the real router with `httptest`. They prove routing, strict decoding, DTO mapping, `snake_case` serialization, stable error mapping, and non-leaking failures.
 - **Frontend feature tests** prove API URLs, wire mapping, error behavior, and any feature-owned selection or formatting.
@@ -171,7 +196,7 @@ Next.js Server Component
   -> GET /api/v1/projects or /api/v1/projects/{slug}
   -> project HTTP handler
   -> project service
-  -> PostgreSQL project repository
+  -> PostgreSQL project repository adapter
 ```
 
 The public API exposes only published projects. Administrative writes, authentication, and a CMS are separate future features. PostgreSQL is the single runtime source of truth; do not keep a second Markdown project catalog after migration.
