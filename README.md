@@ -72,6 +72,8 @@ EMAIL_RATE_LIMIT_SECRET=replace-with-a-different-32-character-secret
 
 Use different random values for the OTP pepper and rate-limit secret. Never use the regular Gmail password, commit working credentials, or expose these variables to the frontend. Personal Gmail is intended only for the low-volume portfolio flow; the sender is isolated behind an interface so it can be replaced by a transactional provider later.
 
+IAM retains terminal email-verification challenges for at least the 24-hour global throttling window and removes them in bounded background batches. The optional `EMAIL_VERIFICATION_CLEANUP_*` values in `.env.example` control the job; never configure retention below `PT24H`, because doing so would weaken the global rate limit.
+
 When configured, the IAM Service exposes:
 
 ```text

@@ -49,3 +49,8 @@ iam:
     gmail-refresh-token: ${GMAIL_REFRESH_TOKEN:}
     otp-pepper: ${EMAIL_OTP_PEPPER:}
     rate-limit-secret: ${EMAIL_RATE_LIMIT_SECRET:}
+    cleanup-enabled: ${EMAIL_VERIFICATION_CLEANUP_ENABLED:true}
+    cleanup-retention: ${EMAIL_VERIFICATION_RETENTION:PT24H}
+    cleanup-batch-size: ${EMAIL_VERIFICATION_CLEANUP_BATCH_SIZE:100}
+    cleanup-initial-delay: ${EMAIL_VERIFICATION_CLEANUP_INITIAL_DELAY:PT15M}
+    cleanup-interval: ${EMAIL_VERIFICATION_CLEANUP_INTERVAL:PT15M}

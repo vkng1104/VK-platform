@@ -2,6 +2,8 @@ package com.vkplatform.iam.verification.infrastructure.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.time.Duration;
+
 @ConfigurationProperties("iam.email")
 public record EmailVerificationProperties(
         String provider,
@@ -10,6 +12,8 @@ public record EmailVerificationProperties(
         String gmailClientSecret,
         String gmailRefreshToken,
         String otpPepper,
-        String rateLimitSecret
+        String rateLimitSecret,
+        Duration cleanupRetention,
+        int cleanupBatchSize
 ) {
 }

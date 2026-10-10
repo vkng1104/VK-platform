@@ -14,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -34,7 +35,10 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@SpringBootTest(properties = "spring.jpa.properties.hibernate.generate_statistics=true")
+@SpringBootTest(properties = {
+        "spring.jpa.properties.hibernate.generate_statistics=true",
+        "iam.email.cleanup-enabled=false"
+})
 class JpaEmailVerificationRepositoryIntegrationTest {
     private static final Instant NOW = Instant.parse("2026-10-08T03:00:00Z");
 
@@ -49,7 +53,7 @@ class JpaEmailVerificationRepositoryIntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
-        jdbcTemplate.update("DELETE FROM email_verification_challenges");
+        jdbcTemplate.update("DELETE FROM iam_identity.email_verification_challenges");
         statistics().clear();
     }
 
@@ -59,9 +63,35 @@ class JpaEmailVerificationRepositoryIntegrationTest {
         assertThat(EmailVerificationChallengeEntity_.createdAt).isNotNull();
         assertThat(EmailVerificationOperationGuardEntity_.id).isNotNull();
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM email_verification_operation_guards WHERE id = 1",
+                "SELECT count(*) FROM iam_identity.email_verification_operation_guards WHERE id = 1",
                 Integer.class
         )).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT to_regclass('iam_identity.email_verification_challenges')::text",
+                String.class
+        )).isEqualTo("iam_identity.email_verification_challenges");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT to_regclass('iam_identity.email_verification_operation_guards')::text",
+                String.class
+        )).isEqualTo("iam_identity.email_verification_operation_guards");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT to_regclass('public.email_verification_challenges')::text",
+                String.class
+        )).isNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT to_regclass('public.email_verification_operation_guards')::text",
+                String.class
+        )).isNull();
+
+        VerificationChallenge invalid = challenge(
+                UUID.randomUUID(),
+                bytes(55),
+                bytes(56),
+                new byte[31],
+                NOW
+        );
+        assertThatThrownBy(() -> repository.createPending(invalid, VerificationPolicy.defaults()))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
@@ -321,6 +351,70 @@ class JpaEmailVerificationRepositoryIntegrationTest {
     }
 
     @Test
+    void deletesOnlyOneBoundedBatchOfRetainedTerminalChallenges() {
+        Instant old = NOW.minus(Duration.ofDays(2));
+        VerificationPolicy policy = relaxedPolicy();
+        VerificationChallenge expired = challenge(
+                UUID.randomUUID(), bytes(57), bytes(58), bytes(59), old
+        );
+        VerificationChallenge verified = challenge(
+                UUID.randomUUID(), bytes(60), bytes(61), bytes(62), old.plusSeconds(1)
+        );
+        VerificationChallenge failed = challenge(
+                UUID.randomUUID(), bytes(63), bytes(64), bytes(65), old.plusSeconds(2)
+        );
+        VerificationChallenge active = challenge(
+                UUID.randomUUID(), bytes(66), bytes(67), bytes(68), NOW
+        );
+
+        repository.createPending(expired, policy);
+        repository.createPending(verified, policy);
+        repository.markSent(verified.id(), old.plusSeconds(2));
+        assertThat(repository.verify(verified.id(), verified.otpDigest(), old.plusSeconds(3)).verified()).isTrue();
+        repository.createPending(failed, policy);
+        repository.markFailed(failed.id());
+        repository.createPending(active, policy);
+
+        Instant cutoff = NOW.minus(Duration.ofHours(24));
+        assertThat(repository.deleteTerminalBefore(cutoff, 2)).isEqualTo(2);
+        assertThat(repository.deleteTerminalBefore(cutoff, 2)).isEqualTo(1);
+        assertThat(repository.deleteTerminalBefore(cutoff, 2)).isZero();
+        assertThat(challengeIds()).containsExactly(active.id());
+    }
+
+    @Test
+    void concurrentCleanupWorkersSerializeBoundedBatchesWithoutDeletingActiveRows() throws Exception {
+        Instant old = NOW.minus(Duration.ofDays(2));
+        VerificationPolicy policy = relaxedPolicy();
+        for (int index = 0; index < 6; index++) {
+            VerificationChallenge terminal = challenge(
+                    UUID.randomUUID(),
+                    bytes(70 + index),
+                    bytes(80 + index),
+                    bytes(90 + index),
+                    old.plusSeconds(index)
+            );
+            repository.createPending(terminal, policy);
+            repository.markFailed(terminal.id());
+        }
+        VerificationChallenge active = challenge(
+                UUID.randomUUID(), bytes(100), bytes(101), bytes(102), NOW
+        );
+        repository.createPending(active, policy);
+
+        Instant cutoff = NOW.minus(Duration.ofHours(24));
+        List<Integer> deleted = runConcurrently(
+                () -> repository.deleteTerminalBefore(cutoff, 2),
+                () -> repository.deleteTerminalBefore(cutoff, 2)
+        );
+
+        assertThat(deleted).containsExactlyInAnyOrder(2, 2);
+        assertThat(repository.deleteTerminalBefore(cutoff, 2)).isEqualTo(2);
+        assertThat(repository.deleteTerminalBefore(cutoff, 2)).isZero();
+        assertThat(challengeIds()).containsExactly(active.id());
+    }
+
+    @Test
     void representativeOperationsStayWithinTheirQueryBudgets() {
         VerificationChallenge challenge = challenge(
                 UUID.randomUUID(),
@@ -338,6 +432,16 @@ class JpaEmailVerificationRepositoryIntegrationTest {
         statistics().clear();
         repository.verify(challenge.id(), bytes(53), NOW.plusSeconds(2));
         assertThat(statistics().getPrepareStatementCount()).isLessThanOrEqualTo(2);
+
+        Instant old = NOW.minus(Duration.ofDays(2));
+        VerificationChallenge cleanupCandidate = challenge(
+                UUID.randomUUID(), bytes(103), bytes(104), bytes(105), old
+        );
+        repository.createPending(cleanupCandidate, relaxedPolicy());
+        repository.markFailed(cleanupCandidate.id());
+        statistics().clear();
+        assertThat(repository.deleteTerminalBefore(NOW.minus(Duration.ofHours(24)), 1)).isEqualTo(1);
+        assertThat(statistics().getPrepareStatementCount()).isLessThanOrEqualTo(3);
     }
 
     private boolean createPending(VerificationChallenge challenge, VerificationPolicy policy) {
@@ -365,7 +469,7 @@ class JpaEmailVerificationRepositoryIntegrationTest {
     private void insertPending(byte[] emailFingerprint, byte[] requesterFingerprint, Instant createdAt) {
         jdbcTemplate.update(connection -> {
             var statement = connection.prepareStatement("""
-                    INSERT INTO email_verification_challenges (
+                    INSERT INTO iam_identity.email_verification_challenges (
                         id,
                         purpose,
                         email_fingerprint,
@@ -393,14 +497,21 @@ class JpaEmailVerificationRepositoryIntegrationTest {
 
     private int challengeCount() {
         return jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM email_verification_challenges",
+                "SELECT count(*) FROM iam_identity.email_verification_challenges",
                 Integer.class
+        );
+    }
+
+    private List<UUID> challengeIds() {
+        return jdbcTemplate.queryForList(
+                "SELECT id FROM iam_identity.email_verification_challenges ORDER BY id",
+                UUID.class
         );
     }
 
     private Integer integer(String column, UUID id) {
         return jdbcTemplate.queryForObject(
-                "SELECT " + column + " FROM email_verification_challenges WHERE id = ?",
+                "SELECT " + column + " FROM iam_identity.email_verification_challenges WHERE id = ?",
                 Integer.class,
                 id
         );
@@ -408,7 +519,7 @@ class JpaEmailVerificationRepositoryIntegrationTest {
 
     private String text(String column, UUID id) {
         return jdbcTemplate.queryForObject(
-                "SELECT " + column + " FROM email_verification_challenges WHERE id = ?",
+                "SELECT " + column + " FROM iam_identity.email_verification_challenges WHERE id = ?",
                 String.class,
                 id
         );
@@ -416,7 +527,7 @@ class JpaEmailVerificationRepositoryIntegrationTest {
 
     private Instant timestamp(String column, UUID id) {
         return jdbcTemplate.queryForObject(
-                "SELECT " + column + " FROM email_verification_challenges WHERE id = ?",
+                "SELECT " + column + " FROM iam_identity.email_verification_challenges WHERE id = ?",
                 Instant.class,
                 id
         );

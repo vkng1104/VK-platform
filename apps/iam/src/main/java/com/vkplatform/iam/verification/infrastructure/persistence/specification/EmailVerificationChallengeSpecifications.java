@@ -1,5 +1,6 @@
 package com.vkplatform.iam.verification.infrastructure.persistence.specification;
 
+import com.vkplatform.iam.verification.infrastructure.persistence.entity.EmailDeliveryStatus;
 import com.vkplatform.iam.verification.infrastructure.persistence.entity.EmailVerificationChallengeEntity;
 import com.vkplatform.iam.verification.infrastructure.persistence.entity.EmailVerificationChallengeEntity_;
 import org.springframework.data.jpa.domain.Specification;
@@ -30,6 +31,21 @@ public final class EmailVerificationChallengeSpecifications {
         return (root, query, builder) -> builder.equal(
                 root.get(EmailVerificationChallengeEntity_.requesterFingerprint),
                 fingerprintCopy
+        );
+    }
+
+    public static Specification<EmailVerificationChallengeEntity> terminalBefore(Instant cutoff) {
+        return (root, query, builder) -> builder.or(
+                builder.lessThan(root.get(EmailVerificationChallengeEntity_.expiresAt), cutoff),
+                builder.lessThan(root.get(EmailVerificationChallengeEntity_.verifiedAt), cutoff),
+                builder.lessThan(root.get(EmailVerificationChallengeEntity_.invalidatedAt), cutoff),
+                builder.and(
+                        builder.equal(
+                                root.get(EmailVerificationChallengeEntity_.deliveryStatus),
+                                EmailDeliveryStatus.FAILED
+                        ),
+                        builder.lessThan(root.get(EmailVerificationChallengeEntity_.createdAt), cutoff)
+                )
         );
     }
 }

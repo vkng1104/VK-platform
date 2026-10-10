@@ -95,9 +95,9 @@ public class EmailVerificationExceptionHandler {
             }
             case DELIVERY_UNAVAILABLE -> {
                 LOGGER.warn(
-                        "Email verification delivery unavailable; request_id={}",
+                        "Email verification delivery unavailable; request_id={}; cause_type={}",
                         RequestContext.requestId(request),
-                        failure
+                        causeType(failure)
                 );
                 yield response(
                         request,
@@ -110,6 +110,11 @@ public class EmailVerificationExceptionHandler {
                 );
             }
         };
+    }
+
+    private static String causeType(VerificationFailure failure) {
+        Throwable cause = failure.getCause();
+        return cause == null ? "unknown" : cause.getClass().getSimpleName();
     }
 
     private static ResponseEntity<ApiError> response(

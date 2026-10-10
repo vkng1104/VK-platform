@@ -18,6 +18,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 import tools.jackson.databind.JsonNode;
@@ -41,6 +42,8 @@ public final class GmailVerificationEmailSender implements VerificationEmailSend
     private final String subjectTemplate;
     private final String textTemplate;
     private final String htmlTemplate;
+    private final URI tokenEndpoint;
+    private final URI sendEndpoint;
 
     public GmailVerificationEmailSender(
             HttpClient client,
@@ -50,12 +53,36 @@ public final class GmailVerificationEmailSender implements VerificationEmailSend
             String clientSecret,
             String refreshToken
     ) {
-        this.client = client;
-        this.objectMapper = objectMapper;
+        this(
+                client,
+                objectMapper,
+                fromAddress,
+                clientId,
+                clientSecret,
+                refreshToken,
+                TOKEN_ENDPOINT,
+                SEND_ENDPOINT
+        );
+    }
+
+    GmailVerificationEmailSender(
+            HttpClient client,
+            ObjectMapper objectMapper,
+            String fromAddress,
+            String clientId,
+            String clientSecret,
+            String refreshToken,
+            URI tokenEndpoint,
+            URI sendEndpoint
+    ) {
+        this.client = Objects.requireNonNull(client);
+        this.objectMapper = Objects.requireNonNull(objectMapper);
         this.fromAddress = exactMailbox(fromAddress);
         this.clientId = requireValue(clientId, "Gmail client ID");
         this.clientSecret = requireValue(clientSecret, "Gmail client secret");
         this.refreshToken = requireValue(refreshToken, "Gmail refresh token");
+        this.tokenEndpoint = Objects.requireNonNull(tokenEndpoint);
+        this.sendEndpoint = Objects.requireNonNull(sendEndpoint);
         this.subjectTemplate = loadTemplate("mail/verification-code.subject.txt");
         this.textTemplate = loadTemplate("mail/verification-code.txt");
         this.htmlTemplate = loadTemplate("mail/verification-code.html");
@@ -70,7 +97,7 @@ public final class GmailVerificationEmailSender implements VerificationEmailSend
                     buildMessage(to, code.value(), expiresAt).getBytes(StandardCharsets.UTF_8)
             );
             byte[] payload = objectMapper.writeValueAsBytes(Map.of("raw", raw));
-            HttpRequest request = HttpRequest.newBuilder(SEND_ENDPOINT)
+            HttpRequest request = HttpRequest.newBuilder(sendEndpoint)
                     .timeout(Duration.ofSeconds(8))
                     .header("Authorization", "Bearer " + accessToken)
                     .header("Content-Type", "application/json")
@@ -93,7 +120,7 @@ public final class GmailVerificationEmailSender implements VerificationEmailSend
                 + "&client_secret=" + encode(clientSecret)
                 + "&refresh_token=" + encode(refreshToken)
                 + "&grant_type=refresh_token";
-        HttpRequest request = HttpRequest.newBuilder(TOKEN_ENDPOINT)
+        HttpRequest request = HttpRequest.newBuilder(tokenEndpoint)
                 .timeout(Duration.ofSeconds(8))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(form))
