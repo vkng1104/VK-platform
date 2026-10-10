@@ -212,6 +212,11 @@ class EmailVerificationServiceTest {
             this.candidateDigest = candidateDigest.clone();
             return verificationAttempt;
         }
+
+        @Override
+        public int deleteTerminalBefore(Instant cutoff, int batchSize) {
+            throw new UnsupportedOperationException();
+        }
     }
 
     private static byte[] bytes(int value) {

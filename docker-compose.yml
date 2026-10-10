@@ -246,6 +246,7 @@ services:
       IAM_DATABASE_USERNAME: vk_platform_iam
       IAM_DATABASE_PASSWORD: vk_platform_iam
       EMAIL_PROVIDER: disabled
+      EMAIL_VERIFICATION_CLEANUP_ENABLED: false
     depends_on:
       iam-migrate-test:
         condition: service_completed_successfully

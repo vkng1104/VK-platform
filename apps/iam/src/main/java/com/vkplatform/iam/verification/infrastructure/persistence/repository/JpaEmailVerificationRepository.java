@@ -23,7 +23,11 @@ import java.util.UUID;
 
 @Repository
 public class JpaEmailVerificationRepository implements EmailVerificationRepository {
-    private static final short START_OPERATION_GUARD_ID = 1;
+    private static final short OPERATION_GUARD_ID = 1;
+    private static final Sort CLEANUP_ORDER = Sort.by(
+            Sort.Order.asc(EmailVerificationChallengeEntity_.CREATED_AT),
+            Sort.Order.asc(EmailVerificationChallengeEntity_.ID)
+    );
 
     private final SpringDataEmailVerificationChallengeRepository challenges;
     private final SpringDataEmailVerificationOperationGuardRepository operationGuards;
@@ -42,8 +46,7 @@ public class JpaEmailVerificationRepository implements EmailVerificationReposito
     @Override
     @Transactional
     public void createPending(VerificationChallenge challenge, VerificationPolicy policy) {
-        operationGuards.findById(START_OPERATION_GUARD_ID)
-                .orElseThrow(() -> new IllegalStateException("email verification operation guard is missing"));
+        lockOperations();
 
         Instant retryAt = challenge.createdAt();
         EmailVerificationChallengeEntity latest = challenges
@@ -105,6 +108,34 @@ public class JpaEmailVerificationRepository implements EmailVerificationReposito
 
         challenge.markVerified(now);
         return VerificationAttempt.success(challenge.purpose());
+    }
+
+    @Override
+    @Transactional
+    public int deleteTerminalBefore(Instant cutoff, int batchSize) {
+        if (batchSize <= 0) {
+            throw new IllegalArgumentException("email verification cleanup batch size must be positive");
+        }
+
+        lockOperations();
+        List<EmailVerificationChallengeEntity> candidates = challenges.findBy(
+                EmailVerificationChallengeSpecifications.terminalBefore(cutoff),
+                query -> query
+                        .sortBy(CLEANUP_ORDER)
+                        .limit(batchSize)
+                        .all()
+        );
+        if (candidates.isEmpty()) {
+            return 0;
+        }
+
+        challenges.deleteAllInBatch(candidates);
+        return candidates.size();
+    }
+
+    private void lockOperations() {
+        operationGuards.findById(OPERATION_GUARD_ID)
+                .orElseThrow(() -> new IllegalStateException("email verification operation guard is missing"));
     }
 
     private Instant retryAtForEmail(VerificationChallenge challenge, VerificationPolicy policy) {

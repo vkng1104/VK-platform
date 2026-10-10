@@ -16,6 +16,8 @@ public interface EmailVerificationRepository {
 
     VerificationAttempt verify(UUID id, byte[] candidateDigest, Instant now);
 
+    int deleteTerminalBefore(Instant cutoff, int batchSize);
+
     record VerificationAttempt(boolean verified, VerificationPurpose purpose) {
         public VerificationAttempt {
             if (verified != (purpose != null)) {
