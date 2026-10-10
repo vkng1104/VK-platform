@@ -1,5 +1,1 @@
 # rule|path|count|owner|disposition|coverage|reason
-go-direct-pgx|apps/api/cmd/seed/main.go|1|api|migrate:orm-phase-3|apps/api/internal/project/repository_integration_test.go|Replace direct pgx seed execution with Ent-generated mutations and upserts.
-go-direct-pgx|apps/api/internal/project/repository.go|3|api|migrate:orm-phase-3|apps/api/internal/project/repository_integration_test.go|Replace the pgx repository with an Ent-backed adapter and retain only measured custom queries if needed.
-go-raw-sql-text|apps/api/internal/project/repository.go|2|api|migrate:orm-phase-3|apps/api/internal/project/repository_integration_test.go|Replace ordinary project queries with Ent predicates and eager loading; reassess any genuinely complex query separately.
-application-sql-file|apps/api/seed/development.sql|1|api|migrate:orm-phase-3|apps/api/internal/project/repository_integration_test.go|Replace the SQL seed body with an idempotent Ent seed command.
