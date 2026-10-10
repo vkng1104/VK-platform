@@ -88,6 +88,8 @@ class JpaEmailVerificationRepositoryIntegrationTest {
 
         assertThat(timestamp("invalidated_at", first.id())).isEqualTo(second.createdAt());
         assertThat(timestamp("invalidated_at", second.id())).isNull();
+        assertThat(text("purpose", second.id()))
+                .isEqualTo(VerificationPurpose.RESTRICTED_RESOURCE_ACCESS.wireValue());
         assertThat(text("delivery_status", second.id())).isEqualTo("pending");
     }
 
