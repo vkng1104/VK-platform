@@ -1,5 +1,5 @@
 # service|script|tracked_generated_path
 #
 # A tracked path of "-" means generation writes only ignored build output.
-# ORM Phase 2 registers the Java metamodel generator here.
+iam|apps/iam/scripts/generate-persistence.sh|-
 # ORM Phase 3 registers the committed Go Ent generator and output path here.

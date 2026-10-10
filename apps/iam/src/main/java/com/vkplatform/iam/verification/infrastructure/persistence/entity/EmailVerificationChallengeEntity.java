@@ -112,6 +112,10 @@ public class EmailVerificationChallengeEntity {
         return invalidatedAt;
     }
 
+    public Instant createdAt() {
+        return createdAt;
+    }
+
     public void recordFailedAttempt() {
         attemptCount++;
     }

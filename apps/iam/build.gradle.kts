@@ -21,6 +21,7 @@ repositories {
 extra["springModulithVersion"] = "2.1.1"
 
 dependencies {
+	annotationProcessor("org.hibernate.orm:hibernate-processor")
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 	implementation("org.springframework.boot:spring-boot-starter-flyway")
@@ -72,6 +73,29 @@ tasks.register<JavaExec>("migrate") {
 	group = "application"
 	classpath = sourceSets.main.get().runtimeClasspath
 	mainClass = "com.vkplatform.iam.bootstrap.MigrationApplication"
+}
+
+tasks.register("generatePersistence") {
+	description = "Generates and verifies the IAM JPA static metamodel."
+	group = "build"
+	dependsOn(tasks.compileJava)
+
+	doLast {
+		val generatedSourceDirectory = layout.buildDirectory
+			.dir("generated/sources/annotationProcessor/java/main")
+			.get()
+			.asFile
+		val expectedMetamodels = listOf(
+			"com/vkplatform/iam/verification/infrastructure/persistence/entity/EmailVerificationChallengeEntity_.java",
+			"com/vkplatform/iam/verification/infrastructure/persistence/entity/EmailVerificationOperationGuardEntity_.java"
+		)
+		val missingMetamodels = expectedMetamodels.filterNot {
+			generatedSourceDirectory.resolve(it).isFile
+		}
+		check(missingMetamodels.isEmpty()) {
+			"Missing generated JPA metamodel sources: ${missingMetamodels.joinToString()}"
+		}
+	}
 }
 
 tasks.withType<Test> {
