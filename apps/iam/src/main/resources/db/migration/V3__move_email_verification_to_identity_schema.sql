@@ -3,6 +3,9 @@ CREATE SCHEMA IF NOT EXISTS iam_identity;
 ALTER TABLE public.email_verification_challenges
     SET SCHEMA iam_identity;
 
+ALTER TABLE public.email_verification_operation_guards
+    SET SCHEMA iam_identity;
+
 CREATE INDEX email_verification_challenges_verified_idx
     ON iam_identity.email_verification_challenges (verified_at)
     WHERE verified_at IS NOT NULL;

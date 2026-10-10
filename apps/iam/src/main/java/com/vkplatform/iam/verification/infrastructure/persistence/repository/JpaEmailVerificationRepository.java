@@ -23,7 +23,11 @@ import java.util.UUID;
 
 @Repository
 public class JpaEmailVerificationRepository implements EmailVerificationRepository {
-    private static final short START_OPERATION_GUARD_ID = 1;
+    private static final short OPERATION_GUARD_ID = 1;
+    private static final Sort CLEANUP_ORDER = Sort.by(
+            Sort.Order.asc(EmailVerificationChallengeEntity_.CREATED_AT),
+            Sort.Order.asc(EmailVerificationChallengeEntity_.ID)
+    );
 
     private final SpringDataEmailVerificationChallengeRepository challenges;
     private final SpringDataEmailVerificationOperationGuardRepository operationGuards;
@@ -42,8 +46,7 @@ public class JpaEmailVerificationRepository implements EmailVerificationReposito
     @Override
     @Transactional
     public void createPending(VerificationChallenge challenge, VerificationPolicy policy) {
-        operationGuards.findById(START_OPERATION_GUARD_ID)
-                .orElseThrow(() -> new IllegalStateException("email verification operation guard is missing"));
+        lockOperations();
 
         Instant retryAt = challenge.createdAt();
         EmailVerificationChallengeEntity latest = challenges
@@ -110,31 +113,29 @@ public class JpaEmailVerificationRepository implements EmailVerificationReposito
     @Override
     @Transactional
     public int deleteTerminalBefore(Instant cutoff, int batchSize) {
-        return entityManager.createNativeQuery("""
-                        DELETE FROM iam_identity.email_verification_challenges challenge
-                        WHERE challenge.id IN (
-                            SELECT candidate.id
-                            FROM iam_identity.email_verification_challenges candidate
-                            WHERE candidate.expires_at < :cutoff
-                               OR candidate.verified_at < :cutoff
-                               OR candidate.invalidated_at < :cutoff
-                               OR (
-                                   candidate.delivery_status = 'failed'
-                                   AND candidate.created_at < :cutoff
-                               )
-                            ORDER BY COALESCE(
-                                candidate.verified_at,
-                                candidate.invalidated_at,
-                                candidate.expires_at,
-                                candidate.created_at
-                            ), candidate.id
-                            LIMIT :batchSize
-                            FOR UPDATE SKIP LOCKED
-                        )
-                        """)
-                .setParameter("cutoff", cutoff)
-                .setParameter("batchSize", batchSize)
-                .executeUpdate();
+        if (batchSize <= 0) {
+            throw new IllegalArgumentException("email verification cleanup batch size must be positive");
+        }
+
+        lockOperations();
+        List<EmailVerificationChallengeEntity> candidates = challenges.findBy(
+                EmailVerificationChallengeSpecifications.terminalBefore(cutoff),
+                query -> query
+                        .sortBy(CLEANUP_ORDER)
+                        .limit(batchSize)
+                        .all()
+        );
+        if (candidates.isEmpty()) {
+            return 0;
+        }
+
+        challenges.deleteAllInBatch(candidates);
+        return candidates.size();
+    }
+
+    private void lockOperations() {
+        operationGuards.findById(OPERATION_GUARD_ID)
+                .orElseThrow(() -> new IllegalStateException("email verification operation guard is missing"));
     }
 
     private Instant retryAtForEmail(VerificationChallenge challenge, VerificationPolicy policy) {
