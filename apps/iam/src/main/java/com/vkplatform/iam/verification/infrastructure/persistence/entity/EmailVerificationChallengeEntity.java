@@ -1,6 +1,10 @@
 package com.vkplatform.iam.verification.infrastructure.persistence.entity;
 
+import com.vkplatform.iam.verification.domain.VerificationPurpose;
+import com.vkplatform.iam.verification.infrastructure.persistence.converter.EmailDeliveryStatusConverter;
+import com.vkplatform.iam.verification.infrastructure.persistence.converter.VerificationPurposeConverter;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -14,8 +18,9 @@ public class EmailVerificationChallengeEntity {
     @Id
     private UUID id;
 
+    @Convert(converter = VerificationPurposeConverter.class)
     @Column(nullable = false)
-    private String purpose;
+    private VerificationPurpose purpose;
 
     @Column(name = "email_fingerprint", nullable = false)
     private byte[] emailFingerprint;
@@ -38,8 +43,9 @@ public class EmailVerificationChallengeEntity {
     @Column(name = "resend_not_before", nullable = false)
     private Instant resendNotBefore;
 
+    @Convert(converter = EmailDeliveryStatusConverter.class)
     @Column(name = "delivery_status", nullable = false)
-    private String deliveryStatus;
+    private EmailDeliveryStatus deliveryStatus;
 
     @Column(name = "sent_at")
     private Instant sentAt;
@@ -58,7 +64,7 @@ public class EmailVerificationChallengeEntity {
 
     public EmailVerificationChallengeEntity(
             UUID id,
-            String purpose,
+            VerificationPurpose purpose,
             byte[] emailFingerprint,
             byte[] requesterFingerprint,
             byte[] otpDigest,
@@ -76,11 +82,11 @@ public class EmailVerificationChallengeEntity {
         this.maxAttempts = maxAttempts;
         this.expiresAt = expiresAt;
         this.resendNotBefore = resendNotBefore;
-        this.deliveryStatus = "pending";
+        this.deliveryStatus = EmailDeliveryStatus.PENDING;
         this.createdAt = createdAt;
     }
 
-    public String purpose() {
+    public VerificationPurpose purpose() {
         return purpose;
     }
 
@@ -100,7 +106,7 @@ public class EmailVerificationChallengeEntity {
         return expiresAt;
     }
 
-    public String deliveryStatus() {
+    public EmailDeliveryStatus deliveryStatus() {
         return deliveryStatus;
     }
 
@@ -110,6 +116,10 @@ public class EmailVerificationChallengeEntity {
 
     public Instant invalidatedAt() {
         return invalidatedAt;
+    }
+
+    public Instant createdAt() {
+        return createdAt;
     }
 
     public void recordFailedAttempt() {
