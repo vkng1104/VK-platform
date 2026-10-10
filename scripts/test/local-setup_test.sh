@@ -64,6 +64,7 @@ grep -q '^  push:' .github/workflows/lint.yml || fail "master lint trigger is mi
 grep -q '^          - iam$' .github/workflows/tests.yml || fail "IAM tests are missing from CI"
 grep -q '^  iam:$' .github/workflows/lint.yml || fail "IAM compile checks are missing from CI"
 
+"$repository_root/scripts/test/repository-policy_test.sh"
 "$repository_root/scripts/test/db-seed-local_test.sh"
 
 echo "local setup tests passed"
