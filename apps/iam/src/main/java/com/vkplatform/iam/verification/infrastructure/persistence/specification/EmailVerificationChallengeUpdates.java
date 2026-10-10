@@ -1,5 +1,7 @@
 package com.vkplatform.iam.verification.infrastructure.persistence.specification;
 
+import com.vkplatform.iam.verification.domain.VerificationPurpose;
+import com.vkplatform.iam.verification.infrastructure.persistence.entity.EmailDeliveryStatus;
 import com.vkplatform.iam.verification.infrastructure.persistence.entity.EmailVerificationChallengeEntity;
 import com.vkplatform.iam.verification.infrastructure.persistence.entity.EmailVerificationChallengeEntity_;
 import org.springframework.data.jpa.domain.UpdateSpecification;
@@ -13,7 +15,7 @@ public final class EmailVerificationChallengeUpdates {
 
     public static UpdateSpecification<EmailVerificationChallengeEntity> invalidateActive(
             byte[] emailFingerprint,
-            String purpose,
+            VerificationPurpose purpose,
             Instant invalidatedAt
     ) {
         byte[] fingerprintCopy = emailFingerprint.clone();
@@ -30,11 +32,14 @@ public final class EmailVerificationChallengeUpdates {
 
     public static UpdateSpecification<EmailVerificationChallengeEntity> markSent(UUID id, Instant sentAt) {
         return (root, update, builder) -> {
-            update.set(EmailVerificationChallengeEntity_.deliveryStatus, "sent");
+            update.set(EmailVerificationChallengeEntity_.deliveryStatus, EmailDeliveryStatus.SENT);
             update.set(EmailVerificationChallengeEntity_.sentAt, sentAt);
             return builder.and(
                     builder.equal(root.get(EmailVerificationChallengeEntity_.id), id),
-                    builder.equal(root.get(EmailVerificationChallengeEntity_.deliveryStatus), "pending"),
+                    builder.equal(
+                            root.get(EmailVerificationChallengeEntity_.deliveryStatus),
+                            EmailDeliveryStatus.PENDING
+                    ),
                     builder.isNull(root.get(EmailVerificationChallengeEntity_.invalidatedAt))
             );
         };
@@ -42,10 +47,13 @@ public final class EmailVerificationChallengeUpdates {
 
     public static UpdateSpecification<EmailVerificationChallengeEntity> markFailed(UUID id) {
         return (root, update, builder) -> {
-            update.set(EmailVerificationChallengeEntity_.deliveryStatus, "failed");
+            update.set(EmailVerificationChallengeEntity_.deliveryStatus, EmailDeliveryStatus.FAILED);
             return builder.and(
                     builder.equal(root.get(EmailVerificationChallengeEntity_.id), id),
-                    builder.equal(root.get(EmailVerificationChallengeEntity_.deliveryStatus), "pending")
+                    builder.equal(
+                            root.get(EmailVerificationChallengeEntity_.deliveryStatus),
+                            EmailDeliveryStatus.PENDING
+                    )
             );
         };
     }

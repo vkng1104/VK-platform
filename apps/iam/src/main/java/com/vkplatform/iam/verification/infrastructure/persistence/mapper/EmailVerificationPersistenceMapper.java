@@ -9,7 +9,7 @@ public final class EmailVerificationPersistenceMapper {
     public EmailVerificationChallengeEntity toPendingEntity(VerificationChallenge challenge) {
         return new EmailVerificationChallengeEntity(
                 challenge.id(),
-                challenge.purpose().wireValue(),
+                challenge.purpose(),
                 challenge.emailFingerprint(),
                 challenge.requesterFingerprint(),
                 challenge.otpDigest(),

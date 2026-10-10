@@ -4,7 +4,7 @@ import com.vkplatform.iam.verification.application.port.out.EmailVerificationRep
 import com.vkplatform.iam.verification.domain.VerificationChallenge;
 import com.vkplatform.iam.verification.domain.VerificationFailure;
 import com.vkplatform.iam.verification.domain.VerificationPolicy;
-import com.vkplatform.iam.verification.domain.VerificationPurpose;
+import com.vkplatform.iam.verification.infrastructure.persistence.entity.EmailDeliveryStatus;
 import com.vkplatform.iam.verification.infrastructure.persistence.entity.EmailVerificationChallengeEntity;
 import com.vkplatform.iam.verification.infrastructure.persistence.entity.EmailVerificationChallengeEntity_;
 import com.vkplatform.iam.verification.infrastructure.persistence.mapper.EmailVerificationPersistenceMapper;
@@ -64,7 +64,7 @@ public class JpaEmailVerificationRepository implements EmailVerificationReposito
 
         challenges.update(EmailVerificationChallengeUpdates.invalidateActive(
                 challenge.emailFingerprint(),
-                challenge.purpose().wireValue(),
+                challenge.purpose(),
                 challenge.createdAt()
         ));
 
@@ -90,7 +90,7 @@ public class JpaEmailVerificationRepository implements EmailVerificationReposito
     public VerificationAttempt verify(UUID id, byte[] candidateDigest, Instant now) {
         EmailVerificationChallengeEntity challenge = challenges.findById(id).orElse(null);
         if (challenge == null
-                || !"sent".equals(challenge.deliveryStatus())
+                || challenge.deliveryStatus() != EmailDeliveryStatus.SENT
                 || challenge.invalidatedAt() != null
                 || challenge.verifiedAt() != null
                 || !now.isBefore(challenge.expiresAt())
@@ -104,7 +104,7 @@ public class JpaEmailVerificationRepository implements EmailVerificationReposito
         }
 
         challenge.markVerified(now);
-        return VerificationAttempt.success(VerificationPurpose.fromStoredValue(challenge.purpose()));
+        return VerificationAttempt.success(challenge.purpose());
     }
 
     private Instant retryAtForEmail(VerificationChallenge challenge, VerificationPolicy policy) {
