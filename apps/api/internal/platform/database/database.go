@@ -2,15 +2,24 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/url"
+	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 var ErrCredentialsInURL = errors.New("database URL must not contain credentials")
+
+const (
+	maximumOpenConnections = 10
+	maximumIdleConnections = 2
+	connectionMaxLifetime  = 30 * time.Minute
+	connectionMaxIdleTime  = 5 * time.Minute
+)
 
 type Settings struct {
 	URL      string
@@ -18,19 +27,20 @@ type Settings struct {
 	Password string
 }
 
-func Open(ctx context.Context, settings Settings) (*pgxpool.Pool, error) {
-	configuration, err := ParsePoolConfig(settings)
+func Open(ctx context.Context, settings Settings) (*sql.DB, error) {
+	configuration, err := ParseConnectionConfig(settings)
 	if err != nil {
 		return nil, err
 	}
 
-	pool, err := pgxpool.NewWithConfig(ctx, configuration)
-	if err != nil {
-		return nil, fmt.Errorf("open database pool: %w", err)
-	}
+	pool := stdlib.OpenDB(*configuration)
+	pool.SetMaxOpenConns(maximumOpenConnections)
+	pool.SetMaxIdleConns(maximumIdleConnections)
+	pool.SetConnMaxLifetime(connectionMaxLifetime)
+	pool.SetConnMaxIdleTime(connectionMaxIdleTime)
 
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
+	if err := pool.PingContext(ctx); err != nil {
+		_ = pool.Close()
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
@@ -48,21 +58,6 @@ func ParseConnectionConfig(settings Settings) (*pgx.ConnConfig, error) {
 	}
 	configuration.User = settings.Username
 	configuration.Password = settings.Password
-
-	return configuration, nil
-}
-
-func ParsePoolConfig(settings Settings) (*pgxpool.Config, error) {
-	if _, err := parseURL(settings.URL); err != nil {
-		return nil, err
-	}
-
-	configuration, err := pgxpool.ParseConfig(settings.URL)
-	if err != nil {
-		return nil, fmt.Errorf("parse database configuration: %w", err)
-	}
-	configuration.ConnConfig.User = settings.Username
-	configuration.ConnConfig.Password = settings.Password
 
 	return configuration, nil
 }

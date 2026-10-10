@@ -1,6 +1,8 @@
 package com.vkplatform.iam.platform.observability;
 
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.boot.health.actuate.endpoint.HealthDescriptor;
+import org.springframework.boot.health.actuate.endpoint.HealthEndpoint;
+import org.springframework.boot.health.contributor.Status;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -8,10 +10,10 @@ import java.util.Map;
 
 @RestController
 public class HealthController {
-    private final JdbcTemplate jdbcTemplate;
+    private final HealthEndpoint healthEndpoint;
 
-    public HealthController(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
+    public HealthController(HealthEndpoint healthEndpoint) {
+        this.healthEndpoint = healthEndpoint;
     }
 
     @GetMapping("/healthz")
@@ -21,7 +23,10 @@ public class HealthController {
 
     @GetMapping("/readyz")
     Map<String, String> readiness() {
-        jdbcTemplate.queryForObject("SELECT 1", Integer.class);
+        HealthDescriptor databaseHealth = healthEndpoint.healthForPath("db");
+        if (databaseHealth == null || !Status.UP.equals(databaseHealth.getStatus())) {
+            throw new IllegalStateException("IAM database is not ready");
+        }
         return Map.of("status", "ready", "service", "iam");
     }
 }

@@ -70,3 +70,15 @@ jobs:
 
       - name: Compile IAM in Docker
         run: make lint-iam
+
+  persistence:
+    name: Persistence architecture
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Check ORM boundaries and generated persistence
+        run: make check-persistence

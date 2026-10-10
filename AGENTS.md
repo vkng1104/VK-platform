@@ -10,7 +10,9 @@ Keep this file small. Load the relevant repository skill for detailed workflow g
 ## Required Rules
 
 - Before implementing a feature, create or switch to a dedicated branch named `khanh/feat/<feature-name>`, with `<feature-name>` in lowercase kebab-case.
-- Finish each feature as exactly two isolated commits unless the user explicitly requests a different split: first `feat: <concise description>` for implementation, then `test: <concise description>` for its tests.
+- Before the first remote push, finish each feature as exactly two isolated commits unless the user explicitly requests a different split: first `feat: <concise description>` for implementation, then `test: <concise description>` for its tests.
+- Treat every pushed commit as immutable public history. After a branch has been pushed, never amend, rebase, autosquash, reset, drop, reorder, or force-push its commits. Add corrective implementation, test, documentation, merge, or revert commits instead, even when the branch then contains more than two commits.
+- Bring a newer base branch into an already-pushed feature branch with a normal merge commit. Do not rebase a published branch.
 - Preserve unrelated user changes. Stage only files that belong to the current feature or its tests.
 - Apply the repository's bottom-up testing strategy. Put branch coverage at the layer that owns the behavior instead of duplicating it through high-level tests.
 - Follow `DESIGN.md` for frontend Atomic Design boundaries and backend modular-monolith request flow.

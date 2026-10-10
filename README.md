@@ -159,10 +159,29 @@ make build
 
 `make test-api` and `make test-iam` build each service Dockerfile's `test` stage. `make test-integration` runs both integration-test stages against isolated service-owned tmpfs PostgreSQL databases.
 
+## Persistence development
+
+Backend services use ORM-first persistence behind narrow domain repository interfaces. Java IAM uses Spring Data JPA/Hibernate; the Go resource API is migrating to Ent-generated persistence. Generated database models remain private to their owning service and are never shared as HTTP, gRPC, or domain contracts.
+
+Use the repository commands when changing persistence schemas or generated mappings:
+
+```bash
+make generate-persistence
+make check-persistence-generation
+make check-persistence-boundaries
+make test-persistence
+```
+
+Generated infrastructure persistence handles standard create, update-by-ID, find-by-ID(s), and delete-by-ID(s) mechanics. Unique secondary lookups must be backed by database uniqueness; many-result lookups must be explicit and bounded; bulk deletes return affected counts; and upserts declare both a unique conflict target and the fields that may change. Domain/application ports remain use-case-specific and do not expose this generic capability set.
+
+The boundary check flags handwritten application SQL, JPQL/HQL strings, and direct-driver persistence until the location is reviewed in `config/persistence/custom-query-registry.txt`. Complex, performance-sensitive, and database-specific queries may be retained when they use bound values, remain inside infrastructure, and have real persistence coverage. The registry records owner, reason, exact current count, disposition, and coverage; it is not a ban on SQL or a substitute for query review. Versioned Flyway and `golang-migrate` migrations remain reviewed SQL deployment artifacts and are outside this application-query registry.
+
+Generator registrations live in `config/persistence/generators.txt`. Java build-generated metamodel output is not committed; deterministic Go Ent output will be committed and checked for drift once its generator is registered.
+
 ## CI behavior
 
 - `.github/workflows/tests.yml` runs frontend, API/IAM unit, setup, and multi-service integration tests for pull requests targeting `master`, including every pushed PR commit. It intentionally does not run after merge.
-- `.github/workflows/lint.yml` runs frontend lint/type-checking, API formatting/vet checks, and an IAM compile check for pull requests targeting `master` and pushes to `master`.
+- `.github/workflows/lint.yml` runs frontend lint/type-checking, API formatting/vet checks, an IAM compile check, and ORM persistence boundary/generation checks for pull requests targeting `master` and pushes to `master`.
 
 Configure the repository's `master` branch protection to require the PR test and lint checks before merging.
 
