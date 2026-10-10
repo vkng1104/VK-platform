@@ -14,6 +14,7 @@ import (
 	"github.com/vkng1104/VK-platform/apps/api/internal/platform/config"
 	"github.com/vkng1104/VK-platform/apps/api/internal/platform/database"
 	"github.com/vkng1104/VK-platform/apps/api/internal/platform/httpserver"
+	"github.com/vkng1104/VK-platform/apps/api/internal/platform/persistence"
 	"github.com/vkng1104/VK-platform/apps/api/internal/project"
 )
 
@@ -37,14 +38,25 @@ func main() {
 	startupContext, cancelStartup := context.WithTimeout(context.Background(), startupTimeout)
 	defer cancelStartup()
 
-	pool, err := database.Open(startupContext, configuration.Database)
+	sqlDatabase, err := database.Open(startupContext, configuration.Database)
 	if err != nil {
 		slog.Error("open API database failed", "error", err)
 		os.Exit(1)
 	}
-	defer pool.Close()
 
-	projectRepository, err := project.NewPostgreSQLRepository(pool)
+	persistenceClient, err := persistence.NewClient(sqlDatabase)
+	if err != nil {
+		_ = sqlDatabase.Close()
+		slog.Error("construct API persistence client failed", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := persistenceClient.Close(); err != nil {
+			slog.Warn("close API database failed", "error", err)
+		}
+	}()
+
+	projectRepository, err := project.NewEntRepository(persistenceClient)
 	if err != nil {
 		slog.Error("construct project repository failed", "error", err)
 		os.Exit(1)

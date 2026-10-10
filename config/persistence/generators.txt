@@ -2,4 +2,4 @@
 #
 # A tracked path of "-" means generation writes only ignored build output.
 iam|apps/iam/scripts/generate-persistence.sh|-
-# ORM Phase 3 registers the committed Go Ent generator and output path here.
+api|apps/api/scripts/generate-persistence.sh|apps/api/internal/platform/persistence/ent
