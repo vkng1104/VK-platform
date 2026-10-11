@@ -204,7 +204,111 @@ paths:
           $ref: "#/components/responses/AuthenticationFailed"
         "500":
           $ref: "#/components/responses/EmailVerificationInternalError"
+  /api/v1/authentication/grants/exchange:
+    post:
+      operationId: establishPasswordlessSession
+      tags:
+        - Authentication
+      summary: Exchange a one-time sign-in grant for an authorization-server session
+      description: >-
+        Consumes the grant once, creates a durable IAM session, and establishes the HttpOnly
+        authorization-server cookie. Tokens are issued only by the OAuth token endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExchangeAuthenticationGrantRequest"
+      responses:
+        "200":
+          description: The browser can resume its Authorization Code with PKCE request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionEnvelope"
+        "400":
+          $ref: "#/components/responses/VerifyEmailChallengeBadRequest"
+        "401":
+          $ref: "#/components/responses/AuthenticationFailed"
+  /api/v1/authentication/session:
+    get:
+      operationId: getCurrentAuthenticationSession
+      tags:
+        - Authentication
+      summary: Read the current session
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current session details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionEnvelope"
+        "401":
+          $ref: "#/components/responses/AuthenticationFailed"
+  /api/v1/authentication/sessions:
+    get:
+      operationId: listAuthenticationSessions
+      tags:
+        - Authentication
+      summary: List active sessions for the current account
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Active sessions ordered newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionsEnvelope"
+    delete:
+      operationId: revokeAllAuthenticationSessions
+      tags:
+        - Authentication
+      summary: Revoke all sessions for the current account
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: All sessions and their refresh families were revoked.
+  /api/v1/authentication/sessions/{sessionId}:
+    delete:
+      operationId: revokeAuthenticationSession
+      tags:
+        - Authentication
+      summary: Revoke one session owned by the current account
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: The session and its refresh family were revoked.
+        "404":
+          description: The session was not found for the current account.
+  /api/v1/authentication/logout:
+    post:
+      operationId: logoutAuthenticationSession
+      tags:
+        - Authentication
+      summary: Revoke the current session
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The current session was revoked.
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   headers:
     RequestID:
       description: Server-generated identifier for correlating a request with API logs.
@@ -528,6 +632,74 @@ components:
       properties:
         grant:
           $ref: "#/components/schemas/AuthenticationGrant"
+    ExchangeAuthenticationGrantRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - grant
+        - audience
+      properties:
+        grant:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{43}$
+        audience:
+          type: string
+          minLength: 1
+          maxLength: 128
+    AuthenticationSession:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - client_id
+        - status
+        - created_at
+        - last_seen_at
+        - expires_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+        status:
+          type: string
+          enum: [active, revoked, compromised]
+        created_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: [string, "null"]
+          format: date-time
+        compromised_at:
+          type: [string, "null"]
+          format: date-time
+        revoke_reason:
+          type: [string, "null"]
+    SessionEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - session
+      properties:
+        session:
+          $ref: "#/components/schemas/AuthenticationSession"
+    SessionsEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - sessions
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthenticationSession"
     PublicError:
       type: object
       additionalProperties: false
