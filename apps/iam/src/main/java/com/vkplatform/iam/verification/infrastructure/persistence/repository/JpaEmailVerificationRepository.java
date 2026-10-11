@@ -107,7 +107,7 @@ public class JpaEmailVerificationRepository implements EmailVerificationReposito
         }
 
         challenge.markVerified(now);
-        return VerificationAttempt.success(challenge.purpose());
+        return VerificationAttempt.success(challenge.purpose(), challenge.emailFingerprint());
     }
 
     @Override

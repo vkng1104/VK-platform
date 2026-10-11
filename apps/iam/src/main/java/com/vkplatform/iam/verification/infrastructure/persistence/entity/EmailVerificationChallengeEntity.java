@@ -90,6 +90,10 @@ public class EmailVerificationChallengeEntity {
         return purpose;
     }
 
+    public byte[] emailFingerprint() {
+        return emailFingerprint.clone();
+    }
+
     public byte[] otpDigest() {
         return otpDigest.clone();
     }

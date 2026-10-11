@@ -124,6 +124,25 @@ class JpaEmailVerificationRepositoryIntegrationTest {
     }
 
     @Test
+    void persistsTheInternalSignInPurposeAddedByTheForwardMigration() {
+        VerificationChallenge signIn = new VerificationChallenge(
+                UUID.randomUUID(),
+                VerificationPurpose.SIGN_IN,
+                bytes(106),
+                bytes(107),
+                bytes(108),
+                5,
+                NOW.plusSeconds(300),
+                NOW.plusSeconds(60),
+                NOW
+        );
+
+        repository.createPending(signIn, relaxedPolicy());
+
+        assertThat(text("purpose", signIn.id())).isEqualTo("sign_in");
+    }
+
+    @Test
     void appliesDeliveryTransitionsOnlyFromPendingState() {
         VerificationPolicy policy = relaxedPolicy();
         VerificationChallenge sent = challenge(
@@ -267,6 +286,7 @@ class JpaEmailVerificationRepositoryIntegrationTest {
         assertThat(incorrect.verified()).isFalse();
         assertThat(correct.verified()).isTrue();
         assertThat(correct.purpose()).isEqualTo(VerificationPurpose.RESTRICTED_RESOURCE_ACCESS);
+        assertThat(correct.identityFingerprint()).containsOnly((byte) 32);
         assertThat(replay.verified()).isFalse();
         assertThat(integer("attempt_count", challenge.id())).isEqualTo(1);
     }

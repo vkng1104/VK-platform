@@ -2,6 +2,7 @@ package com.vkplatform.iam.verification.application.service;
 
 import com.vkplatform.iam.verification.api.EmailVerificationOperations;
 import com.vkplatform.iam.verification.api.command.StartEmailVerification;
+import com.vkplatform.iam.verification.api.command.StartSignInEmailVerification;
 import com.vkplatform.iam.verification.api.command.VerifyEmailCode;
 import com.vkplatform.iam.verification.api.result.EmailVerified;
 import com.vkplatform.iam.verification.api.result.VerificationChallengeStarted;
@@ -54,6 +55,26 @@ public final class EmailVerificationService implements EmailVerificationOperatio
     public VerificationChallengeStarted start(StartEmailVerification command) {
         EmailAddress email = new EmailAddress(command.email());
         VerificationPurpose purpose = VerificationPurpose.fromWireValue(command.purpose());
+        if (purpose != VerificationPurpose.RESTRICTED_RESOURCE_ACCESS) {
+            throw VerificationFailure.invalidPurpose();
+        }
+        return start(email, purpose, command.requesterAddress());
+    }
+
+    @Override
+    public VerificationChallengeStarted startSignIn(StartSignInEmailVerification command) {
+        return start(
+                new EmailAddress(command.email()),
+                VerificationPurpose.SIGN_IN,
+                command.requesterAddress()
+        );
+    }
+
+    private VerificationChallengeStarted start(
+            EmailAddress email,
+            VerificationPurpose purpose,
+            String requesterAddress
+    ) {
         VerificationCode code = codeGenerator.generate();
         UUID id = UUID.randomUUID();
         Instant now = clock.instant();
@@ -64,7 +85,7 @@ public final class EmailVerificationService implements EmailVerificationOperatio
                 id,
                 purpose,
                 hasher.emailFingerprint(email),
-                requesterFingerprint(command.requesterAddress()),
+                requesterFingerprint(requesterAddress),
                 hasher.codeDigest(id, purpose, code),
                 policy.maxAttempts(),
                 expiresAt,
@@ -90,13 +111,21 @@ public final class EmailVerificationService implements EmailVerificationOperatio
 
     @Override
     public EmailVerified verify(VerifyEmailCode command) {
+        return verify(command, VerificationPurpose.RESTRICTED_RESOURCE_ACCESS);
+    }
+
+    @Override
+    public EmailVerified verifySignIn(VerifyEmailCode command) {
+        return verify(command, VerificationPurpose.SIGN_IN);
+    }
+
+    private EmailVerified verify(VerifyEmailCode command, VerificationPurpose purpose) {
         String idValue = command.verificationId();
         if (idValue == null || !UUID_V4.matcher(idValue.strip()).matches()) {
             throw VerificationFailure.invalidId();
         }
         VerificationCode code = new VerificationCode(command.code());
         UUID id = UUID.fromString(idValue);
-        VerificationPurpose purpose = VerificationPurpose.RESTRICTED_RESOURCE_ACCESS;
         Instant now = clock.instant();
         EmailVerificationRepository.VerificationAttempt attempt = repository.verify(
                 id,
@@ -106,7 +135,12 @@ public final class EmailVerificationService implements EmailVerificationOperatio
         if (!attempt.verified()) {
             throw VerificationFailure.invalidOrExpiredCode();
         }
-        return new EmailVerified(id, attempt.purpose().wireValue(), now);
+        return new EmailVerified(
+                id,
+                attempt.purpose().wireValue(),
+                now,
+                attempt.identityFingerprint()
+        );
     }
 
     private byte[] requesterFingerprint(String requesterAddress) {

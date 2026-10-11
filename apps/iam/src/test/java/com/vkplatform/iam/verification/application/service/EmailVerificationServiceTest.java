@@ -1,6 +1,7 @@
 package com.vkplatform.iam.verification.application.service;
 
 import com.vkplatform.iam.verification.api.command.StartEmailVerification;
+import com.vkplatform.iam.verification.api.command.StartSignInEmailVerification;
 import com.vkplatform.iam.verification.api.command.VerifyEmailCode;
 import com.vkplatform.iam.verification.api.result.EmailVerified;
 import com.vkplatform.iam.verification.api.result.VerificationChallengeStarted;
@@ -118,7 +119,8 @@ class EmailVerificationServiceTest {
     void verifiesAWellFormedChallengeAndKeepsAllOtherFailuresGeneric() {
         String id = "123e4567-e89b-42d3-a456-426614174000";
         repository.verificationAttempt = EmailVerificationRepository.VerificationAttempt.success(
-                VerificationPurpose.RESTRICTED_RESOURCE_ACCESS
+                VerificationPurpose.RESTRICTED_RESOURCE_ACCESS,
+                bytes(1)
         );
 
         EmailVerified completed = service.verify(new VerifyEmailCode(id, "123456"));
@@ -126,6 +128,7 @@ class EmailVerificationServiceTest {
         assertThat(completed.id()).isEqualTo(UUID.fromString(id));
         assertThat(completed.purpose()).isEqualTo("restricted_resource_access");
         assertThat(completed.verifiedAt()).isEqualTo(NOW);
+        assertThat(completed.identityFingerprint()).containsOnly((byte) 1);
         assertThat(repository.candidateDigest).containsOnly((byte) 3);
 
         repository.verificationAttempt = EmailVerificationRepository.VerificationAttempt.rejected();
@@ -133,6 +136,33 @@ class EmailVerificationServiceTest {
                 .isInstanceOfSatisfying(VerificationFailure.class, failure ->
                         assertThat(failure.reason())
                                 .isEqualTo(VerificationFailure.Reason.INVALID_OR_EXPIRED_CODE));
+    }
+
+    @Test
+    void keepsSignInBehindTheExplicitModuleApi() {
+        assertThatThrownBy(() -> service.start(new StartEmailVerification(
+                "reader@example.com",
+                "sign_in",
+                "192.0.2.15"
+        ))).isInstanceOfSatisfying(VerificationFailure.class, failure ->
+                assertThat(failure.reason()).isEqualTo(VerificationFailure.Reason.INVALID_PURPOSE));
+
+        service.startSignIn(new StartSignInEmailVerification(
+                "reader@example.com",
+                "192.0.2.15"
+        ));
+        assertThat(repository.created.purpose()).isEqualTo(VerificationPurpose.SIGN_IN);
+
+        repository.verificationAttempt = EmailVerificationRepository.VerificationAttempt.success(
+                VerificationPurpose.SIGN_IN,
+                bytes(7)
+        );
+        EmailVerified verified = service.verifySignIn(new VerifyEmailCode(
+                "123e4567-e89b-42d3-a456-426614174000",
+                "123456"
+        ));
+        assertThat(verified.purpose()).isEqualTo("sign_in");
+        assertThat(verified.identityFingerprint()).containsOnly((byte) 7);
     }
 
     @Test

@@ -13,13 +13,15 @@ class VerificationPurposeConverterTest {
     void convertsEveryPurposeToItsStoredValue() {
         assertThat(VerificationPurpose.values())
                 .extracting(converter::convertToDatabaseColumn)
-                .containsExactly("restricted_resource_access");
+                .containsExactly("restricted_resource_access", "sign_in");
     }
 
     @Test
     void convertsStoredValuesToPurposes() {
         assertThat(converter.convertToEntityAttribute("restricted_resource_access"))
                 .isEqualTo(VerificationPurpose.RESTRICTED_RESOURCE_ACCESS);
+        assertThat(converter.convertToEntityAttribute("sign_in"))
+                .isEqualTo(VerificationPurpose.SIGN_IN);
     }
 
     @Test

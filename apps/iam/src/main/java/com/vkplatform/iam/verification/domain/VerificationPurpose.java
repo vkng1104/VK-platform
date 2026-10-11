@@ -1,7 +1,8 @@
 package com.vkplatform.iam.verification.domain;
 
 public enum VerificationPurpose {
-    RESTRICTED_RESOURCE_ACCESS("restricted_resource_access");
+    RESTRICTED_RESOURCE_ACCESS("restricted_resource_access"),
+    SIGN_IN("sign_in");
 
     private final String wireValue;
 

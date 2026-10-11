@@ -7,6 +7,7 @@ import com.vkplatform.iam.platform.web.GlobalExceptionHandler;
 import com.vkplatform.iam.platform.web.RequestIdFilter;
 import com.vkplatform.iam.verification.api.EmailVerificationOperations;
 import com.vkplatform.iam.verification.api.command.StartEmailVerification;
+import com.vkplatform.iam.verification.api.command.StartSignInEmailVerification;
 import com.vkplatform.iam.verification.api.command.VerifyEmailCode;
 import com.vkplatform.iam.verification.api.result.EmailVerified;
 import com.vkplatform.iam.verification.api.result.VerificationChallengeStarted;
@@ -272,6 +273,11 @@ class EmailVerificationControllerTest {
         }
 
         @Override
+        public VerificationChallengeStarted startSignIn(StartSignInEmailVerification command) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public EmailVerified verify(VerifyEmailCode command) {
             verify = command;
             if (verifyFailure != null) {
@@ -280,8 +286,14 @@ class EmailVerificationControllerTest {
             return new EmailVerified(
                     UUID.fromString(command.verificationId()),
                     "restricted_resource_access",
-                    NOW
+                    NOW,
+                    new byte[32]
             );
+        }
+
+        @Override
+        public EmailVerified verifySignIn(VerifyEmailCode command) {
+            throw new UnsupportedOperationException();
         }
     }
 }
