@@ -1,0 +1,8 @@
+{
+  "grant": {
+    "account_id": "3d64af52-d808-4cf0-a864-c7ed43f1f802",
+    "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "audience": "vk-platform-web",
+    "expires_at": "2026-10-11T03:05:00Z"
+  }
+}
