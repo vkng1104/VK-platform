@@ -194,6 +194,11 @@ class AuthenticationControllerTest {
         }
 
         @Override
+        public AuthenticatedAccount activeAccount(UUID accountId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public AccountSummary account(UUID accountId) {
             throw new UnsupportedOperationException();
         }
