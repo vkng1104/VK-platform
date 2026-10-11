@@ -18,7 +18,8 @@ public class SecurityConfiguration {
                                 "/healthz",
                                 "/readyz",
                                 "/api/docs/**",
-                                "/api/v1/email-verifications/**"
+                                "/api/v1/email-verifications/**",
+                                "/api/v1/authentication/challenges/**"
                         ).permitAll()
                         .anyRequest().denyAll()
                 )

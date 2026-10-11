@@ -79,9 +79,13 @@ When configured, the IAM Service exposes:
 ```text
 POST /api/v1/email-verifications
 POST /api/v1/email-verifications/{id}/verify
+POST /api/v1/authentication/challenges
+POST /api/v1/authentication/challenges/{id}/verify
 ```
 
 The start request accepts an email and the supported `restricted_resource_access` purpose. Codes expire after five minutes, allow five attempts, enforce resend and destination/requester/global throttles, and can succeed only once.
+
+The authentication routes bind the same hardened challenge lifecycle to the internal `sign_in` purpose. A successful sign-in verification resolves one account for the normalized email fingerprint and returns a five-minute, audience-bound one-time grant. IAM stores only the grant's SHA-256 digest; raw emails and raw grants are not persisted. `IAM_AUTHENTICATION_AUDIENCE` and `IAM_AUTHENTICATION_GRANT_TTL` configure the intended consumer and lifetime.
 
 Verification-email copy lives under `apps/iam/src/main/resources/mail/`. Subject, plain-text, and HTML templates use `{{CODE}}` and `{{EXPIRES_AT}}` placeholders and are packaged in the IAM application, so deployment does not require mounting template files.
 

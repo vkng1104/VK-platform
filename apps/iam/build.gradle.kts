@@ -86,6 +86,11 @@ tasks.register("generatePersistence") {
 			.get()
 			.asFile
 		val expectedMetamodels = listOf(
+			"com/vkplatform/iam/identity/infrastructure/persistence/entity/AccountEntity_.java",
+			"com/vkplatform/iam/identity/infrastructure/persistence/entity/IdentityOperationGuardEntity_.java",
+			"com/vkplatform/iam/identity/infrastructure/persistence/entity/LoginIdentityEntity_.java",
+			"com/vkplatform/iam/identity/infrastructure/persistence/entity/SecurityEventEntity_.java",
+			"com/vkplatform/iam/identity/infrastructure/persistence/entity/VerificationGrantEntity_.java",
 			"com/vkplatform/iam/verification/infrastructure/persistence/entity/EmailVerificationChallengeEntity_.java",
 			"com/vkplatform/iam/verification/infrastructure/persistence/entity/EmailVerificationOperationGuardEntity_.java"
 		)

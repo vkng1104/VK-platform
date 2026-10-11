@@ -15,6 +15,8 @@ tags:
     description: >-
       Purpose-bound email verification operations. These routes are available only when the IAM Service
       email provider is configured and enabled.
+  - name: Authentication
+    description: Passwordless sign-in challenges and one-time identity grants.
 paths:
   /healthz:
     get:
@@ -119,6 +121,87 @@ paths:
           $ref: "#/components/responses/VerifyEmailChallengeBadRequest"
         "422":
           $ref: "#/components/responses/InvalidOrExpiredCode"
+        "500":
+          $ref: "#/components/responses/EmailVerificationInternalError"
+  /api/v1/authentication/challenges:
+    post:
+      operationId: startPasswordlessSignIn
+      tags:
+        - Authentication
+      summary: Start a passwordless sign-in challenge
+      description: |
+        Sends a six-digit sign-in code without retaining the raw email address.
+        The request body is limited to 4 KiB and rejects unknown fields.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartAuthenticationChallengeRequest"
+            example:
+              email: visitor@example.com
+      responses:
+        "202":
+          description: The sign-in challenge was accepted for delivery.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationChallengeResponse"
+        "400":
+          $ref: "#/components/responses/StartEmailVerificationBadRequest"
+        "429":
+          $ref: "#/components/responses/EmailVerificationRateLimited"
+        "500":
+          $ref: "#/components/responses/EmailVerificationInternalError"
+        "503":
+          $ref: "#/components/responses/EmailDeliveryUnavailable"
+  /api/v1/authentication/challenges/{id}/verify:
+    post:
+      operationId: verifyPasswordlessSignIn
+      tags:
+        - Authentication
+      summary: Verify a passwordless sign-in challenge
+      description: |
+        Verifies the sign-in code and returns a five-minute, audience-bound,
+        one-time grant. The grant is returned once and only its SHA-256 digest
+        is retained.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyEmailChallengeRequest"
+            example:
+              code: "123456"
+      responses:
+        "200":
+          description: A one-time sign-in grant was issued.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationGrantResponse"
+        "400":
+          $ref: "#/components/responses/VerifyEmailChallengeBadRequest"
+        "422":
+          $ref: "#/components/responses/AuthenticationFailed"
         "500":
           $ref: "#/components/responses/EmailVerificationInternalError"
 components:
@@ -273,6 +356,22 @@ components:
             message: The verification code is invalid or expired. Request a new code and try again.
             request_id: 0a1b2c3d4e5f67890123456789abcdef
             retryable: false
+    AuthenticationFailed:
+      description: The challenge, grant, or account state cannot complete authentication.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+        Cache-Control:
+          $ref: "#/components/headers/NoStore"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicError"
+          example:
+            code: AUTHENTICATION_FAILED
+            message: Authentication could not be completed. Start again and request a new code.
+            request_id: 0a1b2c3d4e5f67890123456789abcdef
+            retryable: false
     EmailVerificationInternalError:
       description: An unexpected internal failure occurred.
       headers:
@@ -320,6 +419,16 @@ components:
           maxLength: 254
         purpose:
           $ref: "#/components/schemas/VerificationPurpose"
+    StartAuthenticationChallengeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
     VerifyEmailChallengeRequest:
       type: object
       additionalProperties: false
@@ -381,6 +490,44 @@ components:
       properties:
         verification:
           $ref: "#/components/schemas/VerifiedEmail"
+    AuthenticationChallengeResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - challenge
+      properties:
+        challenge:
+          $ref: "#/components/schemas/EmailChallenge"
+    AuthenticationGrant:
+      type: object
+      additionalProperties: false
+      required:
+        - account_id
+        - value
+        - audience
+        - expires_at
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        value:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{43}$
+        audience:
+          type: string
+          minLength: 1
+          maxLength: 128
+        expires_at:
+          type: string
+          format: date-time
+    AuthenticationGrantResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - grant
+      properties:
+        grant:
+          $ref: "#/components/schemas/AuthenticationGrant"
     PublicError:
       type: object
       additionalProperties: false

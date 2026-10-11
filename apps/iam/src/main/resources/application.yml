@@ -41,6 +41,9 @@ management:
         enabled: true
 
 iam:
+  authentication:
+    audience: ${IAM_AUTHENTICATION_AUDIENCE:vk-platform-web}
+    grant-ttl: ${IAM_AUTHENTICATION_GRANT_TTL:PT5M}
   email:
     provider: ${EMAIL_PROVIDER:disabled}
     from-address: ${EMAIL_FROM_ADDRESS:}
