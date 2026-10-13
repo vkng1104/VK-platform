@@ -25,7 +25,7 @@ public interface PasswordlessIdentityRepository {
 
     Account findAccount(UUID accountId);
 
-    Account changeAccountStatus(
+    AccountStatusChange changeAccountStatus(
             UUID accountId,
             AccountStatus status,
             Instant now,
@@ -34,5 +34,8 @@ public interface PasswordlessIdentityRepository {
     );
 
     record IssuedGrant(UUID accountId, Instant expiresAt) {
+    }
+
+    record AccountStatusChange(Account account, boolean changed) {
     }
 }

@@ -29,6 +29,15 @@ server:
   port: ${IAM_PORT:8081}
   shutdown: graceful
   max-http-request-header-size: 1MB
+  servlet:
+    session:
+      timeout: ${IAM_BROWSER_SESSION_TIMEOUT:P30D}
+      cookie:
+        name: VK_IAM_SESSION
+        http-only: true
+        secure: ${IAM_SESSION_COOKIE_SECURE:true}
+        same-site: lax
+        path: /
 
 management:
   endpoints:
@@ -44,6 +53,25 @@ iam:
   authentication:
     audience: ${IAM_AUTHENTICATION_AUDIENCE:vk-platform-web}
     grant-ttl: ${IAM_AUTHENTICATION_GRANT_TTL:PT5M}
+  session:
+    enabled: ${IAM_SESSION_ENABLED:false}
+    issuer: ${IAM_TOKEN_ISSUER:http://localhost:8081}
+    audience: ${IAM_TOKEN_AUDIENCE:vk-platform-api}
+    authentication-audience: ${IAM_AUTHENTICATION_AUDIENCE:vk-platform-web}
+    bff-client-id: ${IAM_BFF_CLIENT_ID:vk-platform-bff}
+    access-token-ttl: ${IAM_ACCESS_TOKEN_TTL:PT5M}
+    refresh-token-ttl: ${IAM_REFRESH_TOKEN_TTL:P30D}
+    absolute-session-ttl: ${IAM_ABSOLUTE_SESSION_TTL:P30D}
+    login-uri: ${IAM_LOGIN_URI:http://localhost:3000/sign-in}
+    signing-key-id: ${IAM_SIGNING_KEY_ID:}
+    signing-private-key-pkcs8-base64: ${IAM_SIGNING_PRIVATE_KEY_PKCS8_BASE64:}
+    signing-public-key-x509-base64: ${IAM_SIGNING_PUBLIC_KEY_X509_BASE64:}
+    signing-key-encryption-key-base64: ${IAM_SIGNING_KEY_ENCRYPTION_KEY_BASE64:}
+    bff-client-secret: ${IAM_BFF_CLIENT_SECRET:}
+    bff-redirect-uri: ${IAM_BFF_REDIRECT_URI:http://localhost:3000/api/auth/callback}
+    service-client-id: ${IAM_SERVICE_CLIENT_ID:vk-platform-api}
+    service-client-secret: ${IAM_SERVICE_CLIENT_SECRET:}
+    service-audience: ${IAM_SERVICE_TOKEN_AUDIENCE:vk-platform-iam}
   email:
     provider: ${EMAIL_PROVIDER:disabled}
     from-address: ${EMAIL_FROM_ADDRESS:}
