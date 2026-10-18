@@ -3,15 +3,14 @@ package com.vkplatform.iam.session.infrastructure.config;
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
 import com.vkplatform.iam.session.infrastructure.persistence.repository.JpaSigningKeyStore;
 import com.vkplatform.iam.session.application.port.out.SessionRepository;
-import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.oauth2.server.authorization.OAuth2AuthorizationServerConfigurer;
-import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
@@ -80,23 +79,21 @@ public class OAuthAuthorizationServerConfiguration {
     }
 
     @Bean
-    ApplicationRunner oauthClientBootstrap(
-            RegisteredClientRepository clients,
-            PasswordEncoder passwordEncoder,
-            SessionProperties properties,
-            Clock clock
-    ) {
-        return new OAuthClientBootstrap(clients, passwordEncoder, properties, clock);
-    }
-
-    @Bean
     OAuth2TokenCustomizer<JwtEncodingContext> oauthTokenClaimsCustomizer(
             PasswordlessIdentityOperations identities,
             SessionProperties properties,
             Clock clock,
             JpaSigningKeyStore signingKeys,
-            SessionRepository sessions
+            SessionRepository sessions,
+            SessionSecurityMetrics metrics
     ) {
-        return new OAuthTokenClaimsCustomizer(identities, properties, clock, signingKeys, sessions);
+        return new OAuthTokenClaimsCustomizer(
+                identities,
+                properties,
+                clock,
+                signingKeys,
+                sessions,
+                metrics
+        );
     }
 }

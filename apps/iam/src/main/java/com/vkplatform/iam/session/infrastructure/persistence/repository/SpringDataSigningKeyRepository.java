@@ -5,6 +5,7 @@ import com.vkplatform.iam.session.infrastructure.persistence.entity.SigningKeyEn
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.domain.Pageable;
 
 import java.time.Instant;
 import java.util.List;
@@ -17,6 +18,12 @@ interface SpringDataSigningKeyRepository extends JpaRepository<SigningKeyEntity,
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<SigningKeyEntity> findLockedByStatus(SigningKeyStatus status);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<SigningKeyEntity> findLockedById(String id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    List<SigningKeyEntity> findByProtectionKeyVersionNotOrderByIdAsc(String version, Pageable pageable);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     List<SigningKeyEntity> findLockedByStatusAndPublishUntilLessThanEqual(

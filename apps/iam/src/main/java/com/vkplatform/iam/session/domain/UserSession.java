@@ -9,9 +9,8 @@ public record UserSession(
         UUID accountId,
         String clientId,
         SessionStatus status,
-        long version,
         Instant createdAt,
-        Instant lastSeenAt,
+        Instant lastRefreshedAt,
         Instant expiresAt,
         Instant revokedAt,
         Instant compromisedAt,
@@ -23,10 +22,10 @@ public record UserSession(
         Objects.requireNonNull(clientId);
         Objects.requireNonNull(status);
         Objects.requireNonNull(createdAt);
-        Objects.requireNonNull(lastSeenAt);
+        Objects.requireNonNull(lastRefreshedAt);
         Objects.requireNonNull(expiresAt);
-        if (clientId.isBlank() || clientId.length() > 128 || version < 0
-                || lastSeenAt.isBefore(createdAt) || !expiresAt.isAfter(createdAt)) {
+        if (clientId.isBlank() || clientId.length() > 128
+                || lastRefreshedAt.isBefore(createdAt) || !expiresAt.isAfter(createdAt)) {
             throw new IllegalArgumentException("session state is invalid");
         }
         if (status == SessionStatus.ACTIVE
@@ -55,7 +54,6 @@ public record UserSession(
                 accountId,
                 clientId,
                 SessionStatus.ACTIVE,
-                0,
                 now,
                 now,
                 expiresAt,
@@ -77,7 +75,7 @@ public record UserSession(
             throw SessionFailure.invalidRefreshToken();
         }
         return new UserSession(
-                id, accountId, clientId, status, version, createdAt, now, expiresAt,
+                id, accountId, clientId, status, createdAt, now, expiresAt,
                 revokedAt, compromisedAt, revokeReason
         );
     }
@@ -89,8 +87,8 @@ public record UserSession(
             return this;
         }
         return new UserSession(
-                id, accountId, clientId, SessionStatus.REVOKED, version, createdAt,
-                lastSeenAt, expiresAt, now, null, reason
+                id, accountId, clientId, SessionStatus.REVOKED, createdAt,
+                lastRefreshedAt, expiresAt, now, null, reason
         );
     }
 
@@ -100,14 +98,14 @@ public record UserSession(
             return this;
         }
         return new UserSession(
-                id, accountId, clientId, SessionStatus.COMPROMISED, version, createdAt,
-                lastSeenAt, expiresAt, now, now, SessionRevokeReason.REFRESH_TOKEN_REUSED
+                id, accountId, clientId, SessionStatus.COMPROMISED, createdAt,
+                lastRefreshedAt, expiresAt, now, now, SessionRevokeReason.REFRESH_TOKEN_REUSED
         );
     }
 
     private void requireTimestamp(Instant now) {
         Objects.requireNonNull(now);
-        if (now.isBefore(lastSeenAt)) {
+        if (now.isBefore(lastRefreshedAt)) {
             throw new IllegalArgumentException("session change precedes its current state");
         }
     }

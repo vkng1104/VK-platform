@@ -6,11 +6,18 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.util.ContentCachingResponseWrapper;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
+import org.springframework.http.HttpMethod;
 
 import java.io.IOException;
 
 final class OAuthTokenEndpointTransactionFilter extends OncePerRequestFilter {
+    private static final RequestMatcher TOKEN_ENDPOINT =
+            PathPatternRequestMatcher.pathPattern(HttpMethod.POST, "/oauth2/token");
+
     private final TransactionTemplate transactions;
 
     OAuthTokenEndpointTransactionFilter(PlatformTransactionManager transactionManager) {
@@ -19,7 +26,7 @@ final class OAuthTokenEndpointTransactionFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !"POST".equals(request.getMethod()) || !"/oauth2/token".equals(request.getRequestURI());
+        return !TOKEN_ENDPOINT.matches(request);
     }
 
     @Override
@@ -28,14 +35,16 @@ final class OAuthTokenEndpointTransactionFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
+        ContentCachingResponseWrapper buffered = new ContentCachingResponseWrapper(response);
         try {
             transactions.executeWithoutResult(status -> {
                 try {
-                    filterChain.doFilter(request, response);
+                    filterChain.doFilter(request, buffered);
                 } catch (ServletException | IOException exception) {
                     throw new FilterFailure(exception);
                 }
             });
+            buffered.copyBodyToResponse();
         } catch (FilterFailure failure) {
             if (failure.getCause() instanceof ServletException servletException) {
                 throw servletException;

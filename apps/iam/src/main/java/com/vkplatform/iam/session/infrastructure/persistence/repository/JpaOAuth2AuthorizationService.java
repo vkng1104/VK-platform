@@ -1,11 +1,15 @@
 package com.vkplatform.iam.session.infrastructure.persistence.repository;
 
+import com.vkplatform.iam.identity.api.SecurityAuditOperations;
+import com.vkplatform.iam.identity.api.event.SecurityAuditEvent;
+import com.vkplatform.iam.identity.api.event.SecurityAuditType;
+import com.vkplatform.iam.session.infrastructure.config.SessionSecurityMetrics;
 import com.vkplatform.iam.session.domain.SessionStatus;
+import com.vkplatform.iam.session.domain.OAuthAuthorizationInvalidationReason;
 import com.vkplatform.iam.session.infrastructure.crypto.TokenDigest;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.OAuthAuthorizationEntity;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.OAuthRefreshTokenEntity;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.SessionEntity;
-import com.vkplatform.iam.session.infrastructure.persistence.entity.SessionSecurityEventEntity;
 import org.springframework.dao.DataRetrievalFailureException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
@@ -42,31 +46,41 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
     private final SpringDataOAuthAuthorizationRepository authorizations;
     private final SpringDataOAuthRefreshTokenRepository refreshTokens;
     private final SpringDataSessionRepository sessions;
-    private final SpringDataSessionSecurityEventRepository events;
+    private final SecurityAuditOperations audit;
     private final RegisteredClientRepository clients;
     private final Clock clock;
+    private final SessionSecurityMetrics metrics;
     private final OAuthJsonCodec json = new OAuthJsonCodec();
 
     JpaOAuth2AuthorizationService(
             SpringDataOAuthAuthorizationRepository authorizations,
             SpringDataOAuthRefreshTokenRepository refreshTokens,
             SpringDataSessionRepository sessions,
-            SpringDataSessionSecurityEventRepository events,
+            SecurityAuditOperations audit,
             RegisteredClientRepository clients,
-            Clock clock
+            Clock clock,
+            SessionSecurityMetrics metrics
     ) {
         this.authorizations = authorizations;
         this.refreshTokens = refreshTokens;
         this.sessions = sessions;
-        this.events = events;
+        this.audit = audit;
         this.clients = clients;
         this.clock = clock;
+        this.metrics = metrics;
     }
 
     @Override
     @Transactional
     public void save(OAuth2Authorization authorization) {
         Assert.notNull(authorization, "authorization cannot be null");
+        UUID requestedSessionId = sessionId(authorization);
+        UUID persistedSessionId = authorizations.findById(authorization.getId())
+                .map(OAuthAuthorizationEntity::sessionId)
+                .orElse(null);
+        if (!lockUsableSession(requestedSessionId == null ? persistedSessionId : requestedSessionId)) {
+            throw new IllegalStateException("OAuth session is unavailable");
+        }
         OAuthAuthorizationEntity entity = authorizations.findLockedById(authorization.getId())
                 .orElseGet(OAuthAuthorizationEntity::new);
         if (entity.invalidatedAt() != null) {
@@ -82,8 +96,14 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
     @Transactional
     public void remove(OAuth2Authorization authorization) {
         Assert.notNull(authorization, "authorization cannot be null");
+        authorizations.findById(authorization.getId())
+                .map(OAuthAuthorizationEntity::sessionId)
+                .ifPresent(this::lockSession);
         authorizations.findLockedById(authorization.getId())
-                .ifPresent(entity -> entity.invalidate(clock.instant(), "authorization_removed"));
+                .ifPresent(entity -> entity.invalidate(
+                        clock.instant(),
+                        OAuthAuthorizationInvalidationReason.AUTHORIZATION_REMOVED
+                ));
     }
 
     @Override
@@ -117,7 +137,9 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
                     .orElse(null);
         }
         if (OAuth2ParameterNames.CODE.equals(type)) {
+            metrics.authorizationCodeLookup();
             return authorizations.findByAuthorizationCodeDigest(digest)
+                    .map(this::lockAuthorizationForSession)
                     .map(entity -> usable(entity, new PresentedToken(type, token, digest)))
                     .orElse(null);
         }
@@ -133,14 +155,19 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
     }
 
     private OAuth2Authorization findByRefreshToken(String rawToken, byte[] digest) {
-        OAuthRefreshTokenEntity refresh = refreshTokens.findLockedByTokenDigest(digest).orElse(null);
-        if (refresh == null) {
+        String authorizationId = refreshTokens.findAuthorizationIdByTokenDigest(digest).orElse(null);
+        if (authorizationId == null) {
             return null;
         }
-        OAuthAuthorizationEntity authorization = authorizations.findLockedById(refresh.authorizationId())
+        UUID sessionId = authorizations.findSessionIdById(authorizationId).orElse(null);
+        if (!lockUsableSession(sessionId)) {
+            return null;
+        }
+        OAuthAuthorizationEntity authorization = authorizations.findLockedById(authorizationId)
                 .orElse(null);
+        OAuthRefreshTokenEntity refresh = refreshTokens.findLockedByTokenDigest(digest).orElse(null);
         Instant now = clock.instant();
-        if (authorization == null || authorization.invalidatedAt() != null) {
+        if (authorization == null || refresh == null || authorization.invalidatedAt() != null) {
             return null;
         }
         if (refresh.consumedAt() != null) {
@@ -174,21 +201,43 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
                 .isPresent();
     }
 
+    private OAuthAuthorizationEntity lockAuthorizationForSession(OAuthAuthorizationEntity candidate) {
+        if (!lockUsableSession(candidate.sessionId())) {
+            return null;
+        }
+        return authorizations.findLockedById(candidate.getId()).orElse(candidate);
+    }
+
+    private boolean lockUsableSession(UUID sessionId) {
+        if (sessionId == null) {
+            return true;
+        }
+        SessionEntity session = sessions.findLockedById(sessionId).orElse(null);
+        return session != null
+                && session.toDomain().status() == SessionStatus.ACTIVE
+                && clock.instant().isBefore(session.toDomain().expiresAt());
+    }
+
+    private SessionEntity lockSession(UUID sessionId) {
+        return sessions.findLockedById(sessionId)
+                .orElseThrow(() -> new IllegalStateException("OAuth session is missing"));
+    }
+
     private void compromise(
             OAuthRefreshTokenEntity refresh,
             OAuthAuthorizationEntity authorization,
             Instant now
     ) {
         refresh.detectReuse(now);
-        authorization.invalidate(now, "refresh_token_reused");
+        metrics.refreshReplayDetected();
+        authorization.invalidate(now, OAuthAuthorizationInvalidationReason.REFRESH_TOKEN_REUSED);
         if (authorization.sessionId() == null) {
             return;
         }
         sessions.findLockedById(authorization.sessionId()).ifPresent(session -> {
             session.apply(session.toDomain().compromise(now));
-            events.save(new SessionSecurityEventEntity(
-                    UUID.randomUUID(),
-                    "refresh_token_reused",
+            audit.append(new SecurityAuditEvent(
+                    SecurityAuditType.REFRESH_TOKEN_REUSED,
                     session.accountId(),
                     session.id(),
                     null,
@@ -231,6 +280,7 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
                 entity.refreshTokenExpiresAt()
         ));
         touchSession(entity.sessionId(), now);
+        metrics.refreshRotated();
     }
 
     private void touchSession(UUID sessionId, Instant now) {
@@ -239,9 +289,8 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         }
         sessions.findLockedById(sessionId).ifPresent(session -> {
             session.apply(session.toDomain().touch(now));
-            events.save(new SessionSecurityEventEntity(
-                    UUID.randomUUID(),
-                    "refresh_token_rotated",
+            audit.append(new SecurityAuditEvent(
+                    SecurityAuditType.REFRESH_TOKEN_ROTATED,
                     session.accountId(),
                     session.id(),
                     null,

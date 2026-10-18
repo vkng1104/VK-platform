@@ -125,6 +125,7 @@ public class SessionService implements SessionOperations {
         return repository.revokeAll(
                 Objects.requireNonNull(command.accountId()),
                 command.exceptSessionId(),
+                command.accountId().toString(),
                 SessionRevokeReason.ALL_SESSIONS_REVOKED,
                 clock.instant(),
                 requireContext(command.requestId())
@@ -137,7 +138,7 @@ public class SessionService implements SessionOperations {
                 session.clientId(),
                 session.status().wireValue(),
                 session.createdAt(),
-                session.lastSeenAt(),
+                session.lastRefreshedAt(),
                 session.expiresAt(),
                 session.revokedAt(),
                 session.compromisedAt(),

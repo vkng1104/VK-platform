@@ -25,6 +25,8 @@ public interface PasswordlessIdentityRepository {
 
     Account findAccount(UUID accountId);
 
+    Account findAccountForTokenIssuance(UUID accountId);
+
     AccountStatusChange changeAccountStatus(
             UUID accountId,
             AccountStatus status,

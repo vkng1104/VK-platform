@@ -12,6 +12,9 @@ import org.springframework.security.web.authentication.session.ChangeSessionIdAu
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = "iam.session.enabled", havingValue = "true")
@@ -30,7 +33,10 @@ public class SessionSecurityConfiguration {
     @Order(2)
     SecurityFilterChain passwordlessSessionExchangeSecurityFilterChain(
             HttpSecurity http,
-            SecurityContextRepository securityContexts
+            SecurityContextRepository securityContexts,
+            RegisteredClientRepository clients,
+            PasswordEncoder passwords,
+            SessionProperties properties
     ) throws Exception {
         return http
                 .securityMatcher("/api/v1/authentication/grants/exchange")
@@ -43,6 +49,10 @@ public class SessionSecurityConfiguration {
                         .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
                 )
                 .authorizeHttpRequests(requests -> requests.anyRequest().permitAll())
+                .addFilterBefore(
+                        new BffClientAuthenticationFilter(clients, passwords, properties),
+                        AnonymousAuthenticationFilter.class
+                )
                 .build();
     }
 

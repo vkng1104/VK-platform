@@ -1,7 +1,7 @@
 package com.vkplatform.iam.identity.infrastructure.persistence.entity;
 
-import com.vkplatform.iam.identity.domain.SecurityEventType;
-import com.vkplatform.iam.identity.infrastructure.persistence.converter.SecurityEventTypeConverter;
+import com.vkplatform.iam.identity.api.event.SecurityAuditType;
+import com.vkplatform.iam.identity.infrastructure.persistence.converter.SecurityAuditTypeConverter;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
@@ -17,9 +17,9 @@ public class SecurityEventEntity extends AbstractUuidEntity {
     @Id
     private UUID id;
 
-    @Convert(converter = SecurityEventTypeConverter.class)
+    @Convert(converter = SecurityAuditTypeConverter.class)
     @Column(name = "event_type", nullable = false)
-    private SecurityEventType eventType;
+    private SecurityAuditType eventType;
 
     @Column(name = "account_id")
     private UUID accountId;
@@ -41,7 +41,7 @@ public class SecurityEventEntity extends AbstractUuidEntity {
 
     public SecurityEventEntity(
             UUID id,
-            SecurityEventType eventType,
+            SecurityAuditType eventType,
             UUID accountId,
             UUID targetId,
             String actorId,

@@ -1,17 +1,22 @@
-package com.vkplatform.iam.identity.domain;
+package com.vkplatform.iam.identity.api.event;
 
-public enum SecurityEventType {
+public enum SecurityAuditType {
     ACCOUNT_CREATED("account_created"),
     LOGIN_IDENTITY_LINKED("login_identity_linked"),
     SIGN_IN_GRANT_ISSUED("sign_in_grant_issued"),
     SIGN_IN_GRANT_CONSUMED("sign_in_grant_consumed"),
     ACCOUNT_SUSPENDED("account_suspended"),
     ACCOUNT_REACTIVATED("account_reactivated"),
-    ACCOUNT_DELETED("account_deleted");
+    ACCOUNT_DELETED("account_deleted"),
+    SESSION_CREATED("session_created"),
+    REFRESH_TOKEN_ROTATED("refresh_token_rotated"),
+    REFRESH_TOKEN_REUSED("refresh_token_reused"),
+    SESSION_REVOKED("session_revoked"),
+    ALL_SESSIONS_REVOKED("all_sessions_revoked");
 
     private final String wireValue;
 
-    SecurityEventType(String wireValue) {
+    SecurityAuditType(String wireValue) {
         this.wireValue = wireValue;
     }
 
@@ -19,8 +24,8 @@ public enum SecurityEventType {
         return wireValue;
     }
 
-    public static SecurityEventType fromStoredValue(String value) {
-        for (SecurityEventType type : values()) {
+    public static SecurityAuditType fromStoredValue(String value) {
+        for (SecurityAuditType type : values()) {
             if (type.wireValue.equals(value)) {
                 return type;
             }

@@ -3,8 +3,10 @@ info:
   title: VK Platform IAM API
   version: v1
   description: >-
-    Purpose-bound passwordless authentication capabilities for VK Platform. Email verification proves
-    short-lived control of a mailbox and does not grant resource access by itself.
+    Purpose-bound passwordless authentication and OAuth 2.0 authorization capabilities for VK Platform.
+    This phase is OAuth-only: it does not publish OpenID Connect discovery, issue ID tokens, or implement
+    nonce handling. Email verification proves short-lived control of a mailbox and does not grant resource
+    access by itself.
 servers:
   - url: /
     description: Current API origin
@@ -71,6 +73,8 @@ paths:
                 $ref: "#/components/schemas/EmailChallengeResponse"
         "400":
           $ref: "#/components/responses/StartEmailVerificationBadRequest"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
         "429":
           $ref: "#/components/responses/EmailVerificationRateLimited"
         "500":
@@ -119,6 +123,8 @@ paths:
                 $ref: "#/components/schemas/VerifiedEmailResponse"
         "400":
           $ref: "#/components/responses/VerifyEmailChallengeBadRequest"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
         "422":
           $ref: "#/components/responses/InvalidOrExpiredCode"
         "500":
@@ -154,6 +160,8 @@ paths:
                 $ref: "#/components/schemas/AuthenticationChallengeResponse"
         "400":
           $ref: "#/components/responses/StartEmailVerificationBadRequest"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
         "429":
           $ref: "#/components/responses/EmailVerificationRateLimited"
         "500":
@@ -200,6 +208,8 @@ paths:
                 $ref: "#/components/schemas/AuthenticationGrantResponse"
         "400":
           $ref: "#/components/responses/VerifyEmailChallengeBadRequest"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
         "422":
           $ref: "#/components/responses/AuthenticationFailed"
         "500":
@@ -211,8 +221,11 @@ paths:
         - Authentication
       summary: Exchange a one-time sign-in grant for an authorization-server session
       description: >-
-        Consumes the grant once, creates a durable IAM session, and establishes the HttpOnly
-        authorization-server cookie. Tokens are issued only by the OAuth token endpoint.
+        Authenticated BFF-only operation. It consumes the grant once, creates a durable IAM session,
+        and establishes the Secure, HttpOnly, SameSite=Lax authorization-server cookie that the BFF
+        forwards to the browser. Tokens are issued only by the OAuth token endpoint.
+      security:
+        - bffClientAuth: []
       requestBody:
         required: true
         content:
@@ -222,14 +235,21 @@ paths:
       responses:
         "200":
           description: The browser can resume its Authorization Code with PKCE request.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SessionEnvelope"
         "400":
-          $ref: "#/components/responses/VerifyEmailChallengeBadRequest"
+          $ref: "#/components/responses/SessionBadRequest"
         "401":
           $ref: "#/components/responses/AuthenticationFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
   /api/v1/authentication/session:
     get:
       operationId: getCurrentAuthenticationSession
@@ -241,6 +261,11 @@ paths:
       responses:
         "200":
           description: Current session details.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
           content:
             application/json:
               schema:
@@ -258,10 +283,17 @@ paths:
       responses:
         "200":
           description: Active sessions ordered newest first.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SessionsEnvelope"
+        "401":
+          $ref: "#/components/responses/AuthenticationFailed"
     delete:
       operationId: revokeAllAuthenticationSessions
       tags:
@@ -272,6 +304,13 @@ paths:
       responses:
         "204":
           description: All sessions and their refresh families were revoked.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+        "401":
+          $ref: "#/components/responses/AuthenticationFailed"
   /api/v1/authentication/sessions/{sessionId}:
     delete:
       operationId: revokeAuthenticationSession
@@ -290,8 +329,15 @@ paths:
       responses:
         "204":
           description: The session and its refresh family were revoked.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+        "401":
+          $ref: "#/components/responses/AuthenticationFailed"
         "404":
-          description: The session was not found for the current account.
+          $ref: "#/components/responses/SessionNotFound"
   /api/v1/authentication/logout:
     post:
       operationId: logoutAuthenticationSession
@@ -302,13 +348,55 @@ paths:
         - bearerAuth: []
       responses:
         "204":
-          description: The current session was revoked.
+          description: >-
+            The durable session and refresh family were revoked, the server-side authorization session
+            was invalidated when its cookie was present, and the IAM browser cookie was expired.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+        "401":
+          $ref: "#/components/responses/AuthenticationFailed"
+  /oauth2/token:
+    post:
+      operationId: exchangeOAuthToken
+      tags:
+        - Authentication
+      summary: Exchange an OAuth authorization code, refresh token, or client credential
+      description: The form body is limited to 8 KiB, including chunked requests.
+      security:
+        - bffClientAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OAuth token response.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+        "400":
+          description: OAuth invalid request or grant response.
+        "401":
+          description: OAuth client authentication failed.
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    bffClientAuth:
+      type: http
+      scheme: basic
   headers:
     RequestID:
       description: Server-generated identifier for correlating a request with API logs.
@@ -318,7 +406,7 @@ components:
         pattern: ^[0-9a-f]{32}$
       example: 0a1b2c3d4e5f67890123456789abcdef
     NoStore:
-      description: Prevents storage of email-verification responses.
+      description: Prevents storage of security-sensitive responses.
       required: true
       schema:
         type: string
@@ -332,6 +420,44 @@ components:
         minimum: 1
       example: 60
   responses:
+    PayloadTooLarge:
+      description: The endpoint-specific request-body limit was exceeded.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+        Cache-Control:
+          $ref: "#/components/headers/NoStore"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicError"
+          example:
+            code: REQUEST_BODY_TOO_LARGE
+            message: The request body is too large.
+            request_id: 0a1b2c3d4e5f67890123456789abcdef
+            retryable: false
+    SessionBadRequest:
+      description: The grant-exchange request is invalid.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+        Cache-Control:
+          $ref: "#/components/headers/NoStore"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicError"
+    SessionNotFound:
+      description: The session was not found for the current account.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+        Cache-Control:
+          $ref: "#/components/headers/NoStore"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicError"
     StartEmailVerificationBadRequest:
       description: The JSON body, email, or verification purpose is invalid.
       headers:
@@ -654,7 +780,7 @@ components:
         - client_id
         - status
         - created_at
-        - last_seen_at
+        - last_refreshed_at
         - expires_at
       properties:
         id:
@@ -668,9 +794,10 @@ components:
         created_at:
           type: string
           format: date-time
-        last_seen_at:
+        last_refreshed_at:
           type: string
           format: date-time
+          description: Time of the most recent successful refresh-token rotation, not API activity.
         expires_at:
           type: string
           format: date-time

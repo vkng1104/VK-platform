@@ -1,11 +1,13 @@
 package com.vkplatform.iam.identity.infrastructure.persistence.repository;
 
+import com.vkplatform.iam.identity.api.SecurityAuditOperations;
+import com.vkplatform.iam.identity.api.event.SecurityAuditEvent;
+import com.vkplatform.iam.identity.api.event.SecurityAuditType;
 import com.vkplatform.iam.identity.application.port.out.PasswordlessIdentityRepository;
 import com.vkplatform.iam.identity.domain.Account;
 import com.vkplatform.iam.identity.domain.AccountStatus;
 import com.vkplatform.iam.identity.domain.IdentityFailure;
 import com.vkplatform.iam.identity.domain.IdentityKind;
-import com.vkplatform.iam.identity.domain.SecurityEventType;
 import com.vkplatform.iam.identity.infrastructure.persistence.entity.AccountEntity;
 import com.vkplatform.iam.identity.infrastructure.persistence.entity.LoginIdentityEntity;
 import com.vkplatform.iam.identity.infrastructure.persistence.entity.SecurityEventEntity;
@@ -17,7 +19,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Repository
-public class JpaPasswordlessIdentityRepository implements PasswordlessIdentityRepository {
+public class JpaPasswordlessIdentityRepository implements PasswordlessIdentityRepository, SecurityAuditOperations {
     private static final int GUARD_COUNT = 64;
 
     private final SpringDataAccountRepository accounts;
@@ -67,9 +69,9 @@ public class JpaPasswordlessIdentityRepository implements PasswordlessIdentityRe
                     now,
                     now
             ));
-            appendEvent(SecurityEventType.ACCOUNT_CREATED, account.id(), account.id(), null, requestId, now);
+            appendEvent(SecurityAuditType.ACCOUNT_CREATED, account.id(), account.id(), null, requestId, now);
             appendEvent(
-                    SecurityEventType.LOGIN_IDENTITY_LINKED,
+                    SecurityAuditType.LOGIN_IDENTITY_LINKED,
                     account.id(),
                     identity.id(),
                     null,
@@ -93,7 +95,7 @@ public class JpaPasswordlessIdentityRepository implements PasswordlessIdentityRe
                 now
         ));
         appendEvent(
-                SecurityEventType.SIGN_IN_GRANT_ISSUED,
+                SecurityAuditType.SIGN_IN_GRANT_ISSUED,
                 account.id(),
                 grant.id(),
                 null,
@@ -121,7 +123,7 @@ public class JpaPasswordlessIdentityRepository implements PasswordlessIdentityRe
         account.requireActive();
         grant.consume(now);
         appendEvent(
-                SecurityEventType.SIGN_IN_GRANT_CONSUMED,
+                SecurityAuditType.SIGN_IN_GRANT_CONSUMED,
                 account.id(),
                 grant.id(),
                 null,
@@ -137,6 +139,12 @@ public class JpaPasswordlessIdentityRepository implements PasswordlessIdentityRe
         return accounts.findById(accountId)
                 .map(AccountEntity::toDomain)
                 .orElseThrow(IdentityFailure::accountNotFound);
+    }
+
+    @Override
+    @Transactional
+    public Account findAccountForTokenIssuance(UUID accountId) {
+        return lockedAccount(accountId).toDomain();
     }
 
     @Override
@@ -175,29 +183,35 @@ public class JpaPasswordlessIdentityRepository implements PasswordlessIdentityRe
     }
 
     private void appendEvent(
-            SecurityEventType type,
+            SecurityAuditType type,
             UUID accountId,
             UUID targetId,
             String actorId,
             String requestId,
             Instant now
     ) {
+        append(new SecurityAuditEvent(type, accountId, targetId, actorId, requestId, now));
+    }
+
+    @Override
+    @Transactional
+    public void append(SecurityAuditEvent event) {
         events.save(new SecurityEventEntity(
                 UUID.randomUUID(),
-                type,
-                accountId,
-                targetId,
-                actorId,
-                requestId,
-                now
+                event.type(),
+                event.accountId(),
+                event.targetId(),
+                event.actorId(),
+                event.requestId(),
+                event.occurredAt()
         ));
     }
 
-    private static SecurityEventType eventFor(AccountStatus status) {
+    private static SecurityAuditType eventFor(AccountStatus status) {
         return switch (status) {
-            case ACTIVE -> SecurityEventType.ACCOUNT_REACTIVATED;
-            case SUSPENDED -> SecurityEventType.ACCOUNT_SUSPENDED;
-            case DELETED -> SecurityEventType.ACCOUNT_DELETED;
+            case ACTIVE -> SecurityAuditType.ACCOUNT_REACTIVATED;
+            case SUSPENDED -> SecurityAuditType.ACCOUNT_SUSPENDED;
+            case DELETED -> SecurityAuditType.ACCOUNT_DELETED;
             case RECOVERY_LOCKED -> throw new IllegalArgumentException("unsupported account transition");
         };
     }

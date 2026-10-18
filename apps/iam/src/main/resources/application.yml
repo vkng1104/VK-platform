@@ -25,6 +25,10 @@ spring:
       fail-on-trailing-tokens: true
     default-property-inclusion: non_null
 
+logging:
+  pattern:
+    level: "%5p [request_id=%X{request_id:-}]"
+
 server:
   port: ${IAM_PORT:8081}
   shutdown: graceful
@@ -33,7 +37,7 @@ server:
     session:
       timeout: ${IAM_BROWSER_SESSION_TIMEOUT:P30D}
       cookie:
-        name: VK_IAM_SESSION
+        name: ${IAM_SESSION_COOKIE_NAME:VK_IAM_SESSION}
         http-only: true
         secure: ${IAM_SESSION_COOKIE_SECURE:true}
         same-site: lax
@@ -63,15 +67,33 @@ iam:
     refresh-token-ttl: ${IAM_REFRESH_TOKEN_TTL:P30D}
     absolute-session-ttl: ${IAM_ABSOLUTE_SESSION_TTL:P30D}
     login-uri: ${IAM_LOGIN_URI:http://localhost:3000/sign-in}
+    bff-origin: ${IAM_BFF_ORIGIN:http://localhost:3000}
     signing-key-id: ${IAM_SIGNING_KEY_ID:}
     signing-private-key-pkcs8-base64: ${IAM_SIGNING_PRIVATE_KEY_PKCS8_BASE64:}
     signing-public-key-x509-base64: ${IAM_SIGNING_PUBLIC_KEY_X509_BASE64:}
     signing-key-encryption-key-base64: ${IAM_SIGNING_KEY_ENCRYPTION_KEY_BASE64:}
+    signing-key-protection-version: ${IAM_SIGNING_KEY_PROTECTION_VERSION:v1}
+    signing-key-protection-keys: ${IAM_SIGNING_KEY_PROTECTION_KEYS:}
     bff-client-secret: ${IAM_BFF_CLIENT_SECRET:}
     bff-redirect-uri: ${IAM_BFF_REDIRECT_URI:http://localhost:3000/api/auth/callback}
     service-client-id: ${IAM_SERVICE_CLIENT_ID:vk-platform-api}
     service-client-secret: ${IAM_SERVICE_CLIENT_SECRET:}
     service-audience: ${IAM_SERVICE_TOKEN_AUDIENCE:vk-platform-iam}
+    browser-cookie-name: ${IAM_SESSION_COOKIE_NAME:VK_IAM_SESSION}
+    browser-cookie-secure: ${IAM_SESSION_COOKIE_SECURE:true}
+    cleanup-enabled: ${IAM_SESSION_CLEANUP_ENABLED:true}
+    session-retention: ${IAM_SESSION_RETENTION:P30D}
+    authorization-retention: ${IAM_AUTHORIZATION_RETENTION:P30D}
+    audit-retention: ${IAM_SECURITY_AUDIT_RETENTION:P365D}
+    cleanup-batch-size: ${IAM_SESSION_CLEANUP_BATCH_SIZE:100}
+    operator-operation: ${IAM_SESSION_OPERATOR_OPERATION:}
+    operator-actor: ${IAM_SESSION_OPERATOR_ACTOR:}
+    operator-operation-id: ${IAM_SESSION_OPERATOR_OPERATION_ID:}
+    operator-key-id: ${IAM_SESSION_OPERATOR_KEY_ID:}
+    operator-client-id: ${IAM_SESSION_OPERATOR_CLIENT_ID:}
+    operator-client-secret: ${IAM_SESSION_OPERATOR_CLIENT_SECRET:}
+    operator-client-secret-expires-at: ${IAM_SESSION_OPERATOR_CLIENT_SECRET_EXPIRES_AT:}
+    operator-batch-size: ${IAM_SESSION_OPERATOR_BATCH_SIZE:100}
   email:
     provider: ${EMAIL_PROVIDER:disabled}
     from-address: ${EMAIL_FROM_ADDRESS:}

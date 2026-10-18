@@ -7,7 +7,7 @@ CREATE TABLE iam_session.sessions (
     status TEXT NOT NULL,
     version BIGINT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL,
-    last_seen_at TIMESTAMPTZ NOT NULL,
+    last_refreshed_at TIMESTAMPTZ NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     revoked_at TIMESTAMPTZ,
     compromised_at TIMESTAMPTZ,
@@ -28,7 +28,7 @@ CREATE TABLE iam_session.sessions (
         )
     ),
     CONSTRAINT sessions_timeline_check CHECK (
-        last_seen_at >= created_at
+        last_refreshed_at >= created_at
         AND expires_at > created_at
         AND (revoked_at IS NULL OR revoked_at >= created_at)
         AND (compromised_at IS NULL OR compromised_at >= created_at)
@@ -68,6 +68,7 @@ CREATE TABLE iam_session.signing_keys (
     public_key_x509 BYTEA NOT NULL,
     encrypted_private_key BYTEA NOT NULL,
     encryption_nonce BYTEA NOT NULL,
+    protection_key_version VARCHAR(64) NOT NULL,
     status VARCHAR(16) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     activated_at TIMESTAMPTZ NOT NULL,
@@ -78,17 +79,22 @@ CREATE TABLE iam_session.signing_keys (
     CONSTRAINT signing_keys_public_key_check CHECK (OCTET_LENGTH(public_key_x509) >= 256),
     CONSTRAINT signing_keys_private_key_check CHECK (OCTET_LENGTH(encrypted_private_key) >= 256),
     CONSTRAINT signing_keys_nonce_check CHECK (OCTET_LENGTH(encryption_nonce) = 12),
-    CONSTRAINT signing_keys_status_check CHECK (status IN ('ACTIVE', 'RETIRING', 'RETIRED')),
+    CONSTRAINT signing_keys_protection_version_check CHECK (
+        protection_key_version <> '' AND protection_key_version = BTRIM(protection_key_version)
+    ),
+    CONSTRAINT signing_keys_status_check
+        CHECK (status IN ('ACTIVE', 'RETIRING', 'RETIRED', 'COMPROMISED')),
     CONSTRAINT signing_keys_version_check CHECK (version >= 0),
     CONSTRAINT signing_keys_timeline_check CHECK (
         activated_at >= created_at
-        AND (publish_until IS NULL OR publish_until > activated_at)
+        AND (publish_until IS NULL OR publish_until >= activated_at)
         AND (retired_at IS NULL OR retired_at >= activated_at)
     ),
     CONSTRAINT signing_keys_state_check CHECK (
         (status = 'ACTIVE' AND publish_until IS NULL AND retired_at IS NULL)
         OR (status = 'RETIRING' AND publish_until IS NOT NULL AND retired_at IS NULL)
         OR (status = 'RETIRED' AND publish_until IS NOT NULL AND retired_at IS NOT NULL)
+        OR (status = 'COMPROMISED' AND publish_until IS NOT NULL AND retired_at IS NOT NULL)
     )
 );
 
@@ -103,10 +109,23 @@ CREATE TABLE iam_session.signing_key_events (
     id UUID PRIMARY KEY,
     key_id VARCHAR(128) NOT NULL REFERENCES iam_session.signing_keys (id) ON DELETE RESTRICT,
     event_type VARCHAR(32) NOT NULL,
+    actor_id VARCHAR(128) NOT NULL,
+    operation_id VARCHAR(128) NOT NULL,
     occurred_at TIMESTAMPTZ NOT NULL,
     CONSTRAINT signing_key_events_type_check
-        CHECK (event_type IN ('bootstrapped', 'activated', 'retired'))
+        CHECK (event_type IN ('bootstrapped', 'activated', 'retired', 'compromised', 'reencrypted')),
+    CONSTRAINT signing_key_events_context_check CHECK (
+        actor_id <> '' AND actor_id = BTRIM(actor_id)
+        AND operation_id <> '' AND operation_id = BTRIM(operation_id)
+    )
 );
+
+CREATE TABLE iam_session.oauth_client_operation_guard (
+    id SMALLINT PRIMARY KEY,
+    CONSTRAINT oauth_client_operation_guard_id_check CHECK (id = 1)
+);
+
+INSERT INTO iam_session.oauth_client_operation_guard (id) VALUES (1);
 
 CREATE TABLE iam_session.oauth_clients (
     id VARCHAR(100) PRIMARY KEY,
@@ -134,9 +153,15 @@ CREATE TABLE iam_session.oauth_client_events (
     registered_client_id VARCHAR(100) NOT NULL
         REFERENCES iam_session.oauth_clients (id) ON DELETE RESTRICT,
     event_type VARCHAR(32) NOT NULL,
+    actor_id VARCHAR(128) NOT NULL,
+    operation_id VARCHAR(128) NOT NULL,
     occurred_at TIMESTAMPTZ NOT NULL,
     CONSTRAINT oauth_client_events_type_check
-        CHECK (event_type IN ('credential_rotated'))
+        CHECK (event_type IN ('registered', 'reconciled', 'credential_rotated')),
+    CONSTRAINT oauth_client_events_context_check CHECK (
+        actor_id <> '' AND actor_id = BTRIM(actor_id)
+        AND operation_id <> '' AND operation_id = BTRIM(operation_id)
+    )
 );
 
 CREATE TABLE iam_session.oauth_authorizations (
@@ -174,10 +199,47 @@ CREATE TABLE iam_session.oauth_authorizations (
         CHECK (access_token_digest IS NULL OR OCTET_LENGTH(access_token_digest) = 32),
     CONSTRAINT oauth_authorizations_refresh_digest_check
         CHECK (refresh_token_digest IS NULL OR OCTET_LENGTH(refresh_token_digest) = 32),
+    CONSTRAINT oauth_authorizations_code_tuple_check CHECK (
+        (authorization_code_digest IS NULL
+            AND authorization_code_issued_at IS NULL
+            AND authorization_code_expires_at IS NULL)
+        OR (authorization_code_digest IS NOT NULL
+            AND authorization_code_issued_at IS NOT NULL
+            AND authorization_code_expires_at > authorization_code_issued_at)
+    ),
+    CONSTRAINT oauth_authorizations_access_tuple_check CHECK (
+        (access_token_digest IS NULL
+            AND access_token_issued_at IS NULL
+            AND access_token_expires_at IS NULL
+            AND access_token_type IS NULL)
+        OR (access_token_digest IS NOT NULL
+            AND access_token_issued_at IS NOT NULL
+            AND access_token_expires_at > access_token_issued_at
+            AND access_token_type IS NOT NULL)
+    ),
+    CONSTRAINT oauth_authorizations_refresh_tuple_check CHECK (
+        (refresh_token_digest IS NULL
+            AND refresh_token_issued_at IS NULL
+            AND refresh_token_expires_at IS NULL)
+        OR (refresh_token_digest IS NOT NULL
+            AND refresh_token_issued_at IS NOT NULL
+            AND refresh_token_expires_at > refresh_token_issued_at)
+    ),
     CONSTRAINT oauth_authorizations_version_check CHECK (version >= 0),
     CONSTRAINT oauth_authorizations_invalidation_check CHECK (
         (invalidated_at IS NULL AND invalidation_reason IS NULL)
         OR (invalidated_at IS NOT NULL AND invalidation_reason IS NOT NULL)
+    ),
+    CONSTRAINT oauth_authorizations_invalidation_reason_check CHECK (
+        invalidation_reason IS NULL OR invalidation_reason IN (
+            'authorization_removed',
+            'logout',
+            'user_request',
+            'all_sessions_revoked',
+            'account_state_changed',
+            'refresh_token_reused',
+            'expired'
+        )
     )
 );
 
@@ -224,7 +286,11 @@ CREATE TABLE iam_session.oauth_refresh_tokens (
     CONSTRAINT oauth_refresh_tokens_replacement_state_check CHECK (
         (consumed_at IS NULL AND replacement_id IS NULL)
         OR (consumed_at IS NOT NULL AND replacement_id IS NOT NULL)
-    )
+    ),
+    CONSTRAINT oauth_refresh_tokens_replacement_identity_check
+        CHECK (replacement_id IS NULL OR replacement_id <> id),
+    CONSTRAINT oauth_refresh_tokens_parent_identity_check
+        CHECK (parent_id IS NULL OR parent_id <> id)
 );
 
 ALTER TABLE iam_session.oauth_refresh_tokens

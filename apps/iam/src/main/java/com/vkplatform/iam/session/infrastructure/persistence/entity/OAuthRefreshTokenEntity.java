@@ -6,6 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 @Entity
@@ -53,13 +54,19 @@ public class OAuthRefreshTokenEntity extends AbstractSessionUuidEntity {
             Instant issuedAt,
             Instant expiresAt
     ) {
-        this.id = id;
-        this.authorizationId = authorizationId;
-        this.familyId = familyId;
+        this.id = Objects.requireNonNull(id);
+        this.authorizationId = requireText(authorizationId);
+        this.familyId = Objects.requireNonNull(familyId);
         this.parentId = parentId;
+        if (tokenDigest == null || tokenDigest.length != 32) {
+            throw new IllegalArgumentException("refresh-token digest is invalid");
+        }
         this.tokenDigest = tokenDigest.clone();
-        this.issuedAt = issuedAt;
-        this.expiresAt = expiresAt;
+        this.issuedAt = Objects.requireNonNull(issuedAt);
+        this.expiresAt = Objects.requireNonNull(expiresAt);
+        if (!expiresAt.isAfter(issuedAt)) {
+            throw new IllegalArgumentException("refresh-token expiry must follow issuance");
+        }
     }
 
     public String authorizationId() { return authorizationId; }
@@ -77,12 +84,34 @@ public class OAuthRefreshTokenEntity extends AbstractSessionUuidEntity {
     }
 
     public void consume(UUID replacement, Instant now) {
+        Objects.requireNonNull(replacement);
+        Objects.requireNonNull(now);
+        if (consumedAt != null || replacementId != null || reuseDetectedAt != null) {
+            throw new IllegalStateException("refresh token has already transitioned");
+        }
+        if (replacement.equals(id) || now.isBefore(issuedAt)) {
+            throw new IllegalArgumentException("refresh-token consumption is invalid");
+        }
         consumedAt = now;
         replacementId = replacement;
     }
 
     public void detectReuse(Instant now) {
+        Objects.requireNonNull(now);
+        if (consumedAt == null || replacementId == null || now.isBefore(consumedAt)) {
+            throw new IllegalStateException("refresh-token reuse cannot precede consumption");
+        }
+        if (reuseDetectedAt != null) {
+            return;
+        }
         reuseDetectedAt = now;
+    }
+
+    private static String requireText(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("refresh-token authorization is invalid");
+        }
+        return value;
     }
 
     @Override

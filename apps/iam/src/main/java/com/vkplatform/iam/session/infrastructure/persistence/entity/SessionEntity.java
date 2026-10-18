@@ -38,8 +38,8 @@ public class SessionEntity extends AbstractSessionUuidEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    @Column(name = "last_seen_at", nullable = false)
-    private Instant lastSeenAt;
+    @Column(name = "last_refreshed_at", nullable = false)
+    private Instant lastRefreshedAt;
 
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
@@ -59,9 +59,11 @@ public class SessionEntity extends AbstractSessionUuidEntity {
 
     public SessionEntity(UserSession session) {
         this.id = session.id();
-        this.version = session.version();
+        this.accountId = session.accountId();
+        this.clientId = session.clientId();
         this.createdAt = session.createdAt();
-        apply(session);
+        this.expiresAt = session.expiresAt();
+        applyMutableState(session);
     }
 
     public UserSession toDomain() {
@@ -70,9 +72,8 @@ public class SessionEntity extends AbstractSessionUuidEntity {
                 accountId,
                 clientId,
                 status,
-                version,
                 createdAt,
-                lastSeenAt,
+                lastRefreshedAt,
                 expiresAt,
                 revokedAt,
                 compromisedAt,
@@ -81,15 +82,19 @@ public class SessionEntity extends AbstractSessionUuidEntity {
     }
 
     public void apply(UserSession session) {
-        if (id != null && !id.equals(session.id())) {
-            throw new IllegalArgumentException("session identity cannot change");
+        if (!id.equals(session.id())
+                || !accountId.equals(session.accountId())
+                || !clientId.equals(session.clientId())
+                || !createdAt.equals(session.createdAt())
+                || !expiresAt.equals(session.expiresAt())) {
+            throw new IllegalArgumentException("immutable session state cannot change");
         }
-        this.id = session.id();
-        this.accountId = session.accountId();
-        this.clientId = session.clientId();
+        applyMutableState(session);
+    }
+
+    private void applyMutableState(UserSession session) {
         this.status = session.status();
-        this.lastSeenAt = session.lastSeenAt();
-        this.expiresAt = session.expiresAt();
+        this.lastRefreshedAt = session.lastRefreshedAt();
         this.revokedAt = session.revokedAt();
         this.compromisedAt = session.compromisedAt();
         this.revokeReason = session.revokeReason();

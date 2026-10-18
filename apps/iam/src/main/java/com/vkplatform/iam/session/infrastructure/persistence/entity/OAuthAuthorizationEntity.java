@@ -1,6 +1,9 @@
 package com.vkplatform.iam.session.infrastructure.persistence.entity;
 
+import com.vkplatform.iam.session.domain.OAuthAuthorizationInvalidationReason;
+import com.vkplatform.iam.session.infrastructure.persistence.converter.OAuthAuthorizationInvalidationReasonConverter;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.PostLoad;
@@ -86,7 +89,8 @@ public class OAuthAuthorizationEntity implements Persistable<String> {
     private Instant invalidatedAt;
 
     @Column(name = "invalidation_reason", length = 100)
-    private String invalidationReason;
+    @Convert(converter = OAuthAuthorizationInvalidationReasonConverter.class)
+    private OAuthAuthorizationInvalidationReason invalidationReason;
 
     @Version
     @Column(nullable = false)
@@ -136,7 +140,7 @@ public class OAuthAuthorizationEntity implements Persistable<String> {
     public Instant refreshTokenExpiresAt() { return refreshTokenExpiresAt; }
     public String refreshTokenMetadata() { return refreshTokenMetadata; }
     public Instant invalidatedAt() { return invalidatedAt; }
-    public String invalidationReason() { return invalidationReason; }
+    public OAuthAuthorizationInvalidationReason invalidationReason() { return invalidationReason; }
 
     public void id(String value) { id = value; }
     public void registeredClientId(String value) { registeredClientId = value; }
@@ -161,7 +165,7 @@ public class OAuthAuthorizationEntity implements Persistable<String> {
     public void refreshTokenExpiresAt(Instant value) { refreshTokenExpiresAt = value; }
     public void refreshTokenMetadata(String value) { refreshTokenMetadata = value; }
 
-    public void invalidate(Instant now, String reason) {
+    public void invalidate(Instant now, OAuthAuthorizationInvalidationReason reason) {
         if (invalidatedAt == null) {
             invalidatedAt = now;
             invalidationReason = reason;

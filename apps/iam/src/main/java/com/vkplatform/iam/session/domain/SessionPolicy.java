@@ -30,7 +30,7 @@ public record SessionPolicy(
         }
         if (accessTokenTtl.isZero() || accessTokenTtl.isNegative()
                 || accessTokenTtl.compareTo(Duration.ofMinutes(15)) > 0) {
-            throw new IllegalArgumentException("access-token TTL must be between zero and 15 minutes");
+            throw new IllegalArgumentException("access-token TTL must be greater than zero and at most 15 minutes");
         }
         if (refreshTokenTtl.isZero() || refreshTokenTtl.isNegative()
                 || absoluteSessionTtl.isZero() || absoluteSessionTtl.isNegative()

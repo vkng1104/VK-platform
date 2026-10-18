@@ -123,9 +123,9 @@ public class PasswordlessIdentityService implements PasswordlessIdentityOperatio
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public AuthenticatedAccount activeAccount(UUID accountId) {
-        Account account = repository.findAccount(Objects.requireNonNull(accountId));
+        Account account = repository.findAccountForTokenIssuance(Objects.requireNonNull(accountId));
         account.requireActive();
         return new AuthenticatedAccount(account.id(), account.tokenNotBefore());
     }
@@ -170,6 +170,7 @@ public class PasswordlessIdentityService implements PasswordlessIdentityOperatio
         if (change.changed()) {
             events.publishEvent(new AccountAuthenticationInvalidated(
                     change.account().id(),
+                    command.actorId().strip(),
                     now,
                     command.requestId().strip()
             ));

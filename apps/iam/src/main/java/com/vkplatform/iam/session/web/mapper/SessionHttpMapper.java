@@ -47,7 +47,7 @@ public class SessionHttpMapper {
                 session.clientId(),
                 session.status(),
                 session.createdAt(),
-                session.lastSeenAt(),
+                session.lastRefreshedAt(),
                 session.expiresAt(),
                 session.revokedAt(),
                 session.compromisedAt(),

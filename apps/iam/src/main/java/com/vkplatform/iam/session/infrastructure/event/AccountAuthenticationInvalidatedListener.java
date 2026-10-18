@@ -20,6 +20,7 @@ public class AccountAuthenticationInvalidatedListener {
         sessions.revokeAll(
                 event.accountId(),
                 null,
+                event.actorId(),
                 SessionRevokeReason.ACCOUNT_STATE_CHANGED,
                 event.occurredAt(),
                 event.requestId()

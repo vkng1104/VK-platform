@@ -9,6 +9,7 @@ import com.vkplatform.iam.session.web.dto.ExchangeAuthenticationGrantRequest;
 import com.vkplatform.iam.session.web.dto.SessionEnvelope;
 import com.vkplatform.iam.session.web.dto.SessionsEnvelope;
 import com.vkplatform.iam.session.web.mapper.SessionHttpMapper;
+import com.vkplatform.iam.session.web.BrowserSessionCookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -41,17 +42,20 @@ public class SessionController {
     private final SessionHttpMapper mapper;
     private final SecurityContextRepository securityContexts;
     private final SessionAuthenticationStrategy sessionAuthentication;
+    private final BrowserSessionCookie browserCookie;
 
     public SessionController(
             SessionOperations operations,
             SessionHttpMapper mapper,
             SecurityContextRepository securityContexts,
-            SessionAuthenticationStrategy sessionAuthentication
+            SessionAuthenticationStrategy sessionAuthentication,
+            BrowserSessionCookie browserCookie
     ) {
         this.operations = operations;
         this.mapper = mapper;
         this.securityContexts = securityContexts;
         this.sessionAuthentication = sessionAuthentication;
+        this.browserCookie = browserCookie;
     }
 
     @PostMapping("/grants/exchange")
@@ -117,7 +121,7 @@ public class SessionController {
                 sessionId,
                 RequestContext.requestId(request)
         ));
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }
 
     @DeleteMapping("/sessions")
@@ -132,13 +136,14 @@ public class SessionController {
                 null,
                 RequestContext.requestId(request)
         ));
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }
 
     @PostMapping("/logout")
     ResponseEntity<Void> logout(
             JwtAuthenticationToken authentication,
-            HttpServletRequest request
+            HttpServletRequest request,
+            HttpServletResponse response
     ) {
         SessionHttpMapper.PrincipalIds principal = mapper.principal(authentication);
         operations.session(principal.accountId(), principal.sessionId());
@@ -150,6 +155,7 @@ public class SessionController {
         if (request.getSession(false) != null) {
             request.getSession(false).invalidate();
         }
-        return ResponseEntity.noContent().build();
+        browserCookie.clear(response);
+        return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }
 }

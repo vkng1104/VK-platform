@@ -24,19 +24,22 @@ final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncod
     private final Clock clock;
     private final JpaSigningKeyStore signingKeys;
     private final SessionRepository sessions;
+    private final SessionSecurityMetrics metrics;
 
     OAuthTokenClaimsCustomizer(
             PasswordlessIdentityOperations identities,
             SessionProperties properties,
             Clock clock,
             JpaSigningKeyStore signingKeys,
-            SessionRepository sessions
+            SessionRepository sessions,
+            SessionSecurityMetrics metrics
     ) {
         this.identities = identities;
         this.properties = properties;
         this.clock = clock;
         this.signingKeys = signingKeys;
         this.sessions = sessions;
+        this.metrics = metrics;
     }
 
     @Override
@@ -44,12 +47,15 @@ final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncod
         if (!OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
             return;
         }
-        context.getJwsHeader().keyId(signingKeys.activeKeyId());
+        var signer = signingKeys.activeSigner();
+        context.getJwsHeader().keyId(signer.getKeyID());
         context.getClaims().claim("client_id", context.getRegisteredClient().getClientId());
         if (AuthorizationGrantType.CLIENT_CREDENTIALS.equals(context.getAuthorizationGrantType())) {
             context.getClaims()
                     .subject(context.getRegisteredClient().getClientId())
                     .audience(List.of(properties.serviceAudience()));
+            ActiveSignerContext.bind(signer);
+            metrics.tokenIssued();
             return;
         }
 
@@ -76,6 +82,8 @@ final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncod
                 .expiresAt(expiresAt)
                 .claim("sid", sessionId)
                 .claim("amr", List.of(authenticationMethod));
+        ActiveSignerContext.bind(signer);
+        metrics.tokenIssued();
     }
 
     private static String requireDetail(Map<?, ?> details, String name) {

@@ -29,6 +29,9 @@ public class SigningKeyEntity {
     @Column(name = "encryption_nonce", nullable = false)
     private byte[] encryptionNonce;
 
+    @Column(name = "protection_key_version", nullable = false, length = 64)
+    private String protectionKeyVersion;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private SigningKeyStatus status;
@@ -57,6 +60,7 @@ public class SigningKeyEntity {
             byte[] publicKeyX509,
             byte[] encryptedPrivateKey,
             byte[] encryptionNonce,
+            String protectionKeyVersion,
             Instant now
     ) {
         this.id = id;
@@ -64,6 +68,7 @@ public class SigningKeyEntity {
         this.publicKeyX509 = publicKeyX509.clone();
         this.encryptedPrivateKey = encryptedPrivateKey.clone();
         this.encryptionNonce = encryptionNonce.clone();
+        this.protectionKeyVersion = protectionKeyVersion;
         this.status = SigningKeyStatus.ACTIVE;
         this.createdAt = now;
         this.activatedAt = now;
@@ -74,10 +79,12 @@ public class SigningKeyEntity {
     public byte[] publicKeyX509() { return publicKeyX509.clone(); }
     public byte[] encryptedPrivateKey() { return encryptedPrivateKey.clone(); }
     public byte[] encryptionNonce() { return encryptionNonce.clone(); }
+    public String protectionKeyVersion() { return protectionKeyVersion; }
     public SigningKeyStatus status() { return status; }
     public Instant activatedAt() { return activatedAt; }
     public Instant publishUntil() { return publishUntil; }
     public Instant retiredAt() { return retiredAt; }
+    public long version() { return version; }
 
     public void beginRetirement(Instant publishUntil) {
         if (status != SigningKeyStatus.ACTIVE || !publishUntil.isAfter(activatedAt)) {
@@ -93,5 +100,21 @@ public class SigningKeyEntity {
         }
         status = SigningKeyStatus.RETIRED;
         retiredAt = now;
+    }
+
+    public void compromise(Instant now) {
+        if ((status != SigningKeyStatus.ACTIVE && status != SigningKeyStatus.RETIRING)
+                || now.isBefore(activatedAt)) {
+            throw new IllegalStateException("signing key cannot be marked compromised");
+        }
+        status = SigningKeyStatus.COMPROMISED;
+        publishUntil = publishUntil == null || publishUntil.isAfter(now) ? now : publishUntil;
+        retiredAt = now;
+    }
+
+    public void replaceProtection(String version, byte[] ciphertext, byte[] nonce) {
+        this.encryptedPrivateKey = ciphertext.clone();
+        this.encryptionNonce = nonce.clone();
+        this.protectionKeyVersion = version;
     }
 }

@@ -24,10 +24,10 @@ interface SpringDataSessionRepository extends JpaRepository<SessionEntity, UUID>
     );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    List<SessionEntity> findLockedByAccountIdAndStatus(UUID accountId, SessionStatus status);
+    List<SessionEntity> findLockedByAccountIdAndStatusOrderByIdAsc(UUID accountId, SessionStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    List<SessionEntity> findLockedByAccountIdAndStatusAndIdNot(
+    List<SessionEntity> findLockedByAccountIdAndStatusAndIdNotOrderByIdAsc(
             UUID accountId,
             SessionStatus status,
             UUID excludedId

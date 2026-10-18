@@ -8,7 +8,7 @@ public record SessionSummary(
         String clientId,
         String status,
         Instant createdAt,
-        Instant lastSeenAt,
+        Instant lastRefreshedAt,
         Instant expiresAt,
         Instant revokedAt,
         Instant compromisedAt,
