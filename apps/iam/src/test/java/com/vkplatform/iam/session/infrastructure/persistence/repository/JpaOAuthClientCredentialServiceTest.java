@@ -1,6 +1,8 @@
 package com.vkplatform.iam.session.infrastructure.persistence.repository;
 
 import com.vkplatform.iam.session.api.command.RotateOAuthClientSecret;
+import com.vkplatform.iam.session.api.command.OperatorContext;
+import com.vkplatform.iam.session.infrastructure.config.SessionSecurityMetrics;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.OAuthClientEventEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,7 +42,8 @@ class JpaOAuthClientCredentialServiceTest {
                 clients,
                 events,
                 encoder,
-                Clock.fixed(NOW, ZoneOffset.UTC)
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                mock(SessionSecurityMetrics.class)
         );
     }
 
@@ -53,7 +56,8 @@ class JpaOAuthClientCredentialServiceTest {
         var rotation = service.rotateSecret(new RotateOAuthClientSecret(
                 " vk-platform-api ",
                 newSecret,
-                expiresAt
+                expiresAt,
+                context()
         ));
 
         ArgumentCaptor<RegisteredClient> saved = ArgumentCaptor.forClass(RegisteredClient.class);
@@ -72,12 +76,14 @@ class JpaOAuthClientCredentialServiceTest {
         assertThatThrownBy(() -> service.rotateSecret(new RotateOAuthClientSecret(
                 "vk-platform-api",
                 "too-short",
-                NOW.plusSeconds(1)
+                NOW.plusSeconds(1),
+                context()
         ))).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> service.rotateSecret(new RotateOAuthClientSecret(
                 "vk-platform-api",
                 "n".repeat(32),
-                NOW
+                NOW,
+                context()
         ))).isInstanceOf(IllegalArgumentException.class);
 
         verify(clients, never()).save(any());
@@ -94,5 +100,9 @@ class JpaOAuthClientCredentialServiceTest {
                 .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
                 .scope("iam.authorization.check")
                 .build();
+    }
+
+    private static OperatorContext context() {
+        return new OperatorContext("security-operator", "rotation-1");
     }
 }

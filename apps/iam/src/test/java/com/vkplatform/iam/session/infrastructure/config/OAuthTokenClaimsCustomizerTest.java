@@ -1,11 +1,13 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
+import com.nimbusds.jose.jwk.RSAKey;
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
 import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.session.application.port.out.SessionRepository;
 import com.vkplatform.iam.session.domain.UserSession;
 import com.vkplatform.iam.session.infrastructure.persistence.repository.JpaSigningKeyStore;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -17,9 +19,7 @@ import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 
-import java.net.URI;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.HashMap;
@@ -31,6 +31,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static com.vkplatform.iam.session.SessionTestFixtures.properties;
 
 class OAuthTokenClaimsCustomizerTest {
     private static final Instant NOW = Instant.parse("2026-10-11T08:00:00Z");
@@ -47,14 +48,22 @@ class OAuthTokenClaimsCustomizerTest {
         identities = mock(PasswordlessIdentityOperations.class);
         sessions = mock(SessionRepository.class);
         signingKeys = mock(JpaSigningKeyStore.class);
-        when(signingKeys.activeKeyId()).thenReturn("key-active");
+        RSAKey signer = mock(RSAKey.class);
+        when(signer.getKeyID()).thenReturn("key-active");
+        when(signingKeys.activeSigner()).thenReturn(signer);
         customizer = new OAuthTokenClaimsCustomizer(
                 identities,
                 properties(),
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 signingKeys,
-                sessions
+                sessions,
+                mock(SessionSecurityMetrics.class)
         );
+    }
+
+    @AfterEach
+    void clearSignerContext() {
+        ActiveSignerContext.take();
     }
 
     @Test
@@ -137,26 +146,4 @@ class OAuthTokenClaimsCustomizerTest {
                 .build();
     }
 
-    private static SessionProperties properties() {
-        return new SessionProperties(
-                true,
-                URI.create("https://iam.example.test"),
-                "vk-platform-api",
-                "vk-platform-web",
-                "vk-platform-bff",
-                Duration.ofMinutes(5),
-                Duration.ofDays(30),
-                Duration.ofDays(30),
-                URI.create("https://web.example.test/sign-in"),
-                "bootstrap-key",
-                "",
-                "",
-                "",
-                "b".repeat(32),
-                URI.create("https://web.example.test/api/auth/callback"),
-                "vk-platform-api",
-                "s".repeat(32),
-                "vk-platform-iam"
-        );
-    }
 }

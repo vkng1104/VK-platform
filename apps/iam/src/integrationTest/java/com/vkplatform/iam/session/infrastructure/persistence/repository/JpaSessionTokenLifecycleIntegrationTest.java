@@ -1,5 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.persistence.repository;
 
+import com.vkplatform.iam.identity.domain.AccountStatus;
 import com.vkplatform.iam.identity.infrastructure.persistence.repository.JpaPasswordlessIdentityRepository;
 import com.vkplatform.iam.session.domain.SessionStatus;
 import com.vkplatform.iam.session.domain.UserSession;
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
@@ -32,6 +34,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.security.Principal;
 import java.time.Duration;
 import java.time.Instant;
+import java.sql.Timestamp;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +47,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(properties = {
         "iam.session.enabled=false",
@@ -305,6 +309,159 @@ class JpaSessionTokenLifecycleIntegrationTest {
                 Integer.class,
                 sessionId
         )).isEqualTo(2);
+    }
+
+    @Test
+    void refreshRotationAndLogoutUseOneLockOrderAndConvergeOnRevocation() throws Exception {
+        Instant now = Instant.now().minusSeconds(1);
+        UUID accountId = identities.issueSignInGrant(
+                bytes(21),
+                bytes(22),
+                "vk-platform-web",
+                now.plus(Duration.ofMinutes(5)),
+                now,
+                "request-refresh-logout-account"
+        ).accountId();
+        UUID sessionId = UUID.randomUUID();
+        sessions.create(
+                UserSession.create(sessionId, accountId, CLIENT_ID, now, now.plus(Duration.ofDays(30))),
+                "request-refresh-logout-session"
+        );
+        RegisteredClient client = registeredClient();
+        clients.save(client);
+        String refreshToken = "refresh-token-racing-with-logout";
+        authorizations.save(authorization(
+                client,
+                accountId,
+                sessionId,
+                "access-token-racing-with-logout",
+                refreshToken,
+                now
+        ));
+
+        CountDownLatch refreshLocked = new CountDownLatch(1);
+        CountDownLatch logoutAttempted = new CountDownLatch(1);
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<Boolean> refresh = executor.submit(() -> transaction.execute(status -> {
+                OAuth2Authorization loaded = authorizations.findByToken(
+                        refreshToken,
+                        OAuth2TokenType.REFRESH_TOKEN
+                );
+                refreshLocked.countDown();
+                await(logoutAttempted);
+                authorizations.save(OAuth2Authorization.from(loaded)
+                        .accessToken(new OAuth2AccessToken(
+                                OAuth2AccessToken.TokenType.BEARER,
+                                "rotated-access-before-logout",
+                                now.plusSeconds(1),
+                                now.plus(Duration.ofMinutes(5)),
+                                Set.of("api.access")
+                        ))
+                        .refreshToken(new OAuth2RefreshToken(
+                                "rotated-refresh-before-logout",
+                                now.plusSeconds(1),
+                                now.plus(Duration.ofDays(30))
+                        ))
+                        .build());
+                return true;
+            }));
+            Future<Boolean> logout = executor.submit(() -> {
+                assertThat(refreshLocked.await(5, TimeUnit.SECONDS)).isTrue();
+                logoutAttempted.countDown();
+                return sessions.revokeOwned(
+                        accountId,
+                        sessionId,
+                        com.vkplatform.iam.session.domain.SessionRevokeReason.LOGOUT,
+                        now.plusSeconds(2),
+                        "request-concurrent-logout"
+                );
+            });
+
+            assertThat(refresh.get(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(logout.get(10, TimeUnit.SECONDS)).isTrue();
+        }
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM iam_session.sessions WHERE id = ?",
+                String.class,
+                sessionId
+        )).isEqualTo(SessionStatus.REVOKED.wireValue());
+        assertThat(authorizations.findByToken(
+                "rotated-refresh-before-logout",
+                OAuth2TokenType.REFRESH_TOKEN
+        )).isNull();
+    }
+
+    @Test
+    void accountInvalidationPreservesAdministratorActorAndRequestIdAcrossModules() {
+        Instant now = Instant.now().minusSeconds(1);
+        UUID accountId = identities.issueSignInGrant(
+                bytes(23),
+                bytes(24),
+                "vk-platform-web",
+                now.plus(Duration.ofMinutes(5)),
+                now,
+                "request-audit-account"
+        ).accountId();
+        UUID sessionId = UUID.randomUUID();
+        sessions.create(
+                UserSession.create(sessionId, accountId, CLIENT_ID, now, now.plus(Duration.ofDays(30))),
+                "request-audit-session"
+        );
+
+        identities.changeAccountStatus(
+                accountId,
+                AccountStatus.SUSPENDED,
+                now.plusSeconds(1),
+                "security-administrator",
+                "request-account-suspension"
+        );
+        sessions.revokeAll(
+                accountId,
+                null,
+                "security-administrator",
+                com.vkplatform.iam.session.domain.SessionRevokeReason.ACCOUNT_STATE_CHANGED,
+                now.plusSeconds(1),
+                "request-account-suspension"
+        );
+
+        List<Map<String, Object>> events = jdbcTemplate.queryForList("""
+                SELECT event_type, actor_id, request_id
+                FROM iam_identity.security_events
+                WHERE event_type IN ('account_suspended', 'all_sessions_revoked')
+                ORDER BY event_type
+                """);
+        assertThat(events).hasSize(2).allSatisfy(event -> {
+            assertThat(event.get("actor_id")).isEqualTo("security-administrator");
+            assertThat(event.get("request_id")).isEqualTo("request-account-suspension");
+        });
+    }
+
+    @Test
+    void databaseRejectsPartialAndBackwardOAuthTokenTuples() {
+        clients.save(registeredClient());
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                INSERT INTO iam_session.oauth_authorizations (
+                    id, registered_client_id, principal_name, authorization_grant_type,
+                    attributes, access_token_digest
+                ) VALUES (?, ?, 'principal', 'authorization_code', '{}', ?)
+                """, "partial-access-token", CLIENT_REGISTRATION_ID, bytes(25)))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                INSERT INTO iam_session.oauth_authorizations (
+                    id, registered_client_id, principal_name, authorization_grant_type,
+                    attributes, refresh_token_digest, refresh_token_issued_at, refresh_token_expires_at
+                ) VALUES (?, ?, 'principal', 'authorization_code', '{}', ?, ?, ?)
+                """,
+                "backward-refresh-token",
+                CLIENT_REGISTRATION_ID,
+                bytes(26),
+                Timestamp.from(Instant.parse("2026-10-19T02:00:00Z")),
+                Timestamp.from(Instant.parse("2026-10-19T01:59:59Z"))
+        )).isInstanceOf(DataIntegrityViolationException.class);
     }
 
     private static RegisteredClient registeredClient() {

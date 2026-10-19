@@ -11,9 +11,9 @@ import com.vkplatform.iam.identity.api.result.AuthenticationChallengeStarted;
 import com.vkplatform.iam.identity.api.result.AuthenticationGrantIssued;
 import com.vkplatform.iam.identity.domain.IdentityFailure;
 import com.vkplatform.iam.identity.web.error.IdentityExceptionHandler;
-import com.vkplatform.iam.identity.web.filter.AuthenticationBodyLimitFilter;
 import com.vkplatform.iam.identity.web.mapper.IdentityHttpMapper;
 import com.vkplatform.iam.platform.web.GlobalExceptionHandler;
+import com.vkplatform.iam.platform.web.RequestBodyLimitFilter;
 import com.vkplatform.iam.platform.web.RequestIdFilter;
 import com.vkplatform.iam.verification.domain.VerificationFailure;
 import com.vkplatform.iam.verification.web.error.EmailVerificationExceptionHandler;
@@ -68,7 +68,7 @@ class AuthenticationControllerTest {
                         new GlobalExceptionHandler()
                 )
                 .setMessageConverters(new JacksonJsonHttpMessageConverter(objectMapper))
-                .addFilters(new RequestIdFilter(), new AuthenticationBodyLimitFilter())
+                .addFilters(new RequestIdFilter(), new RequestBodyLimitFilter())
                 .build();
     }
 
@@ -119,8 +119,9 @@ class AuthenticationControllerTest {
         mockMvc.perform(post("/api/v1/authentication/challenges")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(oversized))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_REQUEST_BODY"));
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.code").value("REQUEST_BODY_TOO_LARGE"));
     }
 
     @Test

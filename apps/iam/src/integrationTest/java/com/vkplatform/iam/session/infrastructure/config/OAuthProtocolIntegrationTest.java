@@ -4,6 +4,8 @@ import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
 import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.identity.infrastructure.persistence.repository.JpaPasswordlessIdentityRepository;
 import com.vkplatform.iam.session.infrastructure.persistence.repository.JpaSigningKeyStore;
+import com.vkplatform.iam.session.api.command.OperatorContext;
+import com.vkplatform.iam.session.api.OAuthClientRegistrationOperations;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,6 +59,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "iam.email.cleanup-enabled=false",
         "iam.session.issuer=https://iam.example.test",
         "iam.session.bff-client-id=vk-platform-bff",
+        "iam.session.bff-origin=https://web.example.test",
         "iam.session.bff-client-secret=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "iam.session.bff-redirect-uri=https://web.example.test/api/auth/callback",
         "iam.session.service-client-id=vk-platform-api",
@@ -102,6 +105,9 @@ class OAuthProtocolIntegrationTest {
     private JpaSigningKeyStore signingKeys;
 
     @Autowired
+    private OAuthClientRegistrationOperations clientRegistration;
+
+    @Autowired
     private List<ApplicationRunner> startupRunners;
 
     @Autowired
@@ -129,7 +135,9 @@ class OAuthProtocolIntegrationTest {
         for (ApplicationRunner runner : startupRunners) {
             runner.run(new DefaultApplicationArguments(new String[0]));
         }
-        signingKeys.bootstrap();
+        OperatorContext operator = new OperatorContext("integration-test", "oauth-protocol-setup");
+        clientRegistration.reconcile(operator);
+        signingKeys.bootstrap(operator);
         reset(identities);
         Instant now = Instant.now().minusSeconds(1);
         accountId = identityRepository.issueSignInGrant(
@@ -265,6 +273,8 @@ class OAuthProtocolIntegrationTest {
 
     private MockHttpSession exchangeGrant() throws Exception {
         MvcResult exchange = mockMvc.perform(post("/api/v1/authentication/grants/exchange")
+                        .with(httpBasic(BFF_CLIENT_ID, BFF_SECRET))
+                        .header("Origin", "https://web.example.test")
                         .contentType("application/json")
                         .content("""
                                 {"grant":"%s","audience":"vk-platform-web"}

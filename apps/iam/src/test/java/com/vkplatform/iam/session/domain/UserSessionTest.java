@@ -27,7 +27,7 @@ class UserSessionTest {
         UserSession touched = active.touch(NOW.plusSeconds(10));
         UserSession revoked = touched.revoke(SessionRevokeReason.LOGOUT, NOW.plusSeconds(20));
 
-        assertThat(touched.lastSeenAt()).isEqualTo(NOW.plusSeconds(10));
+        assertThat(touched.lastRefreshedAt()).isEqualTo(NOW.plusSeconds(10));
         assertThat(revoked.status()).isEqualTo(SessionStatus.REVOKED);
         assertThat(revoked.revokeReason()).isEqualTo(SessionRevokeReason.LOGOUT);
         assertThat(revoked.canUse("vk-platform-bff", NOW.plusSeconds(21))).isFalse();

@@ -222,6 +222,7 @@ class SessionServiceTest {
         public int revokeAll(
                 UUID accountId,
                 UUID exceptSessionId,
+                String actorId,
                 SessionRevokeReason reason,
                 Instant now,
                 String requestId

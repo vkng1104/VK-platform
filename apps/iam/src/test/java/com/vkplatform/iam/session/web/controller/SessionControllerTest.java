@@ -1,7 +1,9 @@
 package com.vkplatform.iam.session.web.controller;
 
 import com.vkplatform.iam.platform.web.GlobalExceptionHandler;
+import com.vkplatform.iam.platform.web.RequestBodyLimitFilter;
 import com.vkplatform.iam.platform.web.RequestIdFilter;
+import com.vkplatform.iam.session.SessionTestFixtures;
 import com.vkplatform.iam.session.api.SessionOperations;
 import com.vkplatform.iam.session.api.command.ExchangeSignInGrant;
 import com.vkplatform.iam.session.api.command.RevokeAllSessions;
@@ -9,7 +11,7 @@ import com.vkplatform.iam.session.api.command.RevokeSession;
 import com.vkplatform.iam.session.api.result.EstablishedSession;
 import com.vkplatform.iam.session.api.result.SessionSummary;
 import com.vkplatform.iam.session.web.error.SessionExceptionHandler;
-import com.vkplatform.iam.session.web.filter.SessionBodyLimitFilter;
+import com.vkplatform.iam.session.web.BrowserSessionCookie;
 import com.vkplatform.iam.session.web.mapper.SessionHttpMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,6 +24,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
@@ -64,11 +67,12 @@ class SessionControllerTest {
                         operations,
                         new SessionHttpMapper(),
                         securityContexts,
-                        sessionAuthentication
+                        sessionAuthentication,
+                        new BrowserSessionCookie(SessionTestFixtures.properties())
                 ))
                 .setControllerAdvice(new SessionExceptionHandler(), new GlobalExceptionHandler())
                 .setMessageConverters(new JacksonJsonHttpMessageConverter(objectMapper))
-                .addFilters(new RequestIdFilter(), new SessionBodyLimitFilter())
+                .addFilters(new RequestIdFilter(), new RequestBodyLimitFilter())
                 .build();
     }
 
@@ -124,6 +128,29 @@ class SessionControllerTest {
                 .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
     }
 
+    @Test
+    void logoutRevokesTheDurableSessionAndExpiresTheBrowserCookie() throws Exception {
+        MockHttpSession browserSession = new MockHttpSession();
+
+        mockMvc.perform(post("/api/v1/authentication/logout")
+                        .principal(authentication())
+                        .session(browserSession))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString("VK_IAM_SESSION="),
+                        org.hamcrest.Matchers.containsString("Path=/"),
+                        org.hamcrest.Matchers.containsString("Max-Age=0"),
+                        org.hamcrest.Matchers.containsString("Secure"),
+                        org.hamcrest.Matchers.containsString("HttpOnly"),
+                        org.hamcrest.Matchers.containsString("SameSite=Lax")
+                )));
+
+        assertThat(operations.logout.accountId()).isEqualTo(ACCOUNT_ID);
+        assertThat(operations.logout.sessionId()).isEqualTo(SESSION_ID);
+        assertThat(browserSession.isInvalid()).isTrue();
+    }
+
     private static JwtAuthenticationToken authentication() {
         Jwt token = Jwt.withTokenValue("access-token")
                 .header("alg", "RS256")
@@ -153,6 +180,7 @@ class SessionControllerTest {
         private ExchangeSignInGrant exchange;
         private UUID currentAccountId;
         private UUID currentSessionId;
+        private RevokeSession logout;
 
         @Override
         public EstablishedSession exchange(ExchangeSignInGrant command) {
@@ -178,6 +206,7 @@ class SessionControllerTest {
 
         @Override
         public void logout(RevokeSession command) {
+            logout = command;
         }
 
         @Override

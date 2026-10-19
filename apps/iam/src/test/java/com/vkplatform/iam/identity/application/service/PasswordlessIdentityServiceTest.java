@@ -159,6 +159,7 @@ class PasswordlessIdentityServiceTest {
         ));
         assertThat(events).containsExactly(new AccountAuthenticationInvalidated(
                 ACCOUNT_ID,
+                "admin-service",
                 NOW,
                 "request-changed"
         ));
@@ -261,6 +262,11 @@ class PasswordlessIdentityServiceTest {
         @Override
         public Account findAccount(UUID accountId) {
             return account(AccountStatus.ACTIVE, null);
+        }
+
+        @Override
+        public Account findAccountForTokenIssuance(UUID accountId) {
+            return findAccount(accountId);
         }
 
         @Override
