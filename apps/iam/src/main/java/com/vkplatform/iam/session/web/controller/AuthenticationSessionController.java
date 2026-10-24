@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -60,10 +61,10 @@ public class AuthenticationSessionController {
                         null,
                         List.of(new SimpleGrantedAuthority("ROLE_USER"))
                 );
-        authentication.setDetails(Map.of(
-                "session_id", established.session().id().toString(),
-                "amr", "email_otp"
-        ));
+        Map<String, String> details = new LinkedHashMap<>();
+        details.put("session_id", established.session().id().toString());
+        details.put("amr", "email_otp");
+        authentication.setDetails(details);
         sessionAuthentication.onAuthentication(authentication, servletRequest, servletResponse);
         var context = securityContexts.loadDeferredContext(servletRequest).get();
         context.setAuthentication(authentication);
