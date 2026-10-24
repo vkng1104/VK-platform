@@ -8,6 +8,7 @@ import com.vkplatform.iam.identity.domain.IdentityPolicy;
 import com.vkplatform.iam.session.api.AuthenticationSessionOperations;
 import com.vkplatform.iam.session.api.command.ExchangeAuthenticationGrant;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.domain.AuthenticationSession;
 import com.vkplatform.iam.session.domain.SessionPolicy;
 import com.vkplatform.iam.verification.api.EmailVerificationOperations;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +27,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Arrays;
+import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -49,6 +52,7 @@ class AuthenticationSessionTransactionIntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
+        jdbcTemplate.update("DELETE FROM iam_session.oauth_authorizations");
         jdbcTemplate.update("DELETE FROM iam_session.sessions");
         jdbcTemplate.update("DELETE FROM iam_identity.security_events");
         jdbcTemplate.update("DELETE FROM iam_identity.verification_grants");
@@ -99,8 +103,16 @@ class AuthenticationSessionTransactionIntegrationTest {
         @Bean
         @Primary
         AuthenticationSessionRepository failingAuthenticationSessionRepository() {
-            return session -> {
-                throw new DataIntegrityViolationException("simulated session insert failure");
+            return new AuthenticationSessionRepository() {
+                @Override
+                public AuthenticationSession create(AuthenticationSession session) {
+                    throw new DataIntegrityViolationException("simulated session insert failure");
+                }
+
+                @Override
+                public Optional<AuthenticationSession> findById(UUID id) {
+                    return Optional.empty();
+                }
             };
         }
 
