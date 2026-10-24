@@ -40,4 +40,21 @@ class AuthenticationSessionTest {
                 id, accountId, "vk-platform-bff", NOW, NOW
         )).isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void authorizesOnlyTheOwningAccountClientAndActiveLifetime() {
+        UUID accountId = UUID.randomUUID();
+        AuthenticationSession session = AuthenticationSession.create(
+                UUID.randomUUID(),
+                accountId,
+                "vk-platform-bff",
+                NOW,
+                NOW.plusSeconds(300)
+        );
+
+        assertThat(session.canAuthorize(accountId, "vk-platform-bff", NOW)).isTrue();
+        assertThat(session.canAuthorize(UUID.randomUUID(), "vk-platform-bff", NOW)).isFalse();
+        assertThat(session.canAuthorize(accountId, "other-client", NOW)).isFalse();
+        assertThat(session.canAuthorize(accountId, "vk-platform-bff", NOW.plusSeconds(300))).isFalse();
+    }
 }

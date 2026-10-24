@@ -43,4 +43,11 @@ public record AuthenticationSession(
                 expiresAt
         );
     }
+
+    public boolean canAuthorize(UUID expectedAccountId, String expectedClientId, Instant now) {
+        return accountId.equals(expectedAccountId)
+                && clientId.equals(expectedClientId)
+                && status == SessionStatus.ACTIVE
+                && now.isBefore(expiresAt);
+    }
 }
