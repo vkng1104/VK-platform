@@ -26,6 +26,7 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 	implementation("org.springframework.boot:spring-boot-starter-flyway")
 	implementation("org.springframework.boot:spring-boot-starter-oauth2-authorization-server")
+	implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
 	implementation("org.springframework.boot:spring-boot-starter-security")
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")
@@ -93,7 +94,14 @@ tasks.register("generatePersistence") {
 			"com/vkplatform/iam/identity/infrastructure/persistence/entity/SecurityEventEntity_.java",
 			"com/vkplatform/iam/identity/infrastructure/persistence/entity/VerificationGrantEntity_.java",
 			"com/vkplatform/iam/session/infrastructure/persistence/entity/OAuthAuthorizationEntity_.java",
+			"com/vkplatform/iam/session/infrastructure/persistence/entity/OAuthClientEntity_.java",
+			"com/vkplatform/iam/session/infrastructure/persistence/entity/OAuthClientEventEntity_.java",
+			"com/vkplatform/iam/session/infrastructure/persistence/entity/OAuthClientOperationGuardEntity_.java",
+			"com/vkplatform/iam/session/infrastructure/persistence/entity/OAuthRefreshTokenEntity_.java",
 			"com/vkplatform/iam/session/infrastructure/persistence/entity/SessionEntity_.java",
+			"com/vkplatform/iam/session/infrastructure/persistence/entity/SigningKeyEntity_.java",
+			"com/vkplatform/iam/session/infrastructure/persistence/entity/SigningKeyEventEntity_.java",
+			"com/vkplatform/iam/session/infrastructure/persistence/entity/SigningKeyOperationGuardEntity_.java",
 			"com/vkplatform/iam/verification/infrastructure/persistence/entity/EmailVerificationChallengeEntity_.java",
 			"com/vkplatform/iam/verification/infrastructure/persistence/entity/EmailVerificationOperationGuardEntity_.java"
 		)

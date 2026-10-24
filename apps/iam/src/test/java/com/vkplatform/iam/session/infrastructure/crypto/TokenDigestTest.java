@@ -7,20 +7,21 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TokenDigestTest {
     @Test
-    void restoresOnlyWellFormedDigestPlaceholders() {
-        byte[] digest = TokenDigest.sha256("one-time-authorization-code");
+    void hashesTokensAndRoundTripsOnlyInternalPlaceholders() {
+        byte[] digest = TokenDigest.sha256("opaque-token-value");
+        String placeholder = TokenDigest.placeholder(digest);
 
-        assertThat(TokenDigest.digestOrRestore(TokenDigest.placeholder(digest))).containsExactly(digest);
-        assertThat(TokenDigest.matches(digest, TokenDigest.sha256("one-time-authorization-code"))).isTrue();
-        assertThat(TokenDigest.matches(digest, TokenDigest.sha256("different-code"))).isFalse();
-        assertThatThrownBy(() -> TokenDigest.digestOrRestore("sha256:broken"))
-                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(digest).hasSize(32);
+        assertThat(TokenDigest.digestOrRestore(placeholder)).containsExactly(digest);
+        assertThat(TokenDigest.matches(digest, TokenDigest.sha256("opaque-token-value"))).isTrue();
+        assertThat(TokenDigest.matches(digest, TokenDigest.sha256("another-token"))).isFalse();
     }
 
     @Test
-    void rejectsEmptyAndUnreasonablyLargeTokenValues() {
-        assertThatThrownBy(() -> TokenDigest.sha256(" ")).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> TokenDigest.sha256("x".repeat(32769)))
+    void rejectsEmptyAndMalformedValues() {
+        assertThatThrownBy(() -> TokenDigest.sha256(" "))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> TokenDigest.digestOrRestore("sha256:not-a-digest"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 }

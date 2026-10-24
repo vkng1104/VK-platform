@@ -5,6 +5,7 @@ import com.vkplatform.iam.identity.api.command.AccountAdministrationCommand;
 import com.vkplatform.iam.identity.api.command.ConsumeSignInGrant;
 import com.vkplatform.iam.identity.api.command.StartPasswordlessSignIn;
 import com.vkplatform.iam.identity.api.command.VerifyPasswordlessSignIn;
+import com.vkplatform.iam.identity.api.event.AccountAuthenticationInvalidated;
 import com.vkplatform.iam.identity.api.result.AccountSummary;
 import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.identity.api.result.AuthenticationChallengeStarted;
@@ -21,6 +22,7 @@ import com.vkplatform.iam.verification.api.command.VerifyEmailCode;
 import com.vkplatform.iam.verification.api.result.EmailVerified;
 import com.vkplatform.iam.verification.api.result.VerificationChallengeStarted;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -35,6 +37,7 @@ public class PasswordlessIdentityService implements PasswordlessIdentityOperatio
     private final GrantTokenCodec grants;
     private final Clock clock;
     private final IdentityPolicy policy;
+    private final ApplicationEventPublisher events;
 
     public PasswordlessIdentityService(
             EmailVerificationOperations verification,
@@ -43,11 +46,23 @@ public class PasswordlessIdentityService implements PasswordlessIdentityOperatio
             Clock clock,
             IdentityPolicy policy
     ) {
+        this(verification, repository, grants, clock, policy, event -> { });
+    }
+
+    public PasswordlessIdentityService(
+            EmailVerificationOperations verification,
+            PasswordlessIdentityRepository repository,
+            GrantTokenCodec grants,
+            Clock clock,
+            IdentityPolicy policy,
+            ApplicationEventPublisher events
+    ) {
         this.verification = Objects.requireNonNull(verification);
         this.repository = Objects.requireNonNull(repository);
         this.grants = Objects.requireNonNull(grants);
         this.clock = Objects.requireNonNull(clock);
         this.policy = Objects.requireNonNull(policy);
+        this.events = Objects.requireNonNull(events);
     }
 
     @Override
@@ -108,6 +123,14 @@ public class PasswordlessIdentityService implements PasswordlessIdentityOperatio
     }
 
     @Override
+    @Transactional
+    public AuthenticatedAccount activeAccount(UUID accountId) {
+        Account account = repository.findAccountForTokenIssuance(Objects.requireNonNull(accountId));
+        account.requireActive();
+        return new AuthenticatedAccount(account.id(), account.tokenNotBefore());
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public AccountSummary account(UUID accountId) {
         return summary(repository.findAccount(Objects.requireNonNull(accountId)));
@@ -136,14 +159,23 @@ public class PasswordlessIdentityService implements PasswordlessIdentityOperatio
         if (command.accountId() == null) {
             throw IdentityFailure.invalidAdminContext();
         }
-        Account account = repository.changeAccountStatus(
+        Instant now = clock.instant();
+        PasswordlessIdentityRepository.AccountStatusChange change = repository.changeAccountStatus(
                 command.accountId(),
                 status,
-                clock.instant(),
+                now,
                 requireContext(command.actorId()),
                 requireContext(command.requestId())
         );
-        return summary(account);
+        if (change.changed()) {
+            events.publishEvent(new AccountAuthenticationInvalidated(
+                    change.account().id(),
+                    command.actorId().strip(),
+                    now,
+                    command.requestId().strip()
+            ));
+        }
+        return summary(change.account());
     }
 
     private static AccountSummary summary(Account account) {
