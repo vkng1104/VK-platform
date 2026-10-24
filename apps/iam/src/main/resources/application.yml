@@ -29,6 +29,15 @@ server:
   port: ${IAM_PORT:8081}
   shutdown: graceful
   max-http-request-header-size: 1MB
+  servlet:
+    session:
+      timeout: ${IAM_BROWSER_SESSION_TIMEOUT:P30D}
+      cookie:
+        name: ${IAM_SESSION_COOKIE_NAME:VK_IAM_SESSION}
+        http-only: true
+        secure: ${IAM_SESSION_COOKIE_SECURE:true}
+        same-site: lax
+        path: /
 
 management:
   endpoints:
@@ -44,6 +53,12 @@ iam:
   authentication:
     audience: ${IAM_AUTHENTICATION_AUDIENCE:vk-platform-web}
     grant-ttl: ${IAM_AUTHENTICATION_GRANT_TTL:PT5M}
+  session:
+    enabled: ${IAM_SESSION_ENABLED:false}
+    bff-client-id: ${IAM_BFF_CLIENT_ID:vk-platform-bff}
+    bff-client-secret: ${IAM_BFF_CLIENT_SECRET:}
+    bff-origin: ${IAM_BFF_ORIGIN:http://localhost:3000}
+    absolute-ttl: ${IAM_ABSOLUTE_SESSION_TTL:P30D}
   email:
     provider: ${EMAIL_PROVIDER:disabled}
     from-address: ${EMAIL_FROM_ADDRESS:}
