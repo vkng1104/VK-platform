@@ -1,23 +1,21 @@
-CREATE SCHEMA iam_session;
+ALTER TABLE iam_session.sessions
+    ADD COLUMN version BIGINT NOT NULL DEFAULT 0,
+    ADD COLUMN last_refreshed_at TIMESTAMPTZ,
+    ADD COLUMN revoked_at TIMESTAMPTZ,
+    ADD COLUMN compromised_at TIMESTAMPTZ,
+    ADD COLUMN revoke_reason TEXT;
 
-CREATE TABLE iam_session.sessions (
-    id UUID PRIMARY KEY,
-    account_id UUID NOT NULL REFERENCES iam_identity.accounts (id) ON DELETE RESTRICT,
-    client_id VARCHAR(128) NOT NULL,
-    status TEXT NOT NULL,
-    version BIGINT NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL,
-    last_refreshed_at TIMESTAMPTZ NOT NULL,
-    expires_at TIMESTAMPTZ NOT NULL,
-    revoked_at TIMESTAMPTZ,
-    compromised_at TIMESTAMPTZ,
-    revoke_reason TEXT,
-    CONSTRAINT sessions_client_check
-        CHECK (client_id <> '' AND client_id = BTRIM(client_id)),
-    CONSTRAINT sessions_status_check
+UPDATE iam_session.sessions
+SET last_refreshed_at = created_at;
+
+ALTER TABLE iam_session.sessions
+    ALTER COLUMN last_refreshed_at SET NOT NULL,
+    DROP CONSTRAINT sessions_status_check,
+    DROP CONSTRAINT sessions_expiry_check,
+    ADD CONSTRAINT sessions_status_check
         CHECK (status IN ('active', 'revoked', 'compromised')),
-    CONSTRAINT sessions_version_check CHECK (version >= 0),
-    CONSTRAINT sessions_revoke_reason_check CHECK (
+    ADD CONSTRAINT sessions_version_check CHECK (version >= 0),
+    ADD CONSTRAINT sessions_revoke_reason_check CHECK (
         revoke_reason IS NULL OR revoke_reason IN (
             'logout',
             'user_request',
@@ -27,13 +25,13 @@ CREATE TABLE iam_session.sessions (
             'expired'
         )
     ),
-    CONSTRAINT sessions_timeline_check CHECK (
+    ADD CONSTRAINT sessions_timeline_check CHECK (
         last_refreshed_at >= created_at
         AND expires_at > created_at
         AND (revoked_at IS NULL OR revoked_at >= created_at)
         AND (compromised_at IS NULL OR compromised_at >= created_at)
     ),
-    CONSTRAINT sessions_terminal_state_check CHECK (
+    ADD CONSTRAINT sessions_terminal_state_check CHECK (
         (status = 'active'
             AND revoked_at IS NULL
             AND compromised_at IS NULL
@@ -46,8 +44,7 @@ CREATE TABLE iam_session.sessions (
             AND revoked_at IS NOT NULL
             AND compromised_at IS NOT NULL
             AND revoke_reason = 'refresh_token_reused')
-    )
-);
+    );
 
 CREATE INDEX sessions_account_status_created_idx
     ON iam_session.sessions (account_id, status, created_at DESC);
@@ -164,42 +161,44 @@ CREATE TABLE iam_session.oauth_client_events (
     )
 );
 
-CREATE TABLE iam_session.oauth_authorizations (
-    id VARCHAR(100) PRIMARY KEY,
-    registered_client_id VARCHAR(100) NOT NULL
-        REFERENCES iam_session.oauth_clients (id) ON DELETE RESTRICT,
-    principal_name VARCHAR(200) NOT NULL,
-    session_id UUID REFERENCES iam_session.sessions (id) ON DELETE RESTRICT,
-    authorization_grant_type VARCHAR(100) NOT NULL,
-    authorized_scopes VARCHAR(1000),
-    attributes TEXT NOT NULL,
-    state_digest BYTEA,
-    authorization_code_digest BYTEA,
-    authorization_code_issued_at TIMESTAMPTZ,
-    authorization_code_expires_at TIMESTAMPTZ,
-    authorization_code_metadata TEXT,
-    access_token_digest BYTEA,
-    access_token_issued_at TIMESTAMPTZ,
-    access_token_expires_at TIMESTAMPTZ,
-    access_token_metadata TEXT,
-    access_token_type VARCHAR(100),
-    access_token_scopes VARCHAR(1000),
-    refresh_token_digest BYTEA,
-    refresh_token_issued_at TIMESTAMPTZ,
-    refresh_token_expires_at TIMESTAMPTZ,
-    refresh_token_metadata TEXT,
-    invalidated_at TIMESTAMPTZ,
-    invalidation_reason VARCHAR(100),
-    version BIGINT NOT NULL DEFAULT 0,
-    CONSTRAINT oauth_authorizations_state_digest_check
-        CHECK (state_digest IS NULL OR OCTET_LENGTH(state_digest) = 32),
-    CONSTRAINT oauth_authorizations_code_digest_check
-        CHECK (authorization_code_digest IS NULL OR OCTET_LENGTH(authorization_code_digest) = 32),
-    CONSTRAINT oauth_authorizations_access_digest_check
-        CHECK (access_token_digest IS NULL OR OCTET_LENGTH(access_token_digest) = 32),
-    CONSTRAINT oauth_authorizations_refresh_digest_check
-        CHECK (refresh_token_digest IS NULL OR OCTET_LENGTH(refresh_token_digest) = 32),
-    CONSTRAINT oauth_authorizations_code_tuple_check CHECK (
+-- Authorization codes are intentionally short-lived. Expire any code that was
+-- issued by the minimal flow before installing the persisted-client foreign key.
+DELETE FROM iam_session.oauth_authorizations;
+
+DROP INDEX iam_session.oauth_authorizations_session_idx;
+
+ALTER TABLE iam_session.oauth_authorizations
+    DROP CONSTRAINT oauth_authorizations_grant_check,
+    DROP CONSTRAINT oauth_authorizations_code_tuple_check,
+    ALTER COLUMN registered_client_id TYPE VARCHAR(100),
+    ALTER COLUMN session_id DROP NOT NULL,
+    ALTER COLUMN authorization_grant_type TYPE VARCHAR(100),
+    ALTER COLUMN authorized_scopes DROP NOT NULL;
+
+ALTER TABLE iam_session.oauth_authorizations
+    RENAME COLUMN attributes_json TO attributes;
+
+ALTER TABLE iam_session.oauth_authorizations
+    RENAME COLUMN authorization_code_metadata_json TO authorization_code_metadata;
+
+ALTER TABLE iam_session.oauth_authorizations
+    ADD COLUMN access_token_digest BYTEA,
+    ADD COLUMN access_token_issued_at TIMESTAMPTZ,
+    ADD COLUMN access_token_expires_at TIMESTAMPTZ,
+    ADD COLUMN access_token_metadata TEXT,
+    ADD COLUMN access_token_type VARCHAR(100),
+    ADD COLUMN access_token_scopes VARCHAR(1000),
+    ADD COLUMN refresh_token_digest BYTEA,
+    ADD COLUMN refresh_token_issued_at TIMESTAMPTZ,
+    ADD COLUMN refresh_token_expires_at TIMESTAMPTZ,
+    ADD COLUMN refresh_token_metadata TEXT,
+    ADD COLUMN invalidated_at TIMESTAMPTZ,
+    ADD COLUMN invalidation_reason VARCHAR(100),
+    ADD CONSTRAINT oauth_authorizations_registered_client_fk
+        FOREIGN KEY (registered_client_id)
+        REFERENCES iam_session.oauth_clients (id)
+        ON DELETE RESTRICT,
+    ADD CONSTRAINT oauth_authorizations_code_tuple_check CHECK (
         (authorization_code_digest IS NULL
             AND authorization_code_issued_at IS NULL
             AND authorization_code_expires_at IS NULL)
@@ -207,7 +206,11 @@ CREATE TABLE iam_session.oauth_authorizations (
             AND authorization_code_issued_at IS NOT NULL
             AND authorization_code_expires_at > authorization_code_issued_at)
     ),
-    CONSTRAINT oauth_authorizations_access_tuple_check CHECK (
+    ADD CONSTRAINT oauth_authorizations_access_digest_check
+        CHECK (access_token_digest IS NULL OR OCTET_LENGTH(access_token_digest) = 32),
+    ADD CONSTRAINT oauth_authorizations_refresh_digest_check
+        CHECK (refresh_token_digest IS NULL OR OCTET_LENGTH(refresh_token_digest) = 32),
+    ADD CONSTRAINT oauth_authorizations_access_tuple_check CHECK (
         (access_token_digest IS NULL
             AND access_token_issued_at IS NULL
             AND access_token_expires_at IS NULL
@@ -217,7 +220,7 @@ CREATE TABLE iam_session.oauth_authorizations (
             AND access_token_expires_at > access_token_issued_at
             AND access_token_type IS NOT NULL)
     ),
-    CONSTRAINT oauth_authorizations_refresh_tuple_check CHECK (
+    ADD CONSTRAINT oauth_authorizations_refresh_tuple_check CHECK (
         (refresh_token_digest IS NULL
             AND refresh_token_issued_at IS NULL
             AND refresh_token_expires_at IS NULL)
@@ -225,12 +228,11 @@ CREATE TABLE iam_session.oauth_authorizations (
             AND refresh_token_issued_at IS NOT NULL
             AND refresh_token_expires_at > refresh_token_issued_at)
     ),
-    CONSTRAINT oauth_authorizations_version_check CHECK (version >= 0),
-    CONSTRAINT oauth_authorizations_invalidation_check CHECK (
+    ADD CONSTRAINT oauth_authorizations_invalidation_check CHECK (
         (invalidated_at IS NULL AND invalidation_reason IS NULL)
         OR (invalidated_at IS NOT NULL AND invalidation_reason IS NOT NULL)
     ),
-    CONSTRAINT oauth_authorizations_invalidation_reason_check CHECK (
+    ADD CONSTRAINT oauth_authorizations_invalidation_reason_check CHECK (
         invalidation_reason IS NULL OR invalidation_reason IN (
             'authorization_removed',
             'logout',
@@ -240,20 +242,11 @@ CREATE TABLE iam_session.oauth_authorizations (
             'refresh_token_reused',
             'expired'
         )
-    )
-);
+    );
 
 CREATE INDEX oauth_authorizations_session_active_idx
     ON iam_session.oauth_authorizations (session_id)
     WHERE invalidated_at IS NULL;
-
-CREATE UNIQUE INDEX oauth_authorizations_state_digest_idx
-    ON iam_session.oauth_authorizations (state_digest)
-    WHERE state_digest IS NOT NULL;
-
-CREATE UNIQUE INDEX oauth_authorizations_code_digest_idx
-    ON iam_session.oauth_authorizations (authorization_code_digest)
-    WHERE authorization_code_digest IS NOT NULL;
 
 CREATE UNIQUE INDEX oauth_authorizations_access_digest_idx
     ON iam_session.oauth_authorizations (access_token_digest)

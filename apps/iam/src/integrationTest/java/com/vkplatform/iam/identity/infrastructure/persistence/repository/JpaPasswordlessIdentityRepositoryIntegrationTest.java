@@ -53,6 +53,9 @@ class JpaPasswordlessIdentityRepositoryIntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
+        jdbcTemplate.update("DELETE FROM iam_session.oauth_refresh_tokens");
+        jdbcTemplate.update("DELETE FROM iam_session.oauth_authorizations");
+        jdbcTemplate.update("DELETE FROM iam_session.sessions");
         jdbcTemplate.update("DELETE FROM iam_identity.security_events");
         jdbcTemplate.update("DELETE FROM iam_identity.verification_grants");
         jdbcTemplate.update("DELETE FROM iam_identity.login_identities");
