@@ -35,4 +35,16 @@ class ArchitectureTest {
                 )
                 .check(new ClassFileImporter().importPackages("com.vkplatform.iam.identity"));
     }
+
+    @Test
+    void sessionPersistenceTypesStayInsideSessionInfrastructure() {
+        noClasses()
+                .that().resideOutsideOfPackage("..session.infrastructure.persistence..")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "..session.infrastructure.persistence..",
+                        "jakarta.persistence..",
+                        "org.springframework.data.."
+                )
+                .check(new ClassFileImporter().importPackages("com.vkplatform.iam.session"));
+    }
 }

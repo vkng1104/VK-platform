@@ -204,7 +204,51 @@ paths:
           $ref: "#/components/responses/AuthenticationFailed"
         "500":
           $ref: "#/components/responses/EmailVerificationInternalError"
+  /api/v1/authentication/grants/exchange:
+    post:
+      operationId: exchangeAuthenticationGrant
+      tags:
+        - Authentication
+      summary: Exchange a one-time sign-in grant for a browser session
+      description: >-
+        Authenticated BFF-only operation. It consumes the grant once, creates a durable IAM session,
+        and establishes the Secure, HttpOnly, SameSite=Lax browser-session cookie. The JSON request
+        body is limited to 1 KiB and must contain exactly one object with no unknown fields.
+      security:
+        - bffClientAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExchangeAuthenticationGrantRequest"
+      responses:
+        "200":
+          description: The one-time grant was exchanged for an active browser session.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationSessionResponse"
+        "400":
+          $ref: "#/components/responses/ExchangeAuthenticationGrantBadRequest"
+        "401":
+          $ref: "#/components/responses/BffAuthenticationRequired"
+        "403":
+          $ref: "#/components/responses/UntrustedBffRequest"
+        "422":
+          $ref: "#/components/responses/AuthenticationFailed"
+        "500":
+          $ref: "#/components/responses/EmailVerificationInternalError"
 components:
+  securitySchemes:
+    bffClientAuth:
+      type: http
+      scheme: basic
   headers:
     RequestID:
       description: Server-generated identifier for correlating a request with API logs.
@@ -214,7 +258,7 @@ components:
         pattern: ^[0-9a-f]{32}$
       example: 0a1b2c3d4e5f67890123456789abcdef
     NoStore:
-      description: Prevents storage of email-verification responses.
+      description: Prevents storage of security-sensitive responses.
       required: true
       schema:
         type: string
@@ -228,6 +272,42 @@ components:
         minimum: 1
       example: 60
   responses:
+    ExchangeAuthenticationGrantBadRequest:
+      description: The JSON body or authentication audience is invalid.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+        Cache-Control:
+          $ref: "#/components/headers/NoStore"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicError"
+    BffAuthenticationRequired:
+      description: Valid BFF client credentials were not supplied.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+        Cache-Control:
+          $ref: "#/components/headers/NoStore"
+        WWW-Authenticate:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicError"
+    UntrustedBffRequest:
+      description: The request did not originate from the configured BFF context.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+        Cache-Control:
+          $ref: "#/components/headers/NoStore"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicError"
     StartEmailVerificationBadRequest:
       description: The JSON body, email, or verification purpose is invalid.
       headers:
@@ -528,6 +608,50 @@ components:
       properties:
         grant:
           $ref: "#/components/schemas/AuthenticationGrant"
+    ExchangeAuthenticationGrantRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - grant
+        - audience
+      properties:
+        grant:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{43}$
+        audience:
+          type: string
+          minLength: 1
+          maxLength: 128
+    AuthenticationSession:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - status
+        - created_at
+        - expires_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - active
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+    AuthenticationSessionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - session
+      properties:
+        session:
+          $ref: "#/components/schemas/AuthenticationSession"
     PublicError:
       type: object
       additionalProperties: false

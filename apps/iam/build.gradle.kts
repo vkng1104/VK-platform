@@ -91,6 +91,7 @@ tasks.register("generatePersistence") {
 			"com/vkplatform/iam/identity/infrastructure/persistence/entity/LoginIdentityEntity_.java",
 			"com/vkplatform/iam/identity/infrastructure/persistence/entity/SecurityEventEntity_.java",
 			"com/vkplatform/iam/identity/infrastructure/persistence/entity/VerificationGrantEntity_.java",
+			"com/vkplatform/iam/session/infrastructure/persistence/entity/SessionEntity_.java",
 			"com/vkplatform/iam/verification/infrastructure/persistence/entity/EmailVerificationChallengeEntity_.java",
 			"com/vkplatform/iam/verification/infrastructure/persistence/entity/EmailVerificationOperationGuardEntity_.java"
 		)

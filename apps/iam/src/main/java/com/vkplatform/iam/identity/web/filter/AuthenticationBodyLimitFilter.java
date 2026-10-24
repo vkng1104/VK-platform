@@ -18,9 +18,11 @@ import java.io.IOException;
 @Order(Ordered.HIGHEST_PRECEDENCE + 1)
 public class AuthenticationBodyLimitFilter extends OncePerRequestFilter {
     private static final String START_PATH = "/api/v1/authentication/challenges";
+    private static final String EXCHANGE_PATH = "/api/v1/authentication/grants/exchange";
     private static final String VERIFY_SUFFIX = "/verify";
     private static final int START_BODY_LIMIT = 4 * 1024;
     private static final int VERIFY_BODY_LIMIT = 1024;
+    private static final int EXCHANGE_BODY_LIMIT = 1024;
 
     @Override
     protected void doFilterInternal(
@@ -43,6 +45,9 @@ public class AuthenticationBodyLimitFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         if (START_PATH.equals(path)) {
             return START_BODY_LIMIT;
+        }
+        if (EXCHANGE_PATH.equals(path)) {
+            return EXCHANGE_BODY_LIMIT;
         }
         if (path.startsWith(START_PATH + "/") && path.endsWith(VERIFY_SUFFIX)) {
             return VERIFY_BODY_LIMIT;
