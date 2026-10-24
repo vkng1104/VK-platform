@@ -21,6 +21,8 @@ class OpenApiContractTest {
                 .contains("/api/v1/authentication/challenges:")
                 .contains("/api/v1/authentication/challenges/{id}/verify:")
                 .contains("/api/v1/authentication/grants/exchange:")
+                .contains("/oauth2/jwks:")
+                .contains("JsonWebKeySet:")
                 .contains("bffClientAuth:")
                 .contains("BffAuthenticationRequired:")
                 .contains("AUTHENTICATION_FAILED")

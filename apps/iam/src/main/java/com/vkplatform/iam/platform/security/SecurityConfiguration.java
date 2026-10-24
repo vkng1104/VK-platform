@@ -18,6 +18,7 @@ public class SecurityConfiguration {
                                 "/healthz",
                                 "/readyz",
                                 "/api/docs/**",
+                                "/oauth2/jwks",
                                 "/api/v1/email-verifications/**",
                                 "/api/v1/authentication/challenges/**"
                         ).permitAll()
