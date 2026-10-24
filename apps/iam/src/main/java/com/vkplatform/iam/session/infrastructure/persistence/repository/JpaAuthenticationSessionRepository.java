@@ -5,6 +5,9 @@ import com.vkplatform.iam.session.domain.AuthenticationSession;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.SessionEntity;
 import org.springframework.stereotype.Repository;
 
+import java.util.Optional;
+import java.util.UUID;
+
 @Repository
 public class JpaAuthenticationSessionRepository implements AuthenticationSessionRepository {
     private final SpringDataAuthenticationSessionRepository sessions;
@@ -16,5 +19,10 @@ public class JpaAuthenticationSessionRepository implements AuthenticationSession
     @Override
     public AuthenticationSession create(AuthenticationSession session) {
         return sessions.save(new SessionEntity(session)).toDomain();
+    }
+
+    @Override
+    public Optional<AuthenticationSession> findById(UUID id) {
+        return sessions.findById(id).map(SessionEntity::toDomain);
     }
 }

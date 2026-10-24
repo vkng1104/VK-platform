@@ -27,7 +27,7 @@ public class SessionSecurityConfiguration {
     }
 
     @Bean
-    @Order(1)
+    @Order(2)
     SecurityFilterChain authenticationGrantExchangeSecurityFilterChain(
             HttpSecurity http,
             SecurityContextRepository securityContexts,

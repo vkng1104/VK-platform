@@ -65,6 +65,13 @@ iam:
     signing-private-key-pkcs8-base64: ${IAM_OAUTH_SIGNING_PRIVATE_KEY_PKCS8_BASE64:}
     signing-public-key-x509-base64: ${IAM_OAUTH_SIGNING_PUBLIC_KEY_X509_BASE64:}
     jwks-cache-ttl: ${IAM_OAUTH_JWKS_CACHE_TTL:PT5M}
+    authorization:
+      issuer: ${IAM_OAUTH_ISSUER:http://localhost:8081}
+      audience: ${IAM_OAUTH_AUDIENCE:vk-platform-api}
+      login-uri: ${IAM_OAUTH_LOGIN_URI:http://localhost:3000/sign-in}
+      bff-redirect-uri: ${IAM_OAUTH_BFF_REDIRECT_URI:http://localhost:3000/api/auth/callback}
+      authorization-code-ttl: ${IAM_OAUTH_AUTHORIZATION_CODE_TTL:PT5M}
+      access-token-ttl: ${IAM_OAUTH_ACCESS_TOKEN_TTL:PT5M}
   email:
     provider: ${EMAIL_PROVIDER:disabled}
     from-address: ${EMAIL_FROM_ADDRESS:}
