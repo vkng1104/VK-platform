@@ -59,6 +59,12 @@ iam:
     bff-client-secret: ${IAM_BFF_CLIENT_SECRET:}
     bff-origin: ${IAM_BFF_ORIGIN:http://localhost:3000}
     absolute-ttl: ${IAM_ABSOLUTE_SESSION_TTL:P30D}
+  oauth:
+    enabled: ${IAM_OAUTH_ENABLED:false}
+    signing-key-id: ${IAM_OAUTH_SIGNING_KEY_ID:}
+    signing-private-key-pkcs8-base64: ${IAM_OAUTH_SIGNING_PRIVATE_KEY_PKCS8_BASE64:}
+    signing-public-key-x509-base64: ${IAM_OAUTH_SIGNING_PUBLIC_KEY_X509_BASE64:}
+    jwks-cache-ttl: ${IAM_OAUTH_JWKS_CACHE_TTL:PT5M}
   email:
     provider: ${EMAIL_PROVIDER:disabled}
     from-address: ${EMAIL_FROM_ADDRESS:}
