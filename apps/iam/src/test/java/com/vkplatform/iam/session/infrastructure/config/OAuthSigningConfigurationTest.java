@@ -15,6 +15,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPublicKey;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 
@@ -28,7 +29,8 @@ class OAuthSigningConfigurationTest {
                 true,
                 "oauth-signing-2026",
                 encoded(pair.getPrivate().getEncoded()),
-                encoded(pair.getPublic().getEncoded())
+                encoded(pair.getPublic().getEncoded()),
+                Duration.ofMinutes(5)
         );
         OAuthSigningConfiguration configuration = new OAuthSigningConfiguration();
         RSAKey signingKey = configuration.oauthSigningKey(properties);
