@@ -43,7 +43,8 @@ public class OAuthAuthorizationServerConfiguration {
             OAuth2AuthorizationService authorizations,
             AuthorizationServerSettings settings,
             SecurityContextRepository securityContexts,
-            OAuthAuthorizationProperties properties,
+            OAuthAuthorizationProperties authorizationProperties,
+            OAuthProperties oauthProperties,
             PlatformTransactionManager transactionManager
     ) throws Exception {
         OAuth2AuthorizationServerConfigurer authorizationServer =
@@ -59,9 +60,16 @@ public class OAuthAuthorizationServerConfiguration {
                         .requestMatchers("/.well-known/oauth-authorization-server").permitAll()
                         .anyRequest().authenticated()
                 )
+                .headers(headers -> headers
+                        .cacheControl(cacheControl -> cacheControl.disable())
+                        .addHeaderWriter(new OAuthCacheControlHeadersWriter(
+                                settings.getJwkSetEndpoint(),
+                                oauthProperties.jwksCacheTtl()
+                        ))
+                )
                 .securityContext(context -> context.securityContextRepository(securityContexts))
                 .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(
-                        new LoginUrlAuthenticationEntryPoint(properties.loginUri().toString())
+                        new LoginUrlAuthenticationEntryPoint(authorizationProperties.loginUri().toString())
                 ))
                 .csrf(csrf -> csrf.ignoringRequestMatchers(authorizationServer.getEndpointsMatcher()))
                 .addFilterBefore(

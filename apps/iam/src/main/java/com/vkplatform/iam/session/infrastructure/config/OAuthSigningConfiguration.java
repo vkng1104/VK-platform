@@ -36,8 +36,8 @@ public class OAuthSigningConfiguration {
 
     @Bean
     JWKSource<SecurityContext> oauthSigningJwkSource(RSAKey signingKey) {
-        JWKSet keys = new JWKSet(signingKey);
-        return (selector, context) -> selector.select(keys);
+        JWKSet keySet = new JWKSet(signingKey);
+        return (selector, context) -> selector.select(keySet);
     }
 
     @Bean
