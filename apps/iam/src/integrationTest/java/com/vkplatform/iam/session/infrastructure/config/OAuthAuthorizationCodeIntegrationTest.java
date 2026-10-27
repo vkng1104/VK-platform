@@ -193,6 +193,33 @@ class OAuthAuthorizationCodeIntegrationTest {
                 .andExpect(jsonPath("$.keys[0].d").doesNotExist());
     }
 
+    @Test
+    void rejectsAFrameworkLoginAfterItsDatabaseSessionExpires() throws Exception {
+        MockHttpSession browser = exchangeGrant();
+        Instant now = Instant.now();
+        jdbcTemplate.update("""
+                UPDATE iam_session.sessions
+                SET created_at = ?, expires_at = ?
+                WHERE account_id = ?
+                """,
+                timestamp(now.minusSeconds(7200)),
+                timestamp(now.minusSeconds(3600)),
+                ACCOUNT_ID
+        );
+
+        MvcResult result = mockMvc.perform(authorizationRequest(browser, BFF_REDIRECT, true))
+                .andExpect(status().is3xxRedirection())
+                .andReturn();
+
+        assertThat(result.getResponse().getRedirectedUrl())
+                .startsWith("https://web.example.test/sign-in");
+        assertThat(browser.isInvalid()).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM iam_session.oauth_authorizations",
+                Integer.class
+        )).isZero();
+    }
+
     private MockHttpSession exchangeGrant() throws Exception {
         MvcResult exchange = mockMvc.perform(post("/api/v1/authentication/grants/exchange")
                         .with(httpBasic(BFF_CLIENT_ID, BFF_SECRET))
