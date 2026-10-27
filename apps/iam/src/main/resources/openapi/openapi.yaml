@@ -52,10 +52,6 @@ paths:
           headers:
             X-Request-ID:
               $ref: "#/components/headers/RequestID"
-            Cache-Control:
-              description: Public cache policy for the key set.
-              schema:
-                type: string
           content:
             application/json:
               schema:

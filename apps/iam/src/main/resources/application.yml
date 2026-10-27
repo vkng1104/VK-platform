@@ -64,7 +64,6 @@ iam:
     signing-key-id: ${IAM_OAUTH_SIGNING_KEY_ID:}
     signing-private-key-pkcs8-base64: ${IAM_OAUTH_SIGNING_PRIVATE_KEY_PKCS8_BASE64:}
     signing-public-key-x509-base64: ${IAM_OAUTH_SIGNING_PUBLIC_KEY_X509_BASE64:}
-    jwks-cache-ttl: ${IAM_OAUTH_JWKS_CACHE_TTL:PT5M}
     authorization:
       issuer: ${IAM_OAUTH_ISSUER:http://localhost:8081}
       audience: ${IAM_OAUTH_AUDIENCE:vk-platform-api}
