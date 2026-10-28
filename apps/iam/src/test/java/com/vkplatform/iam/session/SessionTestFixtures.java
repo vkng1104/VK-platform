@@ -35,6 +35,7 @@ public final class SessionTestFixtures {
                 "vk-platform-web",
                 "vk-platform-bff",
                 Duration.ofMinutes(5),
+                Duration.ofMinutes(5),
                 Duration.ofDays(30),
                 Duration.ofDays(30),
                 URI.create("https://web.example.test/sign-in"),

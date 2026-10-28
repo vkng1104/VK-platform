@@ -11,18 +11,29 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class SessionPropertiesTest {
     @Test
     void validatesUrisAndBoundedOperationalBatchSizesWhenEnabled() {
-        assertThatThrownBy(() -> properties(URI.create("/relative-origin"), 100))
+        assertThatThrownBy(() -> properties(URI.create("/relative-origin"), Duration.ofMinutes(5), 100))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("IAM_BFF_ORIGIN");
-        assertThatThrownBy(() -> properties(URI.create("https://web.example.test"), 0))
+        assertThatThrownBy(() -> properties(URI.create("https://web.example.test"), Duration.ZERO, 100))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("IAM_OAUTH_JWKS_CACHE_TTL");
+        assertThatThrownBy(() -> properties(URI.create("https://web.example.test"), Duration.ofMinutes(5), 0))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("IAM_SESSION_CLEANUP_BATCH_SIZE");
-        assertThatThrownBy(() -> properties(URI.create("https://web.example.test"), 1_001))
+        assertThatThrownBy(() -> properties(
+                URI.create("https://web.example.test"),
+                Duration.ofMinutes(5),
+                1_001
+        ))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("IAM_SESSION_CLEANUP_BATCH_SIZE");
     }
 
-    private static SessionProperties properties(URI bffOrigin, int cleanupBatchSize) {
+    private static SessionProperties properties(
+            URI bffOrigin,
+            Duration jwksCacheTtl,
+            int cleanupBatchSize
+    ) {
         return new SessionProperties(
                 true,
                 URI.create("https://iam.example.test"),
@@ -30,6 +41,7 @@ class SessionPropertiesTest {
                 "vk-platform-web",
                 "vk-platform-bff",
                 Duration.ofMinutes(5),
+                jwksCacheTtl,
                 Duration.ofDays(30),
                 Duration.ofDays(30),
                 URI.create("https://web.example.test/sign-in"),

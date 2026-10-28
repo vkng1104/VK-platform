@@ -17,6 +17,7 @@ public record SessionProperties(
         String authenticationAudience,
         String bffClientId,
         Duration accessTokenTtl,
+        Duration jwksCacheTtl,
         Duration refreshTokenTtl,
         Duration absoluteSessionTtl,
         URI loginUri,
@@ -66,6 +67,7 @@ public record SessionProperties(
             requireValue(serviceAudience, "IAM_SERVICE_TOKEN_AUDIENCE");
             requireValue(signingKeyProtectionVersion, "IAM_SIGNING_KEY_PROTECTION_VERSION");
             requireValue(browserCookieName, "IAM_SESSION_COOKIE_NAME");
+            requirePositive(jwksCacheTtl, "IAM_OAUTH_JWKS_CACHE_TTL");
             requirePositive(sessionRetention, "IAM_SESSION_RETENTION");
             requirePositive(authorizationRetention, "IAM_AUTHORIZATION_RETENTION");
             requirePositive(auditRetention, "IAM_SECURITY_AUDIT_RETENTION");

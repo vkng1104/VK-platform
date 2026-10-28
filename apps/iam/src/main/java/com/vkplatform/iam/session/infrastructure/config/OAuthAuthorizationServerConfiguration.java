@@ -54,6 +54,13 @@ public class OAuthAuthorizationServerConfiguration {
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
+                .headers(headers -> headers
+                        .cacheControl(cacheControl -> cacheControl.disable())
+                        .addHeaderWriter(new OAuthCacheControlHeadersWriter(
+                                settings.getJwkSetEndpoint(),
+                                properties.jwksCacheTtl()
+                        ))
+                )
                 .securityContext(context -> context.securityContextRepository(securityContexts))
                 .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(
                         new LoginUrlAuthenticationEntryPoint(properties.loginUri().toString())

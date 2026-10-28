@@ -43,6 +43,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
@@ -50,6 +51,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -245,6 +247,11 @@ class OAuthProtocolIntegrationTest {
                 .andExpect(jsonPath("$.jwks_uri").value("https://iam.example.test/oauth2/jwks"));
         mockMvc.perform(get("/oauth2/jwks"))
                 .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", containsString("max-age=300")))
+                .andExpect(header().string("Cache-Control", containsString("public")))
+                .andExpect(header().string("Cache-Control", containsString("must-revalidate")))
+                .andExpect(header().doesNotExist("Pragma"))
+                .andExpect(header().doesNotExist("Expires"))
                 .andExpect(jsonPath("$.keys[0].kid").value("protocol-test-key"))
                 .andExpect(jsonPath("$.keys[0].d").doesNotExist());
 

@@ -64,6 +64,7 @@ iam:
     authentication-audience: ${IAM_AUTHENTICATION_AUDIENCE:vk-platform-web}
     bff-client-id: ${IAM_BFF_CLIENT_ID:vk-platform-bff}
     access-token-ttl: ${IAM_ACCESS_TOKEN_TTL:PT5M}
+    jwks-cache-ttl: ${IAM_OAUTH_JWKS_CACHE_TTL:PT5M}
     refresh-token-ttl: ${IAM_REFRESH_TOKEN_TTL:P30D}
     absolute-session-ttl: ${IAM_ABSOLUTE_SESSION_TTL:P30D}
     login-uri: ${IAM_LOGIN_URI:http://localhost:3000/sign-in}
