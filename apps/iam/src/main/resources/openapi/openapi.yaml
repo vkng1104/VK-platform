@@ -3,8 +3,8 @@ info:
   title: VK Platform IAM API
   version: v1
   description: >-
-    Purpose-bound passwordless authentication capabilities for VK Platform. Email verification proves
-    short-lived control of a mailbox and does not grant resource access by itself.
+    Purpose-bound passwordless authentication and OAuth 2.0 authorization capabilities for VK Platform.
+    Email verification proves short-lived control of a mailbox and does not grant resource access by itself.
 servers:
   - url: /
     description: Current API origin
@@ -32,6 +32,10 @@ paths:
           headers:
             X-Request-ID:
               $ref: "#/components/headers/RequestID"
+            Cache-Control:
+              description: Public cache policy for the key set.
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -52,14 +56,121 @@ paths:
           headers:
             X-Request-ID:
               $ref: "#/components/headers/RequestID"
-            Cache-Control:
-              description: Public cache policy for the key set.
-              schema:
-                type: string
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/JsonWebKeySet"
+  /oauth2/authorize:
+    get:
+      operationId: authorizeOAuthClient
+      tags:
+        - OAuth
+      summary: Start an OAuth authorization-code flow
+      description: Requires an authenticated browser session and PKCE using the S256 challenge method.
+      parameters:
+        - name: response_type
+          in: query
+          required: true
+          schema:
+            type: string
+            const: code
+        - name: client_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+        - name: scope
+          in: query
+          required: true
+          schema:
+            type: string
+            const: api.access
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: code_challenge
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 43
+            maxLength: 128
+        - name: code_challenge_method
+          in: query
+          required: true
+          schema:
+            type: string
+            const: S256
+      responses:
+        "302":
+          description: Redirects to the registered BFF callback with an authorization code and the original state.
+        "400":
+          description: The OAuth authorization request is invalid.
+  /oauth2/token:
+    post:
+      operationId: exchangeOAuthAuthorizationCode
+      tags:
+        - OAuth
+      summary: Exchange an authorization code for an access token
+      description: Supports only the authorization_code grant with HTTP Basic client authentication and PKCE.
+      security:
+        - bffClientAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - grant_type
+                - code
+                - redirect_uri
+                - code_verifier
+              properties:
+                grant_type:
+                  type: string
+                  const: authorization_code
+                code:
+                  type: string
+                  minLength: 1
+                redirect_uri:
+                  type: string
+                  format: uri
+                code_verifier:
+                  type: string
+                  minLength: 43
+                  maxLength: 128
+      responses:
+        "200":
+          description: A signed bearer access token was issued.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthAccessTokenResponse"
+        "400":
+          description: The authorization code, redirect URI, or PKCE verifier is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
+        "401":
+          description: OAuth client authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
   /api/v1/email-verifications:
     post:
       operationId: startEmailVerification
@@ -492,6 +603,39 @@ components:
             request_id: 0a1b2c3d4e5f67890123456789abcdef
             retryable: true
   schemas:
+    OAuthAccessTokenResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - access_token
+        - token_type
+        - expires_in
+        - scope
+      properties:
+        access_token:
+          type: string
+          minLength: 1
+        token_type:
+          type: string
+          const: Bearer
+        expires_in:
+          type: integer
+          minimum: 1
+        scope:
+          type: string
+          const: api.access
+    OAuthError:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+        error_description:
+          type: string
+        error_uri:
+          type: string
+          format: uri
     JsonWebKeySet:
       type: object
       additionalProperties: false

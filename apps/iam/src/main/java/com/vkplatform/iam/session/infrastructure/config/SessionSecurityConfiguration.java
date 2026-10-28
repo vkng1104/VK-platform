@@ -1,5 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
+import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,12 +14,23 @@ import org.springframework.security.web.authentication.session.SessionAuthentica
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 
+import java.time.Clock;
+
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = "iam.session.enabled", havingValue = "true")
 public class SessionSecurityConfiguration {
     @Bean
-    SecurityContextRepository browserSecurityContextRepository() {
-        return new HttpSessionSecurityContextRepository();
+    SecurityContextRepository browserSecurityContextRepository(
+            AuthenticationSessionRepository sessions,
+            SessionProperties properties,
+            Clock clock
+    ) {
+        return new DatabaseValidatingSecurityContextRepository(
+                new HttpSessionSecurityContextRepository(),
+                sessions,
+                properties.bffClientId(),
+                clock
+        );
     }
 
     @Bean
@@ -27,7 +39,7 @@ public class SessionSecurityConfiguration {
     }
 
     @Bean
-    @Order(1)
+    @Order(2)
     SecurityFilterChain authenticationGrantExchangeSecurityFilterChain(
             HttpSecurity http,
             SecurityContextRepository securityContexts,
