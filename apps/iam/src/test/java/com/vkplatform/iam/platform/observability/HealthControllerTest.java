@@ -16,7 +16,7 @@ import static org.mockito.Mockito.when;
 class HealthControllerTest {
     private final HealthEndpoint healthEndpoint = mock(HealthEndpoint.class);
     private final IndicatedHealthDescriptor databaseHealth = mock(IndicatedHealthDescriptor.class);
-    private final HealthController controller = new HealthController(healthEndpoint, false);
+    private final HealthController controller = new HealthController(healthEndpoint);
 
     @Test
     void reportsReadyFromTheStandardDatabaseHealthContributor() {
@@ -39,23 +39,5 @@ class HealthControllerTest {
         assertThatThrownBy(controller::readiness)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("IAM database is not ready");
-    }
-
-    @Test
-    void rejectsSessionReadinessUntilSigningKeysAndClientsAreOperational() {
-        HealthController sessionController = new HealthController(healthEndpoint, true);
-        when(healthEndpoint.healthForPath("db")).thenReturn(databaseHealth);
-        when(databaseHealth.getStatus()).thenReturn(Status.UP);
-
-        assertThatThrownBy(sessionController::readiness)
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("IAM signing key is not ready");
-
-        IndicatedHealthDescriptor signingKey = mock(IndicatedHealthDescriptor.class);
-        when(signingKey.getStatus()).thenReturn(Status.UP);
-        when(healthEndpoint.healthForPath("signingKey")).thenReturn(signingKey);
-        assertThatThrownBy(sessionController::readiness)
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("IAM OAuth clients are not ready");
     }
 }

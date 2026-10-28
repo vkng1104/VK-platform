@@ -53,7 +53,6 @@ class JpaPasswordlessIdentityRepositoryIntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
-        jdbcTemplate.update("DELETE FROM iam_session.oauth_refresh_tokens");
         jdbcTemplate.update("DELETE FROM iam_session.oauth_authorizations");
         jdbcTemplate.update("DELETE FROM iam_session.sessions");
         jdbcTemplate.update("DELETE FROM iam_identity.security_events");
@@ -192,7 +191,7 @@ class JpaPasswordlessIdentityRepositoryIntegrationTest {
                 NOW.plusSeconds(10),
                 "admin-service",
                 "request-suspend"
-        ).account();
+        );
         assertThat(suspended.tokenNotBefore()).isEqualTo(NOW.plusSeconds(10));
         assertThatThrownBy(() -> issue(
                 bytes(15),
@@ -222,7 +221,7 @@ class JpaPasswordlessIdentityRepositoryIntegrationTest {
                 NOW.plusSeconds(30),
                 "admin-service",
                 "request-delete"
-        ).account();
+        );
         assertThat(deleted.deletedAt()).isEqualTo(NOW.plusSeconds(30));
         assertThat(count("login_identities")).isEqualTo(1);
         assertThat(count("verification_grants")).isEqualTo(1);

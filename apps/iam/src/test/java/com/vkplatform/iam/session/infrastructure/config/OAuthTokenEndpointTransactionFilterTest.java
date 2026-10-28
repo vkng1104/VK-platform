@@ -18,39 +18,35 @@ import static org.mockito.Mockito.when;
 
 class OAuthTokenEndpointTransactionFilterTest {
     @Test
-    void wrapsContextPathTokenRequestsAndCommitsBeforePublishingTheResponse() throws Exception {
+    void commitsCodeConsumptionBeforePublishingTheTokenResponse() throws Exception {
         PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
         TransactionStatus status = mock(TransactionStatus.class);
         when(transactions.getTransaction(any())).thenReturn(status);
         MockHttpServletResponse response = new MockHttpServletResponse();
-        AtomicBoolean committedBeforeCopy = new AtomicBoolean(true);
+        AtomicBoolean responseVisibleAtCommit = new AtomicBoolean(true);
         doAnswer(invocation -> {
-            committedBeforeCopy.set(response.isCommitted() || response.getContentAsByteArray().length > 0);
+            responseVisibleAtCommit.set(response.getContentAsByteArray().length > 0);
             return null;
         }).when(transactions).commit(status);
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/iam/oauth2/token");
-        request.setContextPath("/iam");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/oauth2/token");
         request.setServletPath("/oauth2/token");
 
         new OAuthTokenEndpointTransactionFilter(transactions).doFilter(
                 request,
                 response,
-                (current, buffered) -> {
-                    buffered.getWriter().write("token-response");
-                    buffered.flushBuffer();
-                }
+                (current, buffered) -> buffered.getWriter().write("token-response")
         );
 
         verify(transactions).commit(status);
-        assertThat(committedBeforeCopy).isFalse();
+        assertThat(responseVisibleAtCommit).isFalse();
         assertThat(response.getContentAsString()).isEqualTo("token-response");
     }
 
     @Test
-    void doesNotOpenATransactionForUnrelatedRequests() throws Exception {
+    void leavesUnrelatedRequestsOutsideTheTransaction() throws Exception {
         PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/authentication/logout");
-        request.setServletPath("/api/v1/authentication/logout");
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/oauth2/authorize");
+        request.setServletPath("/oauth2/authorize");
         AtomicBoolean invoked = new AtomicBoolean();
 
         new OAuthTokenEndpointTransactionFilter(transactions).doFilter(

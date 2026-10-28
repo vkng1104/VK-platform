@@ -1,8 +1,8 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
-import com.vkplatform.iam.session.application.port.out.SessionRepository;
-import com.vkplatform.iam.session.domain.SessionFailure;
-import com.vkplatform.iam.session.domain.UserSession;
+import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.domain.AuthenticationSession;
+import com.vkplatform.iam.session.domain.SessionRevokeReason;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,12 +34,12 @@ class DatabaseValidatingSecurityContextRepositoryTest {
     private static final String CLIENT_ID = "vk-platform-bff";
     private static final Instant NOW = Instant.parse("2026-10-27T04:00:00Z");
 
-    private SessionRepository sessions;
+    private AuthenticationSessionRepository sessions;
     private DatabaseValidatingSecurityContextRepository repository;
 
     @BeforeEach
     void setUp() {
-        sessions = mock(SessionRepository.class);
+        sessions = mock(AuthenticationSessionRepository.class);
         repository = new DatabaseValidatingSecurityContextRepository(
                 new HttpSessionSecurityContextRepository(),
                 sessions,
@@ -50,13 +51,13 @@ class DatabaseValidatingSecurityContextRepositoryTest {
     @Test
     void lazilyRestoresAFrameworkContextWhenTheDatabaseSessionCanAuthorize() {
         BrowserContext browser = browserContext(SESSION_ID.toString());
-        when(sessions.findOwned(ACCOUNT_ID, SESSION_ID)).thenReturn(UserSession.create(
+        when(sessions.findById(SESSION_ID)).thenReturn(Optional.of(AuthenticationSession.create(
                 SESSION_ID,
                 ACCOUNT_ID,
                 CLIENT_ID,
                 NOW.minusSeconds(60),
                 NOW.plusSeconds(3600)
-        ));
+        )));
 
         DeferredSecurityContext deferred = repository.loadDeferredContext(browser.request());
 
@@ -64,13 +65,13 @@ class DatabaseValidatingSecurityContextRepositoryTest {
         assertThat(deferred.get().getAuthentication()).isSameAs(browser.context().getAuthentication());
         assertThat(deferred.isGenerated()).isFalse();
         assertThat(browser.session().isInvalid()).isFalse();
-        verify(sessions).findOwned(ACCOUNT_ID, SESSION_ID);
+        verify(sessions).findById(SESSION_ID);
     }
 
     @Test
     void clearsTheFrameworkContextAndInvalidatesTheBrowserSessionWhenTheDatabaseSessionIsMissing() {
         BrowserContext browser = browserContext(SESSION_ID.toString());
-        when(sessions.findOwned(ACCOUNT_ID, SESSION_ID)).thenThrow(SessionFailure.sessionNotFound());
+        when(sessions.findById(SESSION_ID)).thenReturn(Optional.empty());
 
         SecurityContext context = repository.loadDeferredContext(browser.request()).get();
 
@@ -81,13 +82,31 @@ class DatabaseValidatingSecurityContextRepositoryTest {
     @Test
     void clearsTheFrameworkContextWhenTheDatabaseSessionHasReachedItsAbsoluteExpiry() {
         BrowserContext browser = browserContext(SESSION_ID.toString());
-        when(sessions.findOwned(ACCOUNT_ID, SESSION_ID)).thenReturn(UserSession.create(
+        when(sessions.findById(SESSION_ID)).thenReturn(Optional.of(AuthenticationSession.create(
                 SESSION_ID,
                 ACCOUNT_ID,
                 CLIENT_ID,
                 NOW.minusSeconds(7200),
                 NOW.minusSeconds(3600)
-        ));
+        )));
+
+        SecurityContext context = repository.loadDeferredContext(browser.request()).get();
+
+        assertThat(context.getAuthentication()).isNull();
+        assertThat(browser.session().isInvalid()).isTrue();
+    }
+
+    @Test
+    void clearsTheFrameworkContextWhenTheDatabaseSessionWasRevoked() {
+        BrowserContext browser = browserContext(SESSION_ID.toString());
+        AuthenticationSession revoked = AuthenticationSession.create(
+                SESSION_ID,
+                ACCOUNT_ID,
+                CLIENT_ID,
+                NOW.minusSeconds(60),
+                NOW.plusSeconds(3600)
+        ).revoke(SessionRevokeReason.LOGOUT, NOW.minusSeconds(1));
+        when(sessions.findById(SESSION_ID)).thenReturn(Optional.of(revoked));
 
         SecurityContext context = repository.loadDeferredContext(browser.request()).get();
 

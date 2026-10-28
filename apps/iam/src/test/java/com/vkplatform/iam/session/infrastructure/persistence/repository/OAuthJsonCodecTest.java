@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class OAuthJsonCodecTest {
     @Test
-    void normalizesJdkImmutableCollectionsBeforeSecurePolymorphicRoundTrip() {
+    void normalizesImmutableCollectionsForTheSecurePolymorphicRoundTrip() {
         OAuthJsonCodec codec = new OAuthJsonCodec();
 
         Map<String, Object> restored = codec.readMap(codec.writeMap(Map.of(
