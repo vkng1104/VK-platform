@@ -1,12 +1,10 @@
 package com.vkplatform.iam.session.domain;
 
 public enum SessionRevokeReason {
-    LOGOUT("logout"),
     USER_REQUEST("user_request"),
+    LOGOUT("logout"),
     ALL_SESSIONS_REVOKED("all_sessions_revoked"),
-    ACCOUNT_STATE_CHANGED("account_state_changed"),
-    REFRESH_TOKEN_REUSED("refresh_token_reused"),
-    EXPIRED("expired");
+    ACCOUNT_STATE_CHANGED("account_state_changed");
 
     private final String wireValue;
 

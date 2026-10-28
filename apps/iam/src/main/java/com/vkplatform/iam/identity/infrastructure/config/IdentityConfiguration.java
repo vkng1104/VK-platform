@@ -10,7 +10,6 @@ import com.vkplatform.iam.verification.api.EmailVerificationOperations;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.ApplicationEventPublisher;
 
 import java.security.SecureRandom;
 import java.time.Clock;
@@ -34,16 +33,8 @@ public class IdentityConfiguration {
             PasswordlessIdentityRepository repository,
             GrantTokenCodec grants,
             Clock clock,
-            IdentityPolicy policy,
-            ApplicationEventPublisher events
+            IdentityPolicy policy
     ) {
-        return new PasswordlessIdentityService(
-                verification,
-                repository,
-                grants,
-                clock,
-                policy,
-                events
-        );
+        return new PasswordlessIdentityService(verification, repository, grants, clock, policy);
     }
 }

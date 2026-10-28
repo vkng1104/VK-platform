@@ -1,13 +1,9 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
-import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
-import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
-import com.vkplatform.iam.session.infrastructure.persistence.repository.JpaSigningKeyStore;
-import com.vkplatform.iam.session.application.port.out.SessionRepository;
-import com.vkplatform.iam.session.domain.SessionFailure;
-import com.vkplatform.iam.session.domain.UserSession;
+import com.nimbusds.jose.jwk.RSAKey;
+import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.domain.AuthenticationSession;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
@@ -19,27 +15,21 @@ import java.util.Map;
 import java.util.UUID;
 
 final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncodingContext> {
-    private final PasswordlessIdentityOperations identities;
-    private final SessionProperties properties;
+    private final AuthenticationSessionRepository sessions;
+    private final OAuthAuthorizationProperties properties;
+    private final RSAKey signingKey;
     private final Clock clock;
-    private final JpaSigningKeyStore signingKeys;
-    private final SessionRepository sessions;
-    private final SessionSecurityMetrics metrics;
 
     OAuthTokenClaimsCustomizer(
-            PasswordlessIdentityOperations identities,
-            SessionProperties properties,
-            Clock clock,
-            JpaSigningKeyStore signingKeys,
-            SessionRepository sessions,
-            SessionSecurityMetrics metrics
+            AuthenticationSessionRepository sessions,
+            OAuthAuthorizationProperties properties,
+            RSAKey signingKey,
+            Clock clock
     ) {
-        this.identities = identities;
-        this.properties = properties;
-        this.clock = clock;
-        this.signingKeys = signingKeys;
         this.sessions = sessions;
-        this.metrics = metrics;
+        this.properties = properties;
+        this.signingKey = signingKey;
+        this.clock = clock;
     }
 
     @Override
@@ -47,43 +37,33 @@ final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncod
         if (!OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
             return;
         }
-        var signer = signingKeys.activeSigner();
-        context.getJwsHeader().keyId(signer.getKeyID());
-        context.getClaims().claim("client_id", context.getRegisteredClient().getClientId());
-        if (AuthorizationGrantType.CLIENT_CREDENTIALS.equals(context.getAuthorizationGrantType())) {
-            context.getClaims()
-                    .subject(context.getRegisteredClient().getClientId())
-                    .audience(List.of(properties.serviceAudience()));
-            ActiveSignerContext.bind(signer);
-            metrics.tokenIssued();
-            return;
-        }
-
         Authentication principal = context.getPrincipal();
-        UUID accountId = UUID.fromString(principal.getName());
-        AuthenticatedAccount account = identities.activeAccount(accountId);
+        UUID accountId = parseUuid(principal.getName(), "authenticated account id");
         Map<?, ?> details = principal.getDetails() instanceof Map<?, ?> values ? values : Map.of();
-        String sessionId = requireDetail(details, "session_id");
+        UUID sessionId = parseUuid(requireDetail(details, "session_id"), "authenticated session id");
         String authenticationMethod = requireDetail(details, "amr");
         Instant now = clock.instant();
-        UserSession session = sessions.findOwned(account.accountId(), UUID.fromString(sessionId));
-        if (!session.canUse(context.getRegisteredClient().getClientId(), now)) {
-            throw SessionFailure.sessionUnavailable();
-        }
-        Instant notBefore = account.tokenNotBefore().isAfter(now) ? account.tokenNotBefore() : now;
+        AuthenticationSession session = sessions.findById(sessionId)
+                .filter(candidate -> candidate.canAuthorize(
+                        accountId,
+                        context.getRegisteredClient().getClientId(),
+                        now
+                ))
+                .orElseThrow(() -> new IllegalStateException("OAuth browser session is unavailable"));
         Instant expiresAt = now.plus(properties.accessTokenTtl());
         if (session.expiresAt().isBefore(expiresAt)) {
             expiresAt = session.expiresAt();
         }
+
+        context.getJwsHeader().keyId(signingKey.getKeyID());
         context.getClaims()
-                .subject(account.accountId().toString())
+                .subject(accountId.toString())
                 .audience(List.of(properties.audience()))
-                .notBefore(notBefore)
+                .notBefore(now)
                 .expiresAt(expiresAt)
-                .claim("sid", sessionId)
+                .claim("client_id", context.getRegisteredClient().getClientId())
+                .claim("sid", sessionId.toString())
                 .claim("amr", List.of(authenticationMethod));
-        ActiveSignerContext.bind(signer);
-        metrics.tokenIssued();
     }
 
     private static String requireDetail(Map<?, ?> details, String name) {
@@ -92,5 +72,13 @@ final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncod
             throw new IllegalStateException("authenticated session detail is missing: " + name);
         }
         return value.toString();
+    }
+
+    private static UUID parseUuid(String value, String name) {
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalStateException(name + " is invalid", exception);
+        }
     }
 }

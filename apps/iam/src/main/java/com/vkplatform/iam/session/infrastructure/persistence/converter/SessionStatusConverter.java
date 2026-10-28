@@ -4,7 +4,7 @@ import com.vkplatform.iam.session.domain.SessionStatus;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
 
-@Converter(autoApply = false)
+@Converter
 public class SessionStatusConverter implements AttributeConverter<SessionStatus, String> {
     @Override
     public String convertToDatabaseColumn(SessionStatus attribute) {
@@ -12,7 +12,7 @@ public class SessionStatusConverter implements AttributeConverter<SessionStatus,
     }
 
     @Override
-    public SessionStatus convertToEntityAttribute(String dbData) {
-        return dbData == null ? null : SessionStatus.fromStoredValue(dbData);
+    public SessionStatus convertToEntityAttribute(String stored) {
+        return stored == null ? null : SessionStatus.fromStoredValue(stored);
     }
 }

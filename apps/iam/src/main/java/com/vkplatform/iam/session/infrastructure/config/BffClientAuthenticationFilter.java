@@ -7,29 +7,24 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
-import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Base64;
 
 final class BffClientAuthenticationFilter extends OncePerRequestFilter {
-    private final RegisteredClientRepository clients;
-    private final PasswordEncoder passwords;
     private final SessionProperties properties;
+    private final BffSessionOperation operation;
 
     BffClientAuthenticationFilter(
-            RegisteredClientRepository clients,
-            PasswordEncoder passwords,
-            SessionProperties properties
+            SessionProperties properties,
+            BffSessionOperation operation
     ) {
-        this.clients = clients;
-        this.passwords = passwords;
         this.properties = properties;
+        this.operation = operation;
     }
 
     @Override
@@ -38,16 +33,18 @@ final class BffClientAuthenticationFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
+        if (!operation.method().equals(request.getMethod()) || !operation.path().equals(request.getRequestURI())) {
+            reject(response, request, HttpServletResponse.SC_FORBIDDEN, "BFF_OPERATION_NOT_ALLOWED");
+            return;
+        }
         if (!trustedBrowserContext(request)) {
             reject(response, request, HttpServletResponse.SC_FORBIDDEN, "UNTRUSTED_REQUEST_ORIGIN");
             return;
         }
         ClientCredential credential = credential(request.getHeader(HttpHeaders.AUTHORIZATION));
-        RegisteredClient client = credential == null ? null : clients.findByClientId(credential.clientId());
-        if (client == null
-                || !properties.bffClientId().equals(client.getClientId())
-                || client.getClientSecret() == null
-                || !passwords.matches(credential.secret(), client.getClientSecret())) {
+        if (credential == null
+                || !constantTimeEquals(properties.bffClientId(), credential.clientId())
+                || !constantTimeEquals(properties.bffClientSecret(), credential.secret())) {
             response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Basic realm=\"iam-bff\"");
             reject(response, request, HttpServletResponse.SC_UNAUTHORIZED, "BFF_AUTHENTICATION_REQUIRED");
             return;
@@ -70,7 +67,10 @@ final class BffClientAuthenticationFilter extends OncePerRequestFilter {
                     && supplied.getHost() != null
                     && supplied.getScheme().equalsIgnoreCase(trusted.getScheme())
                     && supplied.getHost().equalsIgnoreCase(trusted.getHost())
-                    && effectivePort(supplied) == effectivePort(trusted);
+                    && effectivePort(supplied) == effectivePort(trusted)
+                    && (supplied.getPath().isEmpty() || "/".equals(supplied.getPath()))
+                    && supplied.getQuery() == null
+                    && supplied.getFragment() == null;
         } catch (IllegalArgumentException exception) {
             return false;
         }
@@ -81,6 +81,13 @@ final class BffClientAuthenticationFilter extends OncePerRequestFilter {
             return value.getPort();
         }
         return "https".equalsIgnoreCase(value.getScheme()) ? 443 : 80;
+    }
+
+    private static boolean constantTimeEquals(String expected, String supplied) {
+        return MessageDigest.isEqual(
+                expected.getBytes(StandardCharsets.UTF_8),
+                supplied.getBytes(StandardCharsets.UTF_8)
+        );
     }
 
     private static ClientCredential credential(String authorization) {

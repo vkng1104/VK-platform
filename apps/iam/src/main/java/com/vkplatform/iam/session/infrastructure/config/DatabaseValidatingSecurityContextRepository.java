@@ -1,8 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
-import com.vkplatform.iam.session.application.port.out.SessionRepository;
-import com.vkplatform.iam.session.domain.SessionFailure;
-import com.vkplatform.iam.session.domain.UserSession;
+import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
@@ -22,13 +20,13 @@ final class DatabaseValidatingSecurityContextRepository implements SecurityConte
     private static final String SESSION_ID_DETAIL = "session_id";
 
     private final SecurityContextRepository delegate;
-    private final SessionRepository sessions;
+    private final AuthenticationSessionRepository sessions;
     private final String expectedClientId;
     private final Clock clock;
 
     DatabaseValidatingSecurityContextRepository(
             SecurityContextRepository delegate,
-            SessionRepository sessions,
+            AuthenticationSessionRepository sessions,
             String expectedClientId,
             Clock clock
     ) {
@@ -94,17 +92,12 @@ final class DatabaseValidatingSecurityContextRepository implements SecurityConte
         }
         UUID accountId = uuid(authentication.getName());
         UUID sessionId = sessionId(authentication);
-        if (accountId != null && sessionId != null) {
-            try {
-                UserSession session = sessions.findOwned(accountId, sessionId);
-                if (session.canUse(expectedClientId, clock.instant())) {
-                    return context;
-                }
-            } catch (SessionFailure failure) {
-                if (failure.reason() != SessionFailure.Reason.SESSION_NOT_FOUND) {
-                    throw failure;
-                }
-            }
+        if (accountId != null
+                && sessionId != null
+                && sessions.findById(sessionId)
+                .filter(session -> session.canAuthorize(accountId, expectedClientId, clock.instant()))
+                .isPresent()) {
+            return context;
         }
         invalidate(request);
         return SecurityContextHolder.createEmptyContext();
