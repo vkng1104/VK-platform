@@ -1,6 +1,8 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
 import com.nimbusds.jose.jwk.RSAKey;
+import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
+import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
 import org.springframework.security.core.Authentication;
@@ -15,17 +17,20 @@ import java.util.Map;
 import java.util.UUID;
 
 final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncodingContext> {
+    private final PasswordlessIdentityOperations identities;
     private final AuthenticationSessionRepository sessions;
     private final OAuthAuthorizationProperties properties;
     private final RSAKey signingKey;
     private final Clock clock;
 
     OAuthTokenClaimsCustomizer(
+            PasswordlessIdentityOperations identities,
             AuthenticationSessionRepository sessions,
             OAuthAuthorizationProperties properties,
             RSAKey signingKey,
             Clock clock
     ) {
+        this.identities = identities;
         this.sessions = sessions;
         this.properties = properties;
         this.signingKey = signingKey;
@@ -39,6 +44,7 @@ final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncod
         }
         Authentication principal = context.getPrincipal();
         UUID accountId = parseUuid(principal.getName(), "authenticated account id");
+        AuthenticatedAccount account = identities.activeAccount(accountId);
         Map<?, ?> details = principal.getDetails() instanceof Map<?, ?> values ? values : Map.of();
         UUID sessionId = parseUuid(requireDetail(details, "session_id"), "authenticated session id");
         String authenticationMethod = requireDetail(details, "amr");
@@ -50,6 +56,7 @@ final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncod
                         now
                 ))
                 .orElseThrow(() -> new IllegalStateException("OAuth browser session is unavailable"));
+        Instant notBefore = account.tokenNotBefore().isAfter(now) ? account.tokenNotBefore() : now;
         Instant expiresAt = now.plus(properties.accessTokenTtl());
         if (session.expiresAt().isBefore(expiresAt)) {
             expiresAt = session.expiresAt();
@@ -59,7 +66,7 @@ final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncod
         context.getClaims()
                 .subject(accountId.toString())
                 .audience(List.of(properties.audience()))
-                .notBefore(now)
+                .notBefore(notBefore)
                 .expiresAt(expiresAt)
                 .claim("client_id", context.getRegisteredClient().getClientId())
                 .claim("sid", sessionId.toString())

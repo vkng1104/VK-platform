@@ -1,6 +1,9 @@
 package com.vkplatform.iam.session.infrastructure.persistence.entity;
 
+import com.vkplatform.iam.session.domain.OAuthAuthorizationInvalidationReason;
+import com.vkplatform.iam.session.infrastructure.persistence.converter.OAuthAuthorizationInvalidationReasonConverter;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.PostLoad;
@@ -52,6 +55,43 @@ public class OAuthAuthorizationEntity implements Persistable<String> {
     @Column(name = "authorization_code_metadata_json", columnDefinition = "text")
     private String authorizationCodeMetadataJson;
 
+    @Column(name = "access_token_digest")
+    private byte[] accessTokenDigest;
+
+    @Column(name = "access_token_issued_at")
+    private Instant accessTokenIssuedAt;
+
+    @Column(name = "access_token_expires_at")
+    private Instant accessTokenExpiresAt;
+
+    @Column(name = "access_token_metadata_json", columnDefinition = "text")
+    private String accessTokenMetadataJson;
+
+    @Column(name = "access_token_type", length = 100)
+    private String accessTokenType;
+
+    @Column(name = "access_token_scopes", length = 1000)
+    private String accessTokenScopes;
+
+    @Column(name = "refresh_token_digest")
+    private byte[] refreshTokenDigest;
+
+    @Column(name = "refresh_token_issued_at")
+    private Instant refreshTokenIssuedAt;
+
+    @Column(name = "refresh_token_expires_at")
+    private Instant refreshTokenExpiresAt;
+
+    @Column(name = "refresh_token_metadata_json", columnDefinition = "text")
+    private String refreshTokenMetadataJson;
+
+    @Column(name = "invalidated_at")
+    private Instant invalidatedAt;
+
+    @Convert(converter = OAuthAuthorizationInvalidationReasonConverter.class)
+    @Column(name = "invalidation_reason", length = 100)
+    private OAuthAuthorizationInvalidationReason invalidationReason;
+
     @Version
     @Column(nullable = false)
     private long version;
@@ -89,6 +129,18 @@ public class OAuthAuthorizationEntity implements Persistable<String> {
     public Instant authorizationCodeIssuedAt() { return authorizationCodeIssuedAt; }
     public Instant authorizationCodeExpiresAt() { return authorizationCodeExpiresAt; }
     public String authorizationCodeMetadataJson() { return authorizationCodeMetadataJson; }
+    public byte[] accessTokenDigest() { return copy(accessTokenDigest); }
+    public Instant accessTokenIssuedAt() { return accessTokenIssuedAt; }
+    public Instant accessTokenExpiresAt() { return accessTokenExpiresAt; }
+    public String accessTokenMetadataJson() { return accessTokenMetadataJson; }
+    public String accessTokenType() { return accessTokenType; }
+    public String accessTokenScopes() { return accessTokenScopes; }
+    public byte[] refreshTokenDigest() { return copy(refreshTokenDigest); }
+    public Instant refreshTokenIssuedAt() { return refreshTokenIssuedAt; }
+    public Instant refreshTokenExpiresAt() { return refreshTokenExpiresAt; }
+    public String refreshTokenMetadataJson() { return refreshTokenMetadataJson; }
+    public Instant invalidatedAt() { return invalidatedAt; }
+    public OAuthAuthorizationInvalidationReason invalidationReason() { return invalidationReason; }
 
     public void id(String value) { id = value; }
     public void registeredClientId(String value) { registeredClientId = value; }
@@ -102,6 +154,23 @@ public class OAuthAuthorizationEntity implements Persistable<String> {
     public void authorizationCodeIssuedAt(Instant value) { authorizationCodeIssuedAt = value; }
     public void authorizationCodeExpiresAt(Instant value) { authorizationCodeExpiresAt = value; }
     public void authorizationCodeMetadataJson(String value) { authorizationCodeMetadataJson = value; }
+    public void accessTokenDigest(byte[] value) { accessTokenDigest = copy(value); }
+    public void accessTokenIssuedAt(Instant value) { accessTokenIssuedAt = value; }
+    public void accessTokenExpiresAt(Instant value) { accessTokenExpiresAt = value; }
+    public void accessTokenMetadataJson(String value) { accessTokenMetadataJson = value; }
+    public void accessTokenType(String value) { accessTokenType = value; }
+    public void accessTokenScopes(String value) { accessTokenScopes = value; }
+    public void refreshTokenDigest(byte[] value) { refreshTokenDigest = copy(value); }
+    public void refreshTokenIssuedAt(Instant value) { refreshTokenIssuedAt = value; }
+    public void refreshTokenExpiresAt(Instant value) { refreshTokenExpiresAt = value; }
+    public void refreshTokenMetadataJson(String value) { refreshTokenMetadataJson = value; }
+
+    public void invalidate(Instant now, OAuthAuthorizationInvalidationReason reason) {
+        if (invalidatedAt == null) {
+            invalidatedAt = now;
+            invalidationReason = reason;
+        }
+    }
 
     private static byte[] copy(byte[] value) {
         return value == null ? null : value.clone();

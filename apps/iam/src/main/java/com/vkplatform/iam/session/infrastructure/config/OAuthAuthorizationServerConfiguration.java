@@ -1,6 +1,7 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
 import com.nimbusds.jose.jwk.RSAKey;
+import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -97,12 +98,18 @@ public class OAuthAuthorizationServerConfiguration {
             OAuthAuthorizationProperties properties,
             PasswordEncoder passwords
     ) {
+        if (properties.refreshTokenTtl().compareTo(sessions.absoluteTtl()) > 0) {
+            throw new IllegalStateException(
+                    "IAM_OAUTH_REFRESH_TOKEN_TTL cannot exceed IAM_ABSOLUTE_SESSION_TTL"
+            );
+        }
         RegisteredClient bff = RegisteredClient.withId("bff:" + sessions.bffClientId())
                 .clientId(sessions.bffClientId())
                 .clientSecret(passwords.encode(sessions.bffClientSecret()))
                 .clientName("VK Platform BFF")
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
                 .redirectUri(properties.bffRedirectUri().toString())
                 .scope("api.access")
                 .clientSettings(ClientSettings.builder()
@@ -112,6 +119,8 @@ public class OAuthAuthorizationServerConfiguration {
                 .tokenSettings(TokenSettings.builder()
                         .authorizationCodeTimeToLive(properties.authorizationCodeTtl())
                         .accessTokenTimeToLive(properties.accessTokenTtl())
+                        .refreshTokenTimeToLive(properties.refreshTokenTtl())
+                        .reuseRefreshTokens(false)
                         .build())
                 .build();
         return new InMemoryRegisteredClientRepository(bff);
@@ -119,12 +128,13 @@ public class OAuthAuthorizationServerConfiguration {
 
     @Bean
     OAuth2TokenCustomizer<JwtEncodingContext> oauthTokenClaimsCustomizer(
+            PasswordlessIdentityOperations identities,
             AuthenticationSessionRepository sessions,
             OAuthAuthorizationProperties properties,
             RSAKey signingKey,
             Clock clock
     ) {
-        return new OAuthTokenClaimsCustomizer(sessions, properties, signingKey, clock);
+        return new OAuthTokenClaimsCustomizer(identities, sessions, properties, signingKey, clock);
     }
 
 }

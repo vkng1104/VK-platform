@@ -10,8 +10,10 @@ public record AuthenticationSession(
         String clientId,
         SessionStatus status,
         Instant createdAt,
+        Instant lastRefreshedAt,
         Instant expiresAt,
         Instant revokedAt,
+        Instant compromisedAt,
         SessionRevokeReason revokeReason
 ) {
     public AuthenticationSession {
@@ -20,6 +22,7 @@ public record AuthenticationSession(
         Objects.requireNonNull(clientId);
         Objects.requireNonNull(status);
         Objects.requireNonNull(createdAt);
+        Objects.requireNonNull(lastRefreshedAt);
         Objects.requireNonNull(expiresAt);
         if (clientId.isBlank() || clientId.length() > 128 || !clientId.equals(clientId.strip())) {
             throw new IllegalArgumentException("session client ID is invalid");
@@ -27,12 +30,23 @@ public record AuthenticationSession(
         if (!expiresAt.isAfter(createdAt)) {
             throw new IllegalArgumentException("session expiry must follow creation");
         }
-        if (status == SessionStatus.ACTIVE && (revokedAt != null || revokeReason != null)) {
+        if (lastRefreshedAt.isBefore(createdAt)) {
+            throw new IllegalArgumentException("session refresh precedes creation");
+        }
+        if (status == SessionStatus.ACTIVE
+                && (revokedAt != null || compromisedAt != null || revokeReason != null)) {
             throw new IllegalArgumentException("active session cannot have revocation state");
         }
         if (status == SessionStatus.REVOKED
-                && (revokedAt == null || revokeReason == null || revokedAt.isBefore(createdAt))) {
+                && (revokedAt == null || compromisedAt != null || revokeReason == null
+                || revokedAt.isBefore(createdAt))) {
             throw new IllegalArgumentException("revoked session state is incomplete");
+        }
+        if (status == SessionStatus.COMPROMISED
+                && (revokedAt == null || compromisedAt == null
+                || revokeReason != SessionRevokeReason.REFRESH_TOKEN_REUSED
+                || revokedAt.isBefore(createdAt) || compromisedAt.isBefore(revokedAt))) {
+            throw new IllegalArgumentException("compromised session state is incomplete");
         }
     }
 
@@ -49,19 +63,43 @@ public record AuthenticationSession(
                 clientId,
                 SessionStatus.ACTIVE,
                 createdAt,
+                createdAt,
                 expiresAt,
                 null,
+                null,
                 null
+        );
+    }
+
+    public AuthenticationSession touch(Instant now) {
+        Objects.requireNonNull(now);
+        if (status != SessionStatus.ACTIVE || !now.isBefore(expiresAt)) {
+            throw new IllegalStateException("session cannot be refreshed");
+        }
+        if (now.isBefore(lastRefreshedAt)) {
+            throw new IllegalArgumentException("session refresh precedes its current state");
+        }
+        return new AuthenticationSession(
+                id,
+                accountId,
+                clientId,
+                status,
+                createdAt,
+                now,
+                expiresAt,
+                revokedAt,
+                compromisedAt,
+                revokeReason
         );
     }
 
     public AuthenticationSession revoke(SessionRevokeReason reason, Instant now) {
         Objects.requireNonNull(reason);
         Objects.requireNonNull(now);
-        if (status == SessionStatus.REVOKED) {
+        if (status != SessionStatus.ACTIVE) {
             return this;
         }
-        if (now.isBefore(createdAt)) {
+        if (now.isBefore(lastRefreshedAt)) {
             throw new IllegalArgumentException("session revocation precedes creation");
         }
         return new AuthenticationSession(
@@ -70,9 +108,33 @@ public record AuthenticationSession(
                 clientId,
                 SessionStatus.REVOKED,
                 createdAt,
+                lastRefreshedAt,
                 expiresAt,
                 now,
+                null,
                 reason
+        );
+    }
+
+    public AuthenticationSession compromise(Instant now) {
+        Objects.requireNonNull(now);
+        if (status == SessionStatus.COMPROMISED || status == SessionStatus.REVOKED) {
+            return this;
+        }
+        if (now.isBefore(lastRefreshedAt)) {
+            throw new IllegalArgumentException("session compromise precedes its current state");
+        }
+        return new AuthenticationSession(
+                id,
+                accountId,
+                clientId,
+                SessionStatus.COMPROMISED,
+                createdAt,
+                lastRefreshedAt,
+                expiresAt,
+                now,
+                now,
+                SessionRevokeReason.REFRESH_TOKEN_REUSED
         );
     }
 

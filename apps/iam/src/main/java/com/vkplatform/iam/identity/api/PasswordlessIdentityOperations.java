@@ -18,6 +18,8 @@ public interface PasswordlessIdentityOperations {
 
     AuthenticatedAccount consumeSignInGrant(ConsumeSignInGrant command);
 
+    AuthenticatedAccount activeAccount(UUID accountId);
+
     AccountSummary account(UUID accountId);
 
     AccountSummary suspendAccount(AccountAdministrationCommand command);

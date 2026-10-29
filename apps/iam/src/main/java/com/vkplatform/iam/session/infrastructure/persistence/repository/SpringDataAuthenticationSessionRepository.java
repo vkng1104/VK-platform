@@ -19,4 +19,7 @@ interface SpringDataAuthenticationSessionRepository extends JpaRepository<Sessio
             UUID accountId,
             SessionStatus status
     );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    List<SessionEntity> findLockedByAccountIdOrderByIdAsc(UUID accountId);
 }
