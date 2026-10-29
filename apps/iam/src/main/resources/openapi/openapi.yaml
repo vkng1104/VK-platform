@@ -116,11 +116,13 @@ paths:
           description: The OAuth authorization request is invalid.
   /oauth2/token:
     post:
-      operationId: exchangeOAuthAuthorizationCode
+      operationId: exchangeOAuthToken
       tags:
         - OAuth
-      summary: Exchange an authorization code for an access token
-      description: Supports only the authorization_code grant with HTTP Basic client authentication and PKCE.
+      summary: Exchange an authorization code or refresh token
+      description: >-
+        Supports authorization_code with PKCE and one-time refresh_token rotation. Reusing a consumed
+        refresh token invalidates its authorization and compromises the owning durable session.
       security:
         - bffClientAuth: []
       requestBody:
@@ -132,13 +134,12 @@ paths:
               additionalProperties: false
               required:
                 - grant_type
-                - code
-                - redirect_uri
-                - code_verifier
               properties:
                 grant_type:
                   type: string
-                  const: authorization_code
+                  enum:
+                    - authorization_code
+                    - refresh_token
                 code:
                   type: string
                   minLength: 1
@@ -149,9 +150,12 @@ paths:
                   type: string
                   minLength: 43
                   maxLength: 128
+                refresh_token:
+                  type: string
+                  minLength: 1
       responses:
         "200":
-          description: A signed bearer access token was issued.
+          description: A signed bearer access token and one-time refresh token were issued.
           headers:
             Cache-Control:
               $ref: "#/components/headers/NoStore"
@@ -160,7 +164,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/OAuthAccessTokenResponse"
         "400":
-          description: The authorization code, redirect URI, or PKCE verifier is invalid.
+          description: The authorization code, refresh token, redirect URI, or PKCE verifier is invalid.
           content:
             application/json:
               schema:
@@ -608,11 +612,15 @@ components:
       additionalProperties: false
       required:
         - access_token
+        - refresh_token
         - token_type
         - expires_in
         - scope
       properties:
         access_token:
+          type: string
+          minLength: 1
+        refresh_token:
           type: string
           minLength: 1
         token_type:
