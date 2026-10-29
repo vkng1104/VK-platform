@@ -1,10 +1,10 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
-import com.nimbusds.jose.jwk.RSAKey;
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
 import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
+import com.vkplatform.iam.session.infrastructure.crypto.SigningKeyRuntime;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
@@ -20,20 +20,20 @@ final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncod
     private final PasswordlessIdentityOperations identities;
     private final AuthenticationSessionRepository sessions;
     private final OAuthAuthorizationProperties properties;
-    private final RSAKey signingKey;
+    private final SigningKeyRuntime signingKeys;
     private final Clock clock;
 
     OAuthTokenClaimsCustomizer(
             PasswordlessIdentityOperations identities,
             AuthenticationSessionRepository sessions,
             OAuthAuthorizationProperties properties,
-            RSAKey signingKey,
+            SigningKeyRuntime signingKeys,
             Clock clock
     ) {
         this.identities = identities;
         this.sessions = sessions;
         this.properties = properties;
-        this.signingKey = signingKey;
+        this.signingKeys = signingKeys;
         this.clock = clock;
     }
 
@@ -62,7 +62,7 @@ final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncod
             expiresAt = session.expiresAt();
         }
 
-        context.getJwsHeader().keyId(signingKey.getKeyID());
+        context.getJwsHeader().keyId(signingKeys.activeSigningKeyId());
         context.getClaims()
                 .subject(accountId.toString())
                 .audience(List.of(properties.audience()))
