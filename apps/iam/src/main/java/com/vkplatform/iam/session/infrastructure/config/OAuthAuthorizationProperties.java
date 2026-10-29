@@ -12,7 +12,8 @@ public record OAuthAuthorizationProperties(
         URI loginUri,
         URI bffRedirectUri,
         Duration authorizationCodeTtl,
-        Duration accessTokenTtl
+        Duration accessTokenTtl,
+        Duration refreshTokenTtl
 ) {
     public OAuthAuthorizationProperties {
         requireOrigin(issuer, "IAM_OAUTH_ISSUER");
@@ -21,6 +22,7 @@ public record OAuthAuthorizationProperties(
         requireAbsolute(bffRedirectUri, "IAM_OAUTH_BFF_REDIRECT_URI");
         requirePositive(authorizationCodeTtl, "IAM_OAUTH_AUTHORIZATION_CODE_TTL");
         requirePositive(accessTokenTtl, "IAM_OAUTH_ACCESS_TOKEN_TTL");
+        requirePositive(refreshTokenTtl, "IAM_OAUTH_REFRESH_TOKEN_TTL");
     }
 
     private static void requireOrigin(URI value, String name) {
