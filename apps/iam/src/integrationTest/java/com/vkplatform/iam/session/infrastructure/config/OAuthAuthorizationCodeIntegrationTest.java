@@ -100,6 +100,7 @@ class OAuthAuthorizationCodeIntegrationTest {
 
     @BeforeEach
     void resetDatabaseAndIdentity() {
+        jdbcTemplate.update("DELETE FROM iam_session.oauth_refresh_tokens");
         jdbcTemplate.update("DELETE FROM iam_session.oauth_authorizations");
         jdbcTemplate.update("DELETE FROM iam_session.sessions");
         jdbcTemplate.update("DELETE FROM iam_identity.security_events");
@@ -119,6 +120,7 @@ class OAuthAuthorizationCodeIntegrationTest {
         );
         reset(identities);
         when(identities.consumeSignInGrant(any())).thenReturn(new AuthenticatedAccount(ACCOUNT_ID, now));
+        when(identities.activeAccount(ACCOUNT_ID)).thenReturn(new AuthenticatedAccount(ACCOUNT_ID, now));
     }
 
     @Test
@@ -136,7 +138,7 @@ class OAuthAuthorizationCodeIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token_type").value("Bearer"))
                 .andExpect(jsonPath("$.expires_in").isNumber())
-                .andExpect(jsonPath("$.refresh_token").doesNotExist())
+                .andExpect(jsonPath("$.refresh_token").isString())
                 .andReturn();
 
         JsonNode response = objectMapper.readTree(tokenResult.getResponse().getContentAsString());
@@ -161,6 +163,14 @@ class OAuthAuthorizationCodeIntegrationTest {
                 SELECT attributes_json
                 FROM iam_session.oauth_authorizations
                 """, String.class)).doesNotContain(code);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT OCTET_LENGTH(access_token_digest)
+                FROM iam_session.oauth_authorizations
+                """, Integer.class)).isEqualTo(32);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT OCTET_LENGTH(refresh_token_digest)
+                FROM iam_session.oauth_authorizations
+                """, Integer.class)).isEqualTo(32);
 
         mockMvc.perform(post("/oauth2/token")
                         .with(httpBasic(BFF_CLIENT_ID, BFF_SECRET))
@@ -169,6 +179,62 @@ class OAuthAuthorizationCodeIntegrationTest {
                         .param("code", code)
                         .param("redirect_uri", BFF_REDIRECT)
                         .param("code_verifier", VERIFIER))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_grant"));
+    }
+
+    @Test
+    void rotatesRefreshTokensOnceAndCompromisesTheSessionOnReplay() throws Exception {
+        MockHttpSession browser = exchangeGrant();
+        String code = authorizationCode(browser, BFF_REDIRECT, true);
+        MvcResult initial = exchangeCode(code);
+        JsonNode initialTokens = objectMapper.readTree(initial.getResponse().getContentAsString());
+        String firstRefresh = initialTokens.get("refresh_token").asText();
+
+        MvcResult refreshed = refresh(firstRefresh)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.refresh_token").isString())
+                .andReturn();
+        String rotatedRefresh = objectMapper.readTree(
+                refreshed.getResponse().getContentAsString()
+        ).get("refresh_token").asText();
+
+        assertThat(rotatedRefresh).isNotEqualTo(firstRefresh);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM iam_session.oauth_refresh_tokens",
+                Integer.class
+        )).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM iam_session.oauth_refresh_tokens
+                WHERE consumed_at IS NOT NULL AND replacement_id IS NOT NULL
+                """, Integer.class)).isOne();
+
+        refresh(firstRefresh)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_grant"));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM iam_session.sessions WHERE account_id = ?",
+                String.class,
+                ACCOUNT_ID
+        )).isEqualTo("compromised");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT revoke_reason FROM iam_session.sessions WHERE account_id = ?",
+                String.class,
+                ACCOUNT_ID
+        )).isEqualTo("refresh_token_reused");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT invalidation_reason FROM iam_session.oauth_authorizations",
+                String.class
+        )).isEqualTo("refresh_token_reused");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM iam_session.oauth_refresh_tokens
+                WHERE reuse_detected_at IS NOT NULL
+                """, Integer.class)).isOne();
+
+        refresh(rotatedRefresh)
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("invalid_grant"));
     }
@@ -257,6 +323,27 @@ class OAuthAuthorizationCodeIntegrationTest {
                 .getFirst("code");
         assertThat(code).isNotBlank();
         return code;
+    }
+
+    private MvcResult exchangeCode(String code) throws Exception {
+        return mockMvc.perform(post("/oauth2/token")
+                        .with(httpBasic(BFF_CLIENT_ID, BFF_SECRET))
+                        .contentType("application/x-www-form-urlencoded")
+                        .param("grant_type", "authorization_code")
+                        .param("code", code)
+                        .param("redirect_uri", BFF_REDIRECT)
+                        .param("code_verifier", VERIFIER))
+                .andExpect(status().isOk())
+                .andReturn();
+    }
+
+    private org.springframework.test.web.servlet.ResultActions refresh(String refreshToken)
+            throws Exception {
+        return mockMvc.perform(post("/oauth2/token")
+                .with(httpBasic(BFF_CLIENT_ID, BFF_SECRET))
+                .contentType("application/x-www-form-urlencoded")
+                .param("grant_type", "refresh_token")
+                .param("refresh_token", refreshToken));
     }
 
     private static MockHttpServletRequestBuilder authorizationRequest(

@@ -1,6 +1,8 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
 import com.nimbusds.jose.jwk.RSAKey;
+import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
+import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +32,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class OAuthTokenClaimsCustomizerTest {
@@ -38,14 +41,21 @@ class OAuthTokenClaimsCustomizerTest {
     private static final UUID SESSION_ID = UUID.fromString("68612245-a543-4b06-9406-3fdc2d62d878");
 
     private AuthenticationSessionRepository sessions;
+    private PasswordlessIdentityOperations identities;
     private OAuthTokenClaimsCustomizer customizer;
 
     @BeforeEach
     void setUp() {
         sessions = mock(AuthenticationSessionRepository.class);
+        identities = mock(PasswordlessIdentityOperations.class);
+        when(identities.activeAccount(ACCOUNT_ID)).thenReturn(new AuthenticatedAccount(
+                ACCOUNT_ID,
+                NOW.minusSeconds(30)
+        ));
         RSAKey signingKey = mock(RSAKey.class);
         when(signingKey.getKeyID()).thenReturn("oauth-signing-2026");
         customizer = new OAuthTokenClaimsCustomizer(
+                identities,
                 sessions,
                 new OAuthAuthorizationProperties(
                         URI.create("https://iam.example.test"),
@@ -53,7 +63,8 @@ class OAuthTokenClaimsCustomizerTest {
                         URI.create("https://web.example.test/sign-in"),
                         URI.create("https://web.example.test/api/auth/callback"),
                         Duration.ofMinutes(5),
-                        Duration.ofMinutes(5)
+                        Duration.ofMinutes(5),
+                        Duration.ofDays(30)
                 ),
                 signingKey,
                 Clock.fixed(NOW, ZoneOffset.UTC)
@@ -84,6 +95,7 @@ class OAuthTokenClaimsCustomizerTest {
         assertThat(claims.getClaimAsStringList("amr")).containsExactly("email_otp");
         assertThat(claims.getExpiresAt()).isEqualTo(NOW.plusSeconds(180));
         assertThat(claims.getClaims()).doesNotContainKeys("email", "role", "permissions");
+        verify(identities).activeAccount(ACCOUNT_ID);
     }
 
     @Test
