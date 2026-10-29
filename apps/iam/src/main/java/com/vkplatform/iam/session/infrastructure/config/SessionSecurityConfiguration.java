@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
@@ -63,6 +64,26 @@ public class SessionSecurityConfiguration {
                         new BffClientAuthenticationFilter(properties, operation),
                         AnonymousAuthenticationFilter.class
                 )
+                .build();
+    }
+
+    @Bean
+    @Order(3)
+    @ConditionalOnProperty(name = "iam.oauth.enabled", havingValue = "true")
+    SecurityFilterChain sessionManagementSecurityFilterChain(HttpSecurity http) throws Exception {
+        return http
+                .securityMatcher(
+                        "/api/v1/authentication/session",
+                        "/api/v1/authentication/sessions",
+                        "/api/v1/authentication/sessions/**",
+                        "/api/v1/authentication/logout"
+                )
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                )
+                .authorizeHttpRequests(requests -> requests.anyRequest().authenticated())
+                .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
                 .build();
     }
 }
