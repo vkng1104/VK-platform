@@ -29,6 +29,12 @@ public class OperatorOperationEntity {
     @Column(name = "result_count")
     private Integer resultCount;
 
+    @Column(name = "request_fingerprint")
+    private byte[] requestFingerprint;
+
+    @Column(name = "result_timestamp")
+    private Instant resultTimestamp;
+
     @Column(name = "completed_at", nullable = false)
     private Instant completedAt;
 
@@ -44,12 +50,38 @@ public class OperatorOperationEntity {
             Integer resultCount,
             Instant completedAt
     ) {
+        this(
+                operationId,
+                operationType,
+                actorId,
+                targetId,
+                resultKeyId,
+                resultCount,
+                null,
+                null,
+                completedAt
+        );
+    }
+
+    public OperatorOperationEntity(
+            String operationId,
+            String operationType,
+            String actorId,
+            String targetId,
+            String resultKeyId,
+            Integer resultCount,
+            byte[] requestFingerprint,
+            Instant resultTimestamp,
+            Instant completedAt
+    ) {
         this.operationId = operationId;
         this.operationType = operationType;
         this.actorId = actorId;
         this.targetId = targetId;
         this.resultKeyId = resultKeyId;
         this.resultCount = resultCount;
+        this.requestFingerprint = requestFingerprint == null ? null : requestFingerprint.clone();
+        this.resultTimestamp = resultTimestamp;
         this.completedAt = completedAt;
     }
 
@@ -71,5 +103,17 @@ public class OperatorOperationEntity {
 
     public Integer resultCount() {
         return resultCount;
+    }
+
+    public byte[] requestFingerprint() {
+        return requestFingerprint == null ? null : requestFingerprint.clone();
+    }
+
+    public Instant resultTimestamp() {
+        return resultTimestamp;
+    }
+
+    public Instant completedAt() {
+        return completedAt;
     }
 }

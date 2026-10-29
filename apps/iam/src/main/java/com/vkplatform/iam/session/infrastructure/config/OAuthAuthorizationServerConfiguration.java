@@ -11,15 +11,9 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.oauth2.server.authorization.OAuth2AuthorizationServerConfigurer;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.oauth2.core.AuthorizationGrantType;
-import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
-import org.springframework.security.oauth2.server.authorization.client.InMemoryRegisteredClientRepository;
-import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
-import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
-import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
 import org.springframework.security.web.SecurityFilterChain;
@@ -88,42 +82,22 @@ public class OAuthAuthorizationServerConfiguration {
     }
 
     @Bean
-    PasswordEncoder oauthClientPasswordEncoder() {
-        return PasswordEncoderFactories.createDelegatingPasswordEncoder();
-    }
-
-    @Bean
-    RegisteredClientRepository oauthRegisteredClients(
+    PasswordEncoder oauthClientPasswordEncoder(
             SessionProperties sessions,
-            OAuthAuthorizationProperties properties,
-            PasswordEncoder passwords
+            OAuthAuthorizationProperties authorization,
+            OAuthClientProperties clients
     ) {
-        if (properties.refreshTokenTtl().compareTo(sessions.absoluteTtl()) > 0) {
+        if (authorization.refreshTokenTtl().compareTo(sessions.absoluteTtl()) > 0) {
             throw new IllegalStateException(
                     "IAM_OAUTH_REFRESH_TOKEN_TTL cannot exceed IAM_ABSOLUTE_SESSION_TTL"
             );
         }
-        RegisteredClient bff = RegisteredClient.withId("bff:" + sessions.bffClientId())
-                .clientId(sessions.bffClientId())
-                .clientSecret(passwords.encode(sessions.bffClientSecret()))
-                .clientName("VK Platform BFF")
-                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-                .redirectUri(properties.bffRedirectUri().toString())
-                .scope("api.access")
-                .clientSettings(ClientSettings.builder()
-                        .requireProofKey(true)
-                        .requireAuthorizationConsent(false)
-                        .build())
-                .tokenSettings(TokenSettings.builder()
-                        .authorizationCodeTimeToLive(properties.authorizationCodeTtl())
-                        .accessTokenTimeToLive(properties.accessTokenTtl())
-                        .refreshTokenTimeToLive(properties.refreshTokenTtl())
-                        .reuseRefreshTokens(false)
-                        .build())
-                .build();
-        return new InMemoryRegisteredClientRepository(bff);
+        if (authorization.audience().equals(clients.serviceAudience())) {
+            throw new IllegalStateException(
+                    "IAM_OAUTH_SERVICE_AUDIENCE must differ from IAM_OAUTH_AUDIENCE"
+            );
+        }
+        return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
     @Bean
@@ -131,10 +105,18 @@ public class OAuthAuthorizationServerConfiguration {
             PasswordlessIdentityOperations identities,
             AuthenticationSessionRepository sessions,
             OAuthAuthorizationProperties properties,
+            OAuthClientProperties clients,
             SigningKeyRuntime signingKeys,
             Clock clock
     ) {
-        return new OAuthTokenClaimsCustomizer(identities, sessions, properties, signingKeys, clock);
+        return new OAuthTokenClaimsCustomizer(
+                identities,
+                sessions,
+                properties,
+                clients,
+                signingKeys,
+                clock
+        );
     }
 
 }

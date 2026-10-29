@@ -20,6 +20,7 @@ final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncod
     private final PasswordlessIdentityOperations identities;
     private final AuthenticationSessionRepository sessions;
     private final OAuthAuthorizationProperties properties;
+    private final OAuthClientProperties clients;
     private final SigningKeyRuntime signingKeys;
     private final Clock clock;
 
@@ -27,12 +28,14 @@ final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncod
             PasswordlessIdentityOperations identities,
             AuthenticationSessionRepository sessions,
             OAuthAuthorizationProperties properties,
+            OAuthClientProperties clients,
             SigningKeyRuntime signingKeys,
             Clock clock
     ) {
         this.identities = identities;
         this.sessions = sessions;
         this.properties = properties;
+        this.clients = clients;
         this.signingKeys = signingKeys;
         this.clock = clock;
     }
@@ -40,6 +43,16 @@ final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncod
     @Override
     public void customize(JwtEncodingContext context) {
         if (!OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
+            return;
+        }
+        context.getJwsHeader().keyId(signingKeys.activeSigningKeyId());
+        if (org.springframework.security.oauth2.core.AuthorizationGrantType.CLIENT_CREDENTIALS
+                .equals(context.getAuthorizationGrantType())) {
+            String clientId = context.getRegisteredClient().getClientId();
+            context.getClaims()
+                    .subject(clientId)
+                    .audience(List.of(clients.serviceAudience()))
+                    .claim("client_id", clientId);
             return;
         }
         Authentication principal = context.getPrincipal();
@@ -62,7 +75,6 @@ final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncod
             expiresAt = session.expiresAt();
         }
 
-        context.getJwsHeader().keyId(signingKeys.activeSigningKeyId());
         context.getClaims()
                 .subject(accountId.toString())
                 .audience(List.of(properties.audience()))
