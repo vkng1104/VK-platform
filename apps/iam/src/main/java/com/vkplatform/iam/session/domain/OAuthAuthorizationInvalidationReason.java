@@ -27,4 +27,10 @@ public enum OAuthAuthorizationInvalidationReason {
         }
         throw new IllegalStateException("unsupported OAuth authorization invalidation reason");
     }
+
+    public static OAuthAuthorizationInvalidationReason fromSessionReason(
+            SessionRevokeReason reason
+    ) {
+        return fromStoredValue(reason.wireValue());
+    }
 }
