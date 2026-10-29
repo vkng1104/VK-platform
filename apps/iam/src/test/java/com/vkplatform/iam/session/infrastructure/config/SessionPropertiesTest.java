@@ -28,11 +28,23 @@ class SessionPropertiesTest {
         assertThatThrownBy(() -> properties(SECRET, URI.create("https://web.example.test/path")))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("IAM_BFF_ORIGIN");
+        assertThatThrownBy(() -> new SessionProperties(
+                true,
+                "vk-platform-bff",
+                SECRET,
+                URI.create("https://web.example.test"),
+                Duration.ofDays(30),
+                " ",
+                true
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("IAM_SESSION_COOKIE_NAME");
     }
 
     @Test
     void permitsEmptyValuesWhileTheFeatureIsDisabled() {
-        SessionProperties properties = new SessionProperties(false, null, null, null, null);
+        SessionProperties properties = new SessionProperties(
+                false, null, null, null, null, null, false
+        );
 
         assertThat(properties.enabled()).isFalse();
     }
@@ -43,7 +55,9 @@ class SessionPropertiesTest {
                 "vk-platform-bff",
                 secret,
                 origin,
-                Duration.ofDays(30)
+                Duration.ofDays(30),
+                "VK_IAM_SESSION",
+                true
         );
     }
 }

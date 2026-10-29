@@ -11,6 +11,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.http.HttpHeaders;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
@@ -35,7 +36,6 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Base64;
-import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,6 +45,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -293,6 +294,121 @@ class OAuthAuthorizationCodeIntegrationTest {
         )).isZero();
     }
 
+    @Test
+    void managesOwnedSessionsAndInvalidatesTheirAuthorizationsAtomically() throws Exception {
+        IssuedSession current = issueSession();
+        IssuedSession other = issueSession();
+
+        mockMvc.perform(get("/api/v1/authentication/session")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(current.accessToken())))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", containsString("no-store")))
+                .andExpect(jsonPath("$.session.id").value(current.sessionId().toString()))
+                .andExpect(jsonPath("$.session.client_id").value(BFF_CLIENT_ID))
+                .andExpect(jsonPath("$.session.status").value("active"));
+
+        mockMvc.perform(get("/api/v1/authentication/sessions")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(current.accessToken()))
+                        .queryParam("page", "0")
+                        .queryParam("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", containsString("no-store")))
+                .andExpect(jsonPath("$.sessions.length()").value(2))
+                .andExpect(jsonPath("$.page.number").value(0))
+                .andExpect(jsonPath("$.page.size").value(20))
+                .andExpect(jsonPath("$.page.total_elements").value(2))
+                .andExpect(jsonPath("$.page.total_pages").value(1));
+
+        mockMvc.perform(delete("/api/v1/authentication/sessions/{session_id}", other.sessionId())
+                        .session(current.browser())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(current.accessToken())))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string("Cache-Control", containsString("no-store")))
+                .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+
+        assertThat(current.browser().isInvalid()).isFalse();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM iam_session.sessions WHERE id = ?",
+                String.class,
+                other.sessionId()
+        )).isEqualTo("revoked");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT revoke_reason FROM iam_session.sessions WHERE id = ?",
+                String.class,
+                other.sessionId()
+        )).isEqualTo("user_request");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT invalidation_reason FROM iam_session.oauth_authorizations WHERE session_id = ?",
+                String.class,
+                other.sessionId()
+        )).isEqualTo("user_request");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM iam_session.sessions WHERE id = ?",
+                String.class,
+                current.sessionId()
+        )).isEqualTo("active");
+
+        mockMvc.perform(delete("/api/v1/authentication/sessions/{session_id}", UUID.randomUUID())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(current.accessToken())))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("SESSION_NOT_FOUND"));
+
+        mockMvc.perform(get("/api/v1/authentication/sessions")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(current.accessToken()))
+                        .queryParam("size", "101"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_SESSION_REQUEST"));
+
+        mockMvc.perform(delete("/api/v1/authentication/sessions")
+                        .session(current.browser())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(current.accessToken())))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string("Cache-Control", containsString("no-store")))
+                .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("VK_IAM_SESSION=")))
+                .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=0")));
+
+        assertThat(current.browser().isInvalid()).isTrue();
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM iam_session.sessions
+                WHERE account_id = ? AND status = 'active'
+                """, Integer.class, ACCOUNT_ID)).isZero();
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM iam_session.oauth_authorizations
+                WHERE session_id = ? AND invalidation_reason = 'all_sessions_revoked'
+                """, Integer.class, current.sessionId())).isOne();
+    }
+
+    @Test
+    void logsOutIdempotentlyAndClearsTheFrameworkSessionCookie() throws Exception {
+        IssuedSession issued = issueSession();
+
+        mockMvc.perform(post("/api/v1/authentication/logout")
+                        .session(issued.browser())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(issued.accessToken())))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string("Cache-Control", containsString("no-store")))
+                .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("VK_IAM_SESSION=")))
+                .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=0")));
+
+        assertThat(issued.browser().isInvalid()).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT revoke_reason FROM iam_session.sessions WHERE id = ?",
+                String.class,
+                issued.sessionId()
+        )).isEqualTo("logout");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT invalidation_reason FROM iam_session.oauth_authorizations WHERE session_id = ?",
+                String.class,
+                issued.sessionId()
+        )).isEqualTo("logout");
+
+        mockMvc.perform(post("/api/v1/authentication/logout")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(issued.accessToken())))
+                .andExpect(status().isNoContent());
+    }
+
     private MockHttpSession exchangeGrant() throws Exception {
         MvcResult exchange = mockMvc.perform(post("/api/v1/authentication/grants/exchange")
                         .with(httpBasic(BFF_CLIENT_ID, BFF_SECRET))
@@ -305,6 +421,24 @@ class OAuthAuthorizationCodeIntegrationTest {
                 .andReturn();
         assertThat(exchange.getRequest().getSession(false)).isInstanceOf(MockHttpSession.class);
         return (MockHttpSession) exchange.getRequest().getSession(false);
+    }
+
+    private IssuedSession issueSession() throws Exception {
+        MockHttpSession browser = exchangeGrant();
+        String code = authorizationCode(browser, BFF_REDIRECT, true);
+        JsonNode tokens = objectMapper.readTree(
+                exchangeCode(code).getResponse().getContentAsString()
+        );
+        String accessToken = tokens.get("access_token").asText();
+        Jwt decoded = NimbusJwtDecoder.withPublicKey((RSAPublicKey) SIGNING_PAIR.getPublic())
+                .signatureAlgorithm(SignatureAlgorithm.RS256)
+                .build()
+                .decode(accessToken);
+        return new IssuedSession(
+                browser,
+                accessToken,
+                UUID.fromString(decoded.getClaimAsString("sid"))
+        );
     }
 
     private String authorizationCode(
@@ -365,6 +499,10 @@ class OAuthAuthorizationCodeIntegrationTest {
         return request;
     }
 
+    private static String bearer(String accessToken) {
+        return "Bearer " + accessToken;
+    }
+
     private static String codeChallenge(String verifier) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
@@ -391,6 +529,13 @@ class OAuthAuthorizationCodeIntegrationTest {
 
     private static OffsetDateTime timestamp(Instant value) {
         return value.atOffset(ZoneOffset.UTC);
+    }
+
+    private record IssuedSession(
+            MockHttpSession browser,
+            String accessToken,
+            UUID sessionId
+    ) {
     }
 
     @TestConfiguration(proxyBeanMethods = false)
