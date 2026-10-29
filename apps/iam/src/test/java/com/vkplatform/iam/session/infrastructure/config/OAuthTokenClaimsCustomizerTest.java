@@ -1,10 +1,10 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
-import com.nimbusds.jose.jwk.RSAKey;
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
 import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
+import com.vkplatform.iam.session.infrastructure.crypto.SigningKeyRuntime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -42,6 +42,7 @@ class OAuthTokenClaimsCustomizerTest {
 
     private AuthenticationSessionRepository sessions;
     private PasswordlessIdentityOperations identities;
+    private SigningKeyRuntime signingKeys;
     private OAuthTokenClaimsCustomizer customizer;
 
     @BeforeEach
@@ -52,8 +53,8 @@ class OAuthTokenClaimsCustomizerTest {
                 ACCOUNT_ID,
                 NOW.minusSeconds(30)
         ));
-        RSAKey signingKey = mock(RSAKey.class);
-        when(signingKey.getKeyID()).thenReturn("oauth-signing-2026");
+        signingKeys = mock(SigningKeyRuntime.class);
+        when(signingKeys.activeSigningKeyId()).thenReturn("oauth-signing-2026");
         customizer = new OAuthTokenClaimsCustomizer(
                 identities,
                 sessions,
@@ -66,7 +67,7 @@ class OAuthTokenClaimsCustomizerTest {
                         Duration.ofMinutes(5),
                         Duration.ofDays(30)
                 ),
-                signingKey,
+                signingKeys,
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
     }
