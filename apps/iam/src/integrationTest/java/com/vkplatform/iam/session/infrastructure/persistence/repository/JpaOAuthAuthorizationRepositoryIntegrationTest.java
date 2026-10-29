@@ -27,6 +27,7 @@ class JpaOAuthAuthorizationRepositoryIntegrationTest {
 
     @BeforeEach
     void resetDatabase() {
+        jdbcTemplate.update("DELETE FROM iam_session.oauth_refresh_tokens");
         jdbcTemplate.update("DELETE FROM iam_session.oauth_authorizations");
         jdbcTemplate.update("DELETE FROM iam_session.sessions");
         jdbcTemplate.update("DELETE FROM iam_identity.security_events");
@@ -45,18 +46,19 @@ class JpaOAuthAuthorizationRepositoryIntegrationTest {
         );
         jdbcTemplate.update("""
                 INSERT INTO iam_session.sessions (
-                    id, account_id, client_id, status, created_at, expires_at
-                ) VALUES (?, ?, 'vk-platform-bff', 'active', ?, ?)
+                    id, account_id, client_id, status, created_at, last_refreshed_at, expires_at
+                ) VALUES (?, ?, 'vk-platform-bff', 'active', ?, ?, ?)
                 """,
                 SESSION_ID,
                 ACCOUNT_ID,
+                timestamp(NOW),
                 timestamp(NOW),
                 timestamp(NOW.plusSeconds(3600))
         );
     }
 
     @Test
-    void flywaySchemaMatchesTheMinimalAuthorizationCodeEntity() {
+    void flywaySchemaMatchesTheRefreshAwareAuthorizationEntity() {
         assertThat(OAuthAuthorizationEntity_.authorizationCodeDigest).isNotNull();
         assertThat(OAuthAuthorizationEntity_.sessionId).isNotNull();
         assertThat(jdbcTemplate.queryForList("""
@@ -77,6 +79,18 @@ class JpaOAuthAuthorizationRepositoryIntegrationTest {
                 "authorization_code_issued_at",
                 "authorization_code_expires_at",
                 "authorization_code_metadata_json",
+                "access_token_digest",
+                "access_token_issued_at",
+                "access_token_expires_at",
+                "access_token_metadata_json",
+                "access_token_type",
+                "access_token_scopes",
+                "refresh_token_digest",
+                "refresh_token_issued_at",
+                "refresh_token_expires_at",
+                "refresh_token_metadata_json",
+                "invalidated_at",
+                "invalidation_reason",
                 "version"
         );
     }

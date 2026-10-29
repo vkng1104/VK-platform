@@ -4,6 +4,7 @@ import com.vkplatform.iam.identity.api.command.AccountAdministrationCommand;
 import com.vkplatform.iam.identity.api.command.ConsumeSignInGrant;
 import com.vkplatform.iam.identity.api.command.StartPasswordlessSignIn;
 import com.vkplatform.iam.identity.api.command.VerifyPasswordlessSignIn;
+import com.vkplatform.iam.identity.api.AccountAuthenticationInvalidated;
 import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.identity.api.result.AuthenticationChallengeStarted;
 import com.vkplatform.iam.identity.api.result.AuthenticationGrantIssued;
@@ -27,6 +28,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,12 +42,14 @@ class PasswordlessIdentityServiceTest {
 
     private RecordingVerification verification;
     private RecordingRepository repository;
+    private List<Object> events;
     private PasswordlessIdentityService service;
 
     @BeforeEach
     void setUp() {
         verification = new RecordingVerification();
         repository = new RecordingRepository();
+        events = new ArrayList<>();
         GrantTokenCodec grants = new GrantTokenCodec() {
             @Override
             public GeneratedGrant generate() {
@@ -64,7 +69,8 @@ class PasswordlessIdentityServiceTest {
                 repository,
                 grants,
                 Clock.fixed(NOW, ZoneOffset.UTC),
-                new IdentityPolicy("vk-platform-web", Duration.ofMinutes(5))
+                new IdentityPolicy("vk-platform-web", Duration.ofMinutes(5)),
+                events::add
         );
     }
 
@@ -131,6 +137,37 @@ class PasswordlessIdentityServiceTest {
         assertThat(service.deleteAccount(command).status()).isEqualTo("deleted");
         assertThat(repository.changedStatus).isEqualTo(AccountStatus.DELETED);
         assertThat(repository.actorId).isEqualTo("admin-service");
+        assertThat(events).containsExactly(
+                new AccountAuthenticationInvalidated(ACCOUNT_ID, NOW),
+                new AccountAuthenticationInvalidated(ACCOUNT_ID, NOW),
+                new AccountAuthenticationInvalidated(ACCOUNT_ID, NOW)
+        );
+    }
+
+    @Test
+    void doesNotPublishInvalidationForAnIdempotentAccountTransition() {
+        repository.statusChanged = false;
+
+        service.suspendAccount(new AccountAdministrationCommand(
+                ACCOUNT_ID,
+                "admin-service",
+                "request-idempotent"
+        ));
+
+        assertThat(events).isEmpty();
+    }
+
+    @Test
+    void locksAndRequiresAnActiveAccountForTokenIssuance() {
+        AuthenticatedAccount account = service.activeAccount(ACCOUNT_ID);
+
+        assertThat(account.accountId()).isEqualTo(ACCOUNT_ID);
+        assertThat(repository.tokenIssuanceLookup).isEqualTo(ACCOUNT_ID);
+
+        repository.activeAccount = RecordingRepository.account(AccountStatus.SUSPENDED, null);
+        assertThatThrownBy(() -> service.activeAccount(ACCOUNT_ID))
+                .isInstanceOfSatisfying(IdentityFailure.class, failure ->
+                        assertThat(failure.reason()).isEqualTo(IdentityFailure.Reason.ACCOUNT_UNAVAILABLE));
     }
 
     @Test
@@ -195,6 +232,9 @@ class PasswordlessIdentityServiceTest {
         private int consumeCalls;
         private AccountStatus changedStatus;
         private String actorId;
+        private UUID tokenIssuanceLookup;
+        private Account activeAccount = account(AccountStatus.ACTIVE, null);
+        private boolean statusChanged = true;
 
         @Override
         public IssuedGrant issueSignInGrant(
@@ -232,7 +272,13 @@ class PasswordlessIdentityServiceTest {
         }
 
         @Override
-        public Account changeAccountStatus(
+        public Account findAccountForTokenIssuance(UUID accountId) {
+            tokenIssuanceLookup = accountId;
+            return activeAccount;
+        }
+
+        @Override
+        public AccountStatusChange changeAccountStatus(
                 UUID accountId,
                 AccountStatus status,
                 Instant now,
@@ -241,7 +287,10 @@ class PasswordlessIdentityServiceTest {
         ) {
             changedStatus = status;
             this.actorId = actorId;
-            return account(status, status == AccountStatus.DELETED ? now : null);
+            return new AccountStatusChange(
+                    account(status, status == AccountStatus.DELETED ? now : null),
+                    statusChanged
+            );
         }
 
         private static Account account(AccountStatus status, Instant deletedAt) {

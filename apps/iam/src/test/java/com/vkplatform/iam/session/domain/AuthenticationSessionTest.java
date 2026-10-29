@@ -22,12 +22,57 @@ class AuthenticationSessionTest {
         );
 
         assertThat(session.status()).isEqualTo(SessionStatus.ACTIVE);
+        assertThat(session.lastRefreshedAt()).isEqualTo(NOW);
+        assertThat(session.compromisedAt()).isNull();
         assertThat(session.revokedAt()).isNull();
         assertThat(session.revokeReason()).isNull();
         assertThat(SessionStatus.values()).containsExactly(
                 SessionStatus.ACTIVE,
-                SessionStatus.REVOKED
+                SessionStatus.REVOKED,
+                SessionStatus.COMPROMISED
         );
+    }
+
+    @Test
+    void touchesOnlyAnActiveUnexpiredSession() {
+        AuthenticationSession active = AuthenticationSession.create(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "vk-platform-bff",
+                NOW,
+                NOW.plusSeconds(300)
+        );
+
+        AuthenticationSession touched = active.touch(NOW.plusSeconds(30));
+
+        assertThat(touched.lastRefreshedAt()).isEqualTo(NOW.plusSeconds(30));
+        assertThatThrownBy(() -> touched.touch(NOW.plusSeconds(300)))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> touched.touch(NOW))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void compromiseIsTerminalAndPreservesItsFirstTimestamp() {
+        UUID accountId = UUID.randomUUID();
+        AuthenticationSession active = AuthenticationSession.create(
+                UUID.randomUUID(),
+                accountId,
+                "vk-platform-bff",
+                NOW,
+                NOW.plusSeconds(300)
+        ).touch(NOW.plusSeconds(10));
+
+        AuthenticationSession compromised = active.compromise(NOW.plusSeconds(20));
+
+        assertThat(compromised.status()).isEqualTo(SessionStatus.COMPROMISED);
+        assertThat(compromised.revokedAt()).isEqualTo(NOW.plusSeconds(20));
+        assertThat(compromised.compromisedAt()).isEqualTo(NOW.plusSeconds(20));
+        assertThat(compromised.revokeReason()).isEqualTo(SessionRevokeReason.REFRESH_TOKEN_REUSED);
+        assertThat(compromised.canAuthorize(accountId, "vk-platform-bff", NOW.plusSeconds(20))).isFalse();
+        assertThat(compromised.compromise(NOW.plusSeconds(30))).isSameAs(compromised);
+        assertThat(compromised.revoke(SessionRevokeReason.LOGOUT, NOW.plusSeconds(30)))
+                .isSameAs(compromised);
     }
 
     @Test
@@ -97,8 +142,10 @@ class AuthenticationSessionTest {
                 "vk-platform-bff",
                 SessionStatus.ACTIVE,
                 NOW,
+                NOW,
                 expiresAt,
                 NOW.plusSeconds(1),
+                null,
                 SessionRevokeReason.USER_REQUEST
         )).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new AuthenticationSession(
@@ -107,7 +154,9 @@ class AuthenticationSessionTest {
                 "vk-platform-bff",
                 SessionStatus.REVOKED,
                 NOW,
+                NOW,
                 expiresAt,
+                null,
                 null,
                 null
         )).isInstanceOf(IllegalArgumentException.class);
@@ -117,8 +166,10 @@ class AuthenticationSessionTest {
                 "vk-platform-bff",
                 SessionStatus.REVOKED,
                 NOW,
+                NOW,
                 expiresAt,
                 NOW.minusSeconds(1),
+                null,
                 SessionRevokeReason.USER_REQUEST
         )).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> AuthenticationSession.create(
