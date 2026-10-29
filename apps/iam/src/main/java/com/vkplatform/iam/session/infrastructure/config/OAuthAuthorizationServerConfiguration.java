@@ -1,8 +1,8 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
-import com.nimbusds.jose.jwk.RSAKey;
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.infrastructure.crypto.SigningKeyRuntime;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -131,10 +131,10 @@ public class OAuthAuthorizationServerConfiguration {
             PasswordlessIdentityOperations identities,
             AuthenticationSessionRepository sessions,
             OAuthAuthorizationProperties properties,
-            RSAKey signingKey,
+            SigningKeyRuntime signingKeys,
             Clock clock
     ) {
-        return new OAuthTokenClaimsCustomizer(identities, sessions, properties, signingKey, clock);
+        return new OAuthTokenClaimsCustomizer(identities, sessions, properties, signingKeys, clock);
     }
 
 }

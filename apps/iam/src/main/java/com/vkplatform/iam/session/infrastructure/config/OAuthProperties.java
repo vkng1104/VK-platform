@@ -17,20 +17,14 @@ public record OAuthProperties(
 
     public OAuthProperties {
         if (enabled) {
-            if (signingKeyId == null || !KEY_ID.matcher(signingKeyId).matches()) {
+            if (signingKeyId != null
+                    && !signingKeyId.isBlank()
+                    && !KEY_ID.matcher(signingKeyId).matches()) {
                 throw new IllegalStateException("IAM_OAUTH_SIGNING_KEY_ID is invalid");
             }
-            requireValue(signingPrivateKeyPkcs8Base64, "IAM_OAUTH_SIGNING_PRIVATE_KEY_PKCS8_BASE64");
-            requireValue(signingPublicKeyX509Base64, "IAM_OAUTH_SIGNING_PUBLIC_KEY_X509_BASE64");
             if (jwksCacheTtl == null || jwksCacheTtl.isZero() || jwksCacheTtl.isNegative()) {
                 throw new IllegalStateException("IAM_OAUTH_JWKS_CACHE_TTL must be greater than zero");
             }
-        }
-    }
-
-    private static void requireValue(String value, String name) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(name + " is required");
         }
     }
 }

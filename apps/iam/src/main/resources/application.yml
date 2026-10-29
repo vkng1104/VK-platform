@@ -75,6 +75,18 @@ iam:
       authorization-code-ttl: ${IAM_OAUTH_AUTHORIZATION_CODE_TTL:PT5M}
       access-token-ttl: ${IAM_OAUTH_ACCESS_TOKEN_TTL:PT5M}
       refresh-token-ttl: ${IAM_OAUTH_REFRESH_TOKEN_TTL:P30D}
+  signing-keys:
+    protection-keys: ${IAM_SIGNING_KEY_PROTECTION_KEYS:}
+    protection-version: ${IAM_SIGNING_KEY_PROTECTION_VERSION:}
+    publication-safety-overlap: ${IAM_SIGNING_KEY_PUBLICATION_SAFETY_OVERLAP:PT1M}
+    retirement-enabled: ${IAM_SIGNING_KEY_RETIREMENT_ENABLED:true}
+    retirement-initial-delay: ${IAM_SIGNING_KEY_RETIREMENT_INITIAL_DELAY:PT1M}
+    retirement-interval: ${IAM_SIGNING_KEY_RETIREMENT_INTERVAL:PT5M}
+    operator-operation: ${IAM_SIGNING_KEY_OPERATOR_OPERATION:}
+    operator-actor: ${IAM_SIGNING_KEY_OPERATOR_ACTOR:}
+    operator-operation-id: ${IAM_SIGNING_KEY_OPERATOR_OPERATION_ID:}
+    operator-key-id: ${IAM_SIGNING_KEY_OPERATOR_KEY_ID:}
+    operator-batch-size: ${IAM_SIGNING_KEY_OPERATOR_BATCH_SIZE:100}
   email:
     provider: ${EMAIL_PROVIDER:disabled}
     from-address: ${EMAIL_FROM_ADDRESS:}
