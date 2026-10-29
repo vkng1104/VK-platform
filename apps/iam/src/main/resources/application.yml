@@ -75,6 +75,17 @@ iam:
       authorization-code-ttl: ${IAM_OAUTH_AUTHORIZATION_CODE_TTL:PT5M}
       access-token-ttl: ${IAM_OAUTH_ACCESS_TOKEN_TTL:PT5M}
       refresh-token-ttl: ${IAM_OAUTH_REFRESH_TOKEN_TTL:P30D}
+    clients:
+      service-client-id: ${IAM_SERVICE_CLIENT_ID:vk-platform-service}
+      service-bootstrap-secret: ${IAM_SERVICE_CLIENT_SECRET:}
+      service-audience: ${IAM_OAUTH_SERVICE_AUDIENCE:vk-platform-services}
+      service-scopes: ${IAM_SERVICE_CLIENT_SCOPES:iam.authorization.check,iam.relationship.write}
+      operator-operation: ${IAM_OAUTH_CLIENT_OPERATOR_OPERATION:}
+      operator-actor: ${IAM_OAUTH_CLIENT_OPERATOR_ACTOR:}
+      operator-operation-id: ${IAM_OAUTH_CLIENT_OPERATOR_OPERATION_ID:}
+      operator-client-id: ${IAM_OAUTH_CLIENT_OPERATOR_CLIENT_ID:}
+      operator-client-secret: ${IAM_OAUTH_CLIENT_OPERATOR_CLIENT_SECRET:}
+      operator-client-secret-expires-at: ${IAM_OAUTH_CLIENT_OPERATOR_CLIENT_SECRET_EXPIRES_AT:}
   signing-keys:
     protection-keys: ${IAM_SIGNING_KEY_PROTECTION_KEYS:}
     protection-version: ${IAM_SIGNING_KEY_PROTECTION_VERSION:}

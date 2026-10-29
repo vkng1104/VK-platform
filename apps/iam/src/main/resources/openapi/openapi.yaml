@@ -119,12 +119,13 @@ paths:
       operationId: exchangeOAuthToken
       tags:
         - OAuth
-      summary: Exchange an authorization code or refresh token
+      summary: Issue or exchange an OAuth access token
       description: >-
         Supports authorization_code with PKCE and one-time refresh_token rotation. Reusing a consumed
-        refresh token invalidates its authorization and compromises the owning durable session.
+        refresh token invalidates its authorization and compromises the owning durable session. The
+        registered service client may use client_credentials for its configured least-privilege scopes.
       security:
-        - bffClientAuth: []
+        - oauthClientAuth: []
       requestBody:
         required: true
         content:
@@ -140,6 +141,7 @@ paths:
                   enum:
                     - authorization_code
                     - refresh_token
+                    - client_credentials
                 code:
                   type: string
                   minLength: 1
@@ -153,9 +155,14 @@ paths:
                 refresh_token:
                   type: string
                   minLength: 1
+                scope:
+                  type: string
+                  description: Required for client_credentials and restricted to the service client's registered scopes.
       responses:
         "200":
-          description: A signed bearer access token and one-time refresh token were issued.
+          description: >-
+            A signed bearer access token was issued. Browser grants also return a one-time refresh token;
+            client_credentials never does.
           headers:
             Cache-Control:
               $ref: "#/components/headers/NoStore"
@@ -511,6 +518,9 @@ components:
     bffClientAuth:
       type: http
       scheme: basic
+    oauthClientAuth:
+      type: http
+      scheme: basic
     bearerAuth:
       type: http
       scheme: bearer
@@ -773,7 +783,6 @@ components:
       additionalProperties: false
       required:
         - access_token
-        - refresh_token
         - token_type
         - expires_in
         - scope
@@ -784,6 +793,7 @@ components:
         refresh_token:
           type: string
           minLength: 1
+          description: Present only for the browser authorization_code and refresh_token grants.
         token_type:
           type: string
           const: Bearer
@@ -792,7 +802,6 @@ components:
           minimum: 1
         scope:
           type: string
-          const: api.access
     OAuthError:
       type: object
       required:
