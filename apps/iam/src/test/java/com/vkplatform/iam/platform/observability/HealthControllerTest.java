@@ -16,6 +16,7 @@ import static org.mockito.Mockito.when;
 class HealthControllerTest {
     private final HealthEndpoint healthEndpoint = mock(HealthEndpoint.class);
     private final IndicatedHealthDescriptor databaseHealth = mock(IndicatedHealthDescriptor.class);
+    private final IndicatedHealthDescriptor signingKeyHealth = mock(IndicatedHealthDescriptor.class);
     private final HealthController controller = new HealthController(healthEndpoint);
 
     @Test
@@ -39,5 +40,18 @@ class HealthControllerTest {
         assertThatThrownBy(controller::readiness)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("IAM database is not ready");
+    }
+
+    @Test
+    void keepsLivenessIndependentButRejectsSigningKeyReadiness() {
+        when(healthEndpoint.healthForPath("db")).thenReturn(databaseHealth);
+        when(databaseHealth.getStatus()).thenReturn(Status.UP);
+        when(healthEndpoint.healthForPath("signingKey")).thenReturn(signingKeyHealth);
+        when(signingKeyHealth.getStatus()).thenReturn(Status.DOWN);
+
+        assertThat(controller.health()).isEqualTo(Map.of("status", "ok", "service", "iam"));
+        assertThatThrownBy(controller::readiness)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("IAM signing key is not ready");
     }
 }
