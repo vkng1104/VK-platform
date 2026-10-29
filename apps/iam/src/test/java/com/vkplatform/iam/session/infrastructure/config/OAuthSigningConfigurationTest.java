@@ -11,6 +11,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -18,6 +19,7 @@ import java.security.interfaces.RSAPublicKey;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.net.URI;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -43,6 +45,7 @@ class OAuthSigningConfigurationTest {
                 JwtClaimsSet.builder()
                         .issuer("https://iam.example.test")
                         .subject("account-123")
+                        .audience(java.util.List.of("vk-platform-api"))
                         .issuedAt(now)
                         .expiresAt(now.plusSeconds(300))
                         .build()
@@ -54,6 +57,19 @@ class OAuthSigningConfigurationTest {
 
         assertThat(encoded.getHeaders().get("kid")).isEqualTo("oauth-signing-2026");
         assertThat(decoded.getSubject()).isEqualTo("account-123");
+
+        OAuthAuthorizationProperties authorization = new OAuthAuthorizationProperties(
+                URI.create("https://iam.example.test"),
+                "vk-platform-api",
+                URI.create("https://web.example.test/sign-in"),
+                URI.create("https://web.example.test/api/auth/callback"),
+                Duration.ofMinutes(5),
+                Duration.ofMinutes(5),
+                Duration.ofDays(30)
+        );
+        JwtDecoder applicationDecoder = configuration.oauthJwtDecoder(signingKey, authorization);
+        assertThat(applicationDecoder.decode(encoded.getTokenValue()).getSubject())
+                .isEqualTo("account-123");
     }
 
     private static KeyPair rsaPair() throws Exception {

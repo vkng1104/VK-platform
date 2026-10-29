@@ -1,5 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.persistence.repository;
 
+import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
 import com.vkplatform.iam.session.domain.SessionRevokeReason;
 import com.vkplatform.iam.session.domain.SessionStatus;
@@ -69,6 +70,12 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
                 "revoke_reason",
                 "version"
         );
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT indexname
+                FROM pg_indexes
+                WHERE schemaname = 'iam_session'
+                  AND tablename = 'sessions'
+                """, String.class)).contains("sessions_account_status_created_id_idx");
     }
 
     @Test
@@ -172,6 +179,142 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
     }
 
     @Test
+    void pagesOnlyActiveUnexpiredOwnedSessionsInDeterministicOrder() {
+        UUID otherAccountId = UUID.randomUUID();
+        insertAccount(otherAccountId);
+        AuthenticationSession oldest = repository.create(createSessionAt(
+                UUID.randomUUID(), ACCOUNT_ID, NOW.minusSeconds(30), NOW.plusSeconds(300)
+        ));
+        AuthenticationSession middle = repository.create(createSessionAt(
+                UUID.randomUUID(), ACCOUNT_ID, NOW.minusSeconds(20), NOW.plusSeconds(300)
+        ));
+        AuthenticationSession newest = repository.create(createSessionAt(
+                UUID.randomUUID(), ACCOUNT_ID, NOW.minusSeconds(10), NOW.plusSeconds(300)
+        ));
+        repository.create(createSessionAt(
+                UUID.randomUUID(), ACCOUNT_ID, NOW.minusSeconds(300), NOW.minusSeconds(1)
+        ));
+        repository.create(createSessionAt(
+                UUID.randomUUID(), otherAccountId, NOW.minusSeconds(5), NOW.plusSeconds(300)
+        ));
+
+        AuthenticationSessionRepository.SessionPage first = repository.findActiveByAccount(
+                ACCOUNT_ID, NOW, 0, 2
+        );
+        AuthenticationSessionRepository.SessionPage second = repository.findActiveByAccount(
+                ACCOUNT_ID, NOW, 1, 2
+        );
+
+        assertThat(first.sessions()).extracting(AuthenticationSession::id)
+                .containsExactly(newest.id(), middle.id());
+        assertThat(first.totalElements()).isEqualTo(3);
+        assertThat(first.totalPages()).isEqualTo(2);
+        assertThat(second.sessions()).extracting(AuthenticationSession::id)
+                .containsExactly(oldest.id());
+    }
+
+    @Test
+    void atomicallyRevokesAnOwnedTargetAndInvalidatesItsAuthorization() {
+        UUID currentId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        repository.create(createSession(currentId, ACCOUNT_ID));
+        repository.create(createSession(targetId, ACCOUNT_ID));
+        insertAuthorization("authorization-target", targetId, ACCOUNT_ID);
+
+        assertThat(repository.revokeOwnedFromCurrent(
+                ACCOUNT_ID,
+                currentId,
+                targetId,
+                "vk-platform-bff",
+                SessionRevokeReason.USER_REQUEST,
+                NOW.plusSeconds(30)
+        )).isEqualTo(AuthenticationSessionRepository.RevokeResult.REVOKED);
+
+        assertThat(repository.findById(currentId).orElseThrow().status())
+                .isEqualTo(SessionStatus.ACTIVE);
+        AuthenticationSession revoked = repository.findById(targetId).orElseThrow();
+        assertThat(revoked.status()).isEqualTo(SessionStatus.REVOKED);
+        assertThat(revoked.revokeReason()).isEqualTo(SessionRevokeReason.USER_REQUEST);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT invalidation_reason FROM iam_session.oauth_authorizations WHERE id = ?",
+                String.class,
+                "authorization-target"
+        )).isEqualTo("user_request");
+
+        assertThat(repository.revokeOwnedFromCurrent(
+                ACCOUNT_ID,
+                currentId,
+                targetId,
+                "vk-platform-bff",
+                SessionRevokeReason.USER_REQUEST,
+                NOW.plusSeconds(40)
+        )).isEqualTo(AuthenticationSessionRepository.RevokeResult.REVOKED);
+        assertThat(repository.findById(targetId)).contains(revoked);
+    }
+
+    @Test
+    void hidesForeignTargetsAndRejectsAnUnavailableCurrentSessionUnderLock() {
+        UUID otherAccountId = UUID.randomUUID();
+        insertAccount(otherAccountId);
+        UUID currentId = UUID.randomUUID();
+        UUID foreignId = UUID.randomUUID();
+        repository.create(createSession(currentId, ACCOUNT_ID));
+        repository.create(createSession(foreignId, otherAccountId));
+
+        assertThat(repository.revokeOwnedFromCurrent(
+                ACCOUNT_ID,
+                currentId,
+                foreignId,
+                "vk-platform-bff",
+                SessionRevokeReason.USER_REQUEST,
+                NOW.plusSeconds(30)
+        )).isEqualTo(AuthenticationSessionRepository.RevokeResult.TARGET_NOT_FOUND);
+
+        repository.revokeOwned(
+                ACCOUNT_ID,
+                currentId,
+                SessionRevokeReason.LOGOUT,
+                NOW.plusSeconds(40)
+        );
+        assertThat(repository.revokeOwnedFromCurrent(
+                ACCOUNT_ID,
+                currentId,
+                foreignId,
+                "vk-platform-bff",
+                SessionRevokeReason.USER_REQUEST,
+                NOW.plusSeconds(50)
+        )).isEqualTo(AuthenticationSessionRepository.RevokeResult.CURRENT_UNAVAILABLE);
+        assertThat(repository.findById(foreignId).orElseThrow().status())
+                .isEqualTo(SessionStatus.ACTIVE);
+    }
+
+    @Test
+    void revokesAllActiveSessionsAndAuthorizationsInOneOperation() {
+        UUID currentId = UUID.randomUUID();
+        UUID secondId = UUID.randomUUID();
+        repository.create(createSession(currentId, ACCOUNT_ID));
+        repository.create(createSession(secondId, ACCOUNT_ID));
+        insertAuthorization("authorization-current", currentId, ACCOUNT_ID);
+        insertAuthorization("authorization-second", secondId, ACCOUNT_ID);
+
+        AuthenticationSessionRepository.RevokeAllResult result = repository.revokeAllFromCurrent(
+                ACCOUNT_ID,
+                currentId,
+                "vk-platform-bff",
+                SessionRevokeReason.ALL_SESSIONS_REVOKED,
+                NOW.plusSeconds(30)
+        );
+
+        assertThat(result.currentAvailable()).isTrue();
+        assertThat(result.revokedCount()).isEqualTo(2);
+        assertThat(repository.findActiveByAccount(ACCOUNT_ID, NOW, 0, 20).sessions()).isEmpty();
+        assertThat(jdbcTemplate.queryForList(
+                "SELECT invalidation_reason FROM iam_session.oauth_authorizations ORDER BY id",
+                String.class
+        )).containsOnly("all_sessions_revoked");
+    }
+
+    @Test
     void databaseRejectsInconsistentRevocationState() {
         assertThatThrownBy(() -> insertRawSession(
                 SessionStatus.REVOKED.wireValue(),
@@ -230,6 +373,34 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
                 "vk-platform-bff",
                 NOW,
                 NOW.plusSeconds(3600)
+        );
+    }
+
+    private AuthenticationSession createSessionAt(
+            UUID sessionId,
+            UUID accountId,
+            Instant createdAt,
+            Instant expiresAt
+    ) {
+        return AuthenticationSession.create(
+                sessionId,
+                accountId,
+                "vk-platform-bff",
+                createdAt,
+                expiresAt
+        );
+    }
+
+    private void insertAuthorization(String id, UUID sessionId, UUID accountId) {
+        jdbcTemplate.update("""
+                INSERT INTO iam_session.oauth_authorizations (
+                    id, registered_client_id, principal_name, session_id,
+                    authorization_grant_type, authorized_scopes, attributes_json
+                ) VALUES (?, 'bff:vk-platform-bff', ?, ?, 'authorization_code', 'api.access', '{}')
+                """,
+                id,
+                accountId.toString(),
+                sessionId
         );
     }
 

@@ -28,7 +28,9 @@ class BffClientAuthenticationFilterTest {
                         "vk-platform-bff",
                         SECRET,
                         URI.create("https://web.example.test"),
-                        Duration.ofDays(30)
+                        Duration.ofDays(30),
+                        "VK_IAM_SESSION",
+                        true
                 ),
                 BffSessionOperation.EXCHANGE_AUTHENTICATION_GRANT
         );
