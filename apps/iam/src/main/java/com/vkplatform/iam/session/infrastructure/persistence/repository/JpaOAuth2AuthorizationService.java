@@ -1,7 +1,11 @@
 package com.vkplatform.iam.session.infrastructure.persistence.repository;
 
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
+import com.vkplatform.iam.identity.api.SecurityAuditEventType;
+import com.vkplatform.iam.identity.api.SecurityAuditOperations;
+import com.vkplatform.iam.identity.api.command.RecordSecurityAuditEvent;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
+import com.vkplatform.iam.session.application.port.out.IamSecurityTelemetry;
 import com.vkplatform.iam.session.domain.OAuthAuthorizationInvalidationReason;
 import com.vkplatform.iam.session.infrastructure.crypto.TokenDigest;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.OAuthAuthorizationEntity;
@@ -48,6 +52,8 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
     private final SpringDataOAuthRefreshTokenRepository refreshTokens;
     private final SpringDataAuthenticationSessionRepository sessions;
     private final PasswordlessIdentityOperations identities;
+    private final SecurityAuditOperations audit;
+    private final IamSecurityTelemetry telemetry;
     private final RegisteredClientRepository clients;
     private final Clock clock;
     private final OAuthJsonCodec json = new OAuthJsonCodec();
@@ -57,6 +63,8 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
             SpringDataOAuthRefreshTokenRepository refreshTokens,
             SpringDataAuthenticationSessionRepository sessions,
             PasswordlessIdentityOperations identities,
+            SecurityAuditOperations audit,
+            IamSecurityTelemetry telemetry,
             RegisteredClientRepository clients,
             Clock clock
     ) {
@@ -64,6 +72,8 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         this.refreshTokens = refreshTokens;
         this.sessions = sessions;
         this.identities = identities;
+        this.audit = audit;
+        this.telemetry = telemetry;
         this.clients = clients;
         this.clock = clock;
     }
@@ -94,9 +104,18 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
             throw new IllegalStateException("invalidated OAuth authorization cannot be changed");
         }
         byte[] previousRefreshDigest = entity.refreshTokenDigest();
+        byte[] previousAccessDigest = entity.accessTokenDigest();
         mapAuthorization(authorization, effectiveSessionId, entity);
         authorizations.saveAndFlush(entity);
         rotateRefreshHistory(entity, previousRefreshDigest);
+        if (entity.accessTokenDigest() != null
+                && !TokenDigest.matches(previousAccessDigest, entity.accessTokenDigest())) {
+            telemetry.recordAfterCommit(
+                    IamSecurityTelemetry.Operation.TOKEN_ISSUE,
+                    IamSecurityTelemetry.Outcome.SUCCESS,
+                    telemetry.start()
+            );
+        }
     }
 
     @Override
@@ -154,10 +173,19 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
                     .orElse(null);
         }
         if (OAuth2ParameterNames.CODE.equals(type)) {
-            return authorizations.findByAuthorizationCodeDigest(digest)
+            long startedAt = telemetry.start();
+            OAuth2Authorization result = authorizations.findByAuthorizationCodeDigest(digest)
                     .map(this::lockAuthorizationForSession)
                     .map(entity -> usable(entity, new PresentedToken(type, token, digest)))
                     .orElse(null);
+            telemetry.record(
+                    IamSecurityTelemetry.Operation.AUTHORIZATION_CODE_LOOKUP,
+                    result == null
+                            ? IamSecurityTelemetry.Outcome.NOT_FOUND
+                            : IamSecurityTelemetry.Outcome.SUCCESS,
+                    startedAt
+            );
+            return result;
         }
         if (OAuth2ParameterNames.ACCESS_TOKEN.equals(type)) {
             return authorizations.findByAccessTokenDigest(digest)
@@ -268,10 +296,27 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
             OAuthAuthorizationEntity authorization,
             Instant now
     ) {
+        long startedAt = telemetry.start();
+        boolean firstReuse = refresh.reuseDetectedAt() == null;
         refresh.detectReuse(now);
         authorization.invalidate(now, OAuthAuthorizationInvalidationReason.REFRESH_TOKEN_REUSED);
         sessions.findLockedById(authorization.sessionId())
                 .ifPresent(session -> session.apply(session.toDomain().compromise(now)));
+        if (firstReuse) {
+            audit.record(new RecordSecurityAuditEvent(
+                    SecurityAuditEventType.REFRESH_TOKEN_REUSED,
+                    accountId(authorization.principalName()),
+                    authorization.sessionId(),
+                    authorization.registeredClientId(),
+                    null,
+                    now
+            ));
+            telemetry.recordAfterCommit(
+                    IamSecurityTelemetry.Operation.REFRESH_REPLAY,
+                    IamSecurityTelemetry.Outcome.REPLAY,
+                    startedAt
+            );
+        }
     }
 
     private void rotateRefreshHistory(OAuthAuthorizationEntity entity, byte[] previousDigest) {
@@ -293,6 +338,8 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
             return;
         }
 
+        long startedAt = telemetry.start();
+
         OAuthRefreshTokenEntity previous = refreshTokens.findLockedByTokenDigest(previousDigest)
                 .orElseThrow(() -> new DataRetrievalFailureException("OAuth refresh lineage is missing"));
         Instant now = clock.instant();
@@ -308,6 +355,19 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         ));
         sessions.findLockedById(entity.sessionId())
                 .ifPresent(session -> session.apply(session.toDomain().touch(now)));
+        audit.record(new RecordSecurityAuditEvent(
+                SecurityAuditEventType.REFRESH_TOKEN_ROTATED,
+                accountId(entity.principalName()),
+                entity.sessionId(),
+                entity.registeredClientId(),
+                null,
+                now
+        ));
+        telemetry.recordAfterCommit(
+                IamSecurityTelemetry.Operation.REFRESH_ROTATION,
+                IamSecurityTelemetry.Outcome.SUCCESS,
+                startedAt
+        );
     }
 
     private void validateClientCredentialsAuthorization(
