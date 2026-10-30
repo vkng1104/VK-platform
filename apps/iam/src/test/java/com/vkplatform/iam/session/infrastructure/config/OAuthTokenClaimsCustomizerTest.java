@@ -157,13 +157,7 @@ class OAuthTokenClaimsCustomizerTest {
                 "vk-platform-service",
                 "s".repeat(32),
                 "vk-platform-services",
-                "iam.authorization.check,iam.relationship.write",
-                "",
-                "",
-                "",
-                "",
-                "",
-                null
+                "iam.authorization.check,iam.relationship.write"
         );
     }
 

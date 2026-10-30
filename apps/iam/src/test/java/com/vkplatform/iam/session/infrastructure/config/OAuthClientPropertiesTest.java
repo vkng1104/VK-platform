@@ -2,8 +2,6 @@ package com.vkplatform.iam.session.infrastructure.config;
 
 import org.junit.jupiter.api.Test;
 
-import java.time.Instant;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -24,26 +22,14 @@ class OAuthClientPropertiesTest {
                 "contains spaces",
                 "s".repeat(32),
                 "vk-platform-services",
-                requiredScopes(),
-                "",
-                "",
-                "",
-                "",
-                "",
-                null
+                requiredScopes()
         )).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("IAM_SERVICE_CLIENT_ID");
         assertThatThrownBy(() -> new OAuthClientProperties(
                 "vk-platform-service",
                 "s".repeat(32),
                 "",
-                requiredScopes(),
-                "",
-                "",
-                "",
-                "",
-                "",
-                null
+                requiredScopes()
         )).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("IAM_OAUTH_SERVICE_AUDIENCE");
         assertThatThrownBy(() -> properties(requiredScopes() + ",api.access"))
@@ -56,13 +42,7 @@ class OAuthClientPropertiesTest {
                 "vk-platform-service",
                 "s".repeat(32),
                 "vk-platform-services",
-                scopes,
-                "",
-                "",
-                "",
-                "",
-                "",
-                Instant.now().plusSeconds(3600)
+                scopes
         );
     }
 
