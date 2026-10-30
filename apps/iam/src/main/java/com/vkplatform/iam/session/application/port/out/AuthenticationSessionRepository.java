@@ -61,6 +61,7 @@ public interface AuthenticationSessionRepository {
 
     enum RevokeResult {
         REVOKED,
+        UNCHANGED,
         TARGET_NOT_FOUND,
         CURRENT_UNAVAILABLE
     }

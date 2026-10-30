@@ -118,14 +118,15 @@ public class JpaAuthenticationSessionRepository implements AuthenticationSession
         if (entity == null || !entity.accountId().equals(accountId)) {
             return false;
         }
-        AuthenticationSession revoked = entity.toDomain().revoke(reason, revokedAt);
+        AuthenticationSession current = entity.toDomain();
+        AuthenticationSession revoked = current.revoke(reason, revokedAt);
         entity.apply(revoked);
         invalidateAuthorizations(
                 sessionId,
                 revokedAt,
                 OAuthAuthorizationInvalidationReason.fromSessionReason(revoked.revokeReason())
         );
-        return true;
+        return current.status() == SessionStatus.ACTIVE;
     }
 
     @Override
@@ -160,14 +161,17 @@ public class JpaAuthenticationSessionRepository implements AuthenticationSession
         if (target == null) {
             return RevokeResult.TARGET_NOT_FOUND;
         }
-        AuthenticationSession revoked = target.toDomain().revoke(reason, revokedAt);
+        AuthenticationSession before = target.toDomain();
+        AuthenticationSession revoked = before.revoke(reason, revokedAt);
         target.apply(revoked);
         invalidateAuthorizations(
                 targetSessionId,
                 revokedAt,
                 OAuthAuthorizationInvalidationReason.fromSessionReason(revoked.revokeReason())
         );
-        return RevokeResult.REVOKED;
+        return before.status() == SessionStatus.ACTIVE
+                ? RevokeResult.REVOKED
+                : RevokeResult.UNCHANGED;
     }
 
     @Override

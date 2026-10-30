@@ -1,11 +1,11 @@
 package com.vkplatform.iam.identity.infrastructure.persistence.repository;
 
 import com.vkplatform.iam.identity.application.port.out.PasswordlessIdentityRepository;
+import com.vkplatform.iam.identity.api.SecurityAuditEventType;
 import com.vkplatform.iam.identity.domain.Account;
 import com.vkplatform.iam.identity.domain.AccountStatus;
 import com.vkplatform.iam.identity.domain.IdentityFailure;
 import com.vkplatform.iam.identity.domain.IdentityKind;
-import com.vkplatform.iam.identity.domain.SecurityEventType;
 import com.vkplatform.iam.identity.infrastructure.persistence.entity.AccountEntity;
 import com.vkplatform.iam.identity.infrastructure.persistence.entity.LoginIdentityEntity;
 import com.vkplatform.iam.identity.infrastructure.persistence.entity.SecurityEventEntity;
@@ -67,9 +67,9 @@ public class JpaPasswordlessIdentityRepository implements PasswordlessIdentityRe
                     now,
                     now
             ));
-            appendEvent(SecurityEventType.ACCOUNT_CREATED, account.id(), account.id(), null, requestId, now);
+            appendEvent(SecurityAuditEventType.ACCOUNT_CREATED, account.id(), account.id(), null, requestId, now);
             appendEvent(
-                    SecurityEventType.LOGIN_IDENTITY_LINKED,
+                    SecurityAuditEventType.LOGIN_IDENTITY_LINKED,
                     account.id(),
                     identity.id(),
                     null,
@@ -93,7 +93,7 @@ public class JpaPasswordlessIdentityRepository implements PasswordlessIdentityRe
                 now
         ));
         appendEvent(
-                SecurityEventType.SIGN_IN_GRANT_ISSUED,
+                SecurityAuditEventType.SIGN_IN_GRANT_ISSUED,
                 account.id(),
                 grant.id(),
                 null,
@@ -121,7 +121,7 @@ public class JpaPasswordlessIdentityRepository implements PasswordlessIdentityRe
         account.requireActive();
         grant.consume(now);
         appendEvent(
-                SecurityEventType.SIGN_IN_GRANT_CONSUMED,
+                SecurityAuditEventType.SIGN_IN_GRANT_CONSUMED,
                 account.id(),
                 grant.id(),
                 null,
@@ -181,7 +181,7 @@ public class JpaPasswordlessIdentityRepository implements PasswordlessIdentityRe
     }
 
     private void appendEvent(
-            SecurityEventType type,
+            SecurityAuditEventType type,
             UUID accountId,
             UUID targetId,
             String actorId,
@@ -199,11 +199,11 @@ public class JpaPasswordlessIdentityRepository implements PasswordlessIdentityRe
         ));
     }
 
-    private static SecurityEventType eventFor(AccountStatus status) {
+    private static SecurityAuditEventType eventFor(AccountStatus status) {
         return switch (status) {
-            case ACTIVE -> SecurityEventType.ACCOUNT_REACTIVATED;
-            case SUSPENDED -> SecurityEventType.ACCOUNT_SUSPENDED;
-            case DELETED -> SecurityEventType.ACCOUNT_DELETED;
+            case ACTIVE -> SecurityAuditEventType.ACCOUNT_REACTIVATED;
+            case SUSPENDED -> SecurityAuditEventType.ACCOUNT_SUSPENDED;
+            case DELETED -> SecurityAuditEventType.ACCOUNT_DELETED;
             case RECOVERY_LOCKED -> throw new IllegalArgumentException("unsupported account transition");
         };
     }
