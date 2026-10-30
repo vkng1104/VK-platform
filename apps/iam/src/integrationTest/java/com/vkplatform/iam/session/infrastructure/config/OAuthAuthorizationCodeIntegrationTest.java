@@ -2,8 +2,11 @@ package com.vkplatform.iam.session.infrastructure.config;
 
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
 import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
+import com.vkplatform.iam.session.api.OAuthClientOperations;
+import com.vkplatform.iam.session.api.OAuthClientRegistrationOperations;
 import com.vkplatform.iam.session.api.SigningKeyOperations;
 import com.vkplatform.iam.session.api.command.OperatorContext;
+import com.vkplatform.iam.session.api.command.RotateOAuthClientSecret;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,6 +45,7 @@ import java.util.Arrays;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -66,13 +70,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "iam.oauth.authorization.issuer=https://iam.example.test",
         "iam.oauth.authorization.audience=vk-platform-api",
         "iam.oauth.authorization.login-uri=https://web.example.test/sign-in",
-        "iam.oauth.authorization.bff-redirect-uri=https://web.example.test/api/auth/callback"
+        "iam.oauth.authorization.bff-redirect-uri=https://web.example.test/api/auth/callback",
+        "iam.oauth.clients.service-client-id=vk-platform-service",
+        "iam.oauth.clients.service-bootstrap-secret=ssssssssssssssssssssssssssssssss",
+        "iam.oauth.clients.service-audience=vk-platform-services"
 })
 @AutoConfigureMockMvc
 @Import(OAuthAuthorizationCodeIntegrationTest.TestBeans.class)
 class OAuthAuthorizationCodeIntegrationTest {
     private static final String BFF_CLIENT_ID = "vk-platform-bff";
     private static final String BFF_SECRET = "b".repeat(32);
+    private static final String SERVICE_CLIENT_ID = "vk-platform-service";
+    private static final String SERVICE_SECRET = "s".repeat(32);
     private static final String BFF_REDIRECT = "https://web.example.test/api/auth/callback";
     private static final String VERIFIER = "v".repeat(64);
     private static final String GRANT = "A".repeat(43);
@@ -110,13 +119,21 @@ class OAuthAuthorizationCodeIntegrationTest {
     @Autowired
     private SigningKeyOperations signingKeys;
 
+    @Autowired
+    private OAuthClientRegistrationOperations clientRegistrations;
+
+    @Autowired
+    private OAuthClientOperations clientCredentials;
+
     @BeforeEach
     void resetDatabaseAndIdentity() {
         jdbcTemplate.update("DELETE FROM iam_session.oauth_refresh_tokens");
         jdbcTemplate.update("DELETE FROM iam_session.oauth_authorizations");
         jdbcTemplate.update("DELETE FROM iam_session.sessions");
+        jdbcTemplate.update("DELETE FROM iam_session.oauth_client_events");
         jdbcTemplate.update("DELETE FROM iam_session.signing_key_events");
         jdbcTemplate.update("DELETE FROM iam_session.operator_operations");
+        jdbcTemplate.update("DELETE FROM iam_session.oauth_clients");
         jdbcTemplate.update("DELETE FROM iam_session.signing_keys");
         jdbcTemplate.update("DELETE FROM iam_identity.security_events");
         jdbcTemplate.update("DELETE FROM iam_identity.verification_grants");
@@ -140,6 +157,100 @@ class OAuthAuthorizationCodeIntegrationTest {
                 "oauth-integration-test",
                 "bootstrap-oauth-integration"
         ));
+        clientRegistrations.reconcile(new OperatorContext(
+                "oauth-integration-test",
+                "reconcile-oauth-integration"
+        ));
+    }
+
+    @Test
+    void issuesSessionlessServiceTokensWithOnlyTheConfiguredAudienceAndScopes() throws Exception {
+        MvcResult result = serviceToken(SERVICE_SECRET, serviceScopes())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token_type").value("Bearer"))
+                .andExpect(jsonPath("$.refresh_token").doesNotExist())
+                .andReturn();
+
+        JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
+        Jwt accessToken = NimbusJwtDecoder.withPublicKey((RSAPublicKey) SIGNING_PAIR.getPublic())
+                .signatureAlgorithm(SignatureAlgorithm.RS256)
+                .build()
+                .decode(response.get("access_token").asText());
+        assertThat(accessToken.getSubject()).isEqualTo(SERVICE_CLIENT_ID);
+        assertThat(accessToken.getClaimAsString("client_id")).isEqualTo(SERVICE_CLIENT_ID);
+        assertThat(accessToken.getAudience()).containsExactly("vk-platform-services");
+        assertThat(accessToken.getClaimAsStringList("scope"))
+                .containsExactlyInAnyOrder("iam.authorization.check", "iam.relationship.write");
+        assertThat(accessToken.getClaims()).doesNotContainKeys("sid", "amr");
+
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT authorization_grant_type
+                FROM iam_session.oauth_authorizations
+                """, String.class)).isEqualTo("client_credentials");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM iam_session.oauth_authorizations
+                WHERE session_id IS NULL
+                  AND access_token_digest IS NOT NULL
+                  AND refresh_token_digest IS NULL
+                """, Integer.class)).isOne();
+
+        serviceToken(SERVICE_SECRET, "api.access")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_scope"));
+        serviceToken("x".repeat(32), serviceScopes())
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("invalid_client"));
+    }
+
+    @Test
+    void rotatesAClientSecretIdempotentlyWithImmediateCutover() throws Exception {
+        IssuedSession browserSession = issueSession();
+        String newSecret = "n".repeat(32);
+        Instant expiresAt = Instant.now().plusSeconds(3600);
+        OperatorContext operator = new OperatorContext(
+                "oauth-integration-test",
+                "rotate-service-secret"
+        );
+        RotateOAuthClientSecret command = new RotateOAuthClientSecret(
+                SERVICE_CLIENT_ID,
+                newSecret,
+                expiresAt,
+                operator
+        );
+
+        assertThat(clientCredentials.rotateSecret(command))
+                .isEqualTo(clientCredentials.rotateSecret(command));
+        serviceToken(SERVICE_SECRET, serviceScopes())
+                .andExpect(status().isUnauthorized());
+        serviceToken(newSecret, serviceScopes())
+                .andExpect(status().isOk());
+
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT client_secret
+                FROM iam_session.oauth_clients
+                WHERE client_id = ?
+                """, String.class, SERVICE_CLIENT_ID))
+                .doesNotContain(newSecret)
+                .doesNotContain(SERVICE_SECRET);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM iam_session.oauth_client_events
+                WHERE event_type = 'credential_rotated'
+                """, Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM iam_session.sessions WHERE id = ?",
+                String.class,
+                browserSession.sessionId()
+        )).isEqualTo("active");
+
+        assertThatThrownBy(() -> clientCredentials.rotateSecret(new RotateOAuthClientSecret(
+                SERVICE_CLIENT_ID,
+                "z".repeat(32),
+                expiresAt,
+                operator
+        ))).isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("operator operation ID is already in use");
     }
 
     @Test
@@ -524,6 +635,21 @@ class OAuthAuthorizationCodeIntegrationTest {
                 .contentType("application/x-www-form-urlencoded")
                 .param("grant_type", "refresh_token")
                 .param("refresh_token", refreshToken));
+    }
+
+    private org.springframework.test.web.servlet.ResultActions serviceToken(
+            String secret,
+            String scopes
+    ) throws Exception {
+        return mockMvc.perform(post("/oauth2/token")
+                .with(httpBasic(SERVICE_CLIENT_ID, secret))
+                .contentType("application/x-www-form-urlencoded")
+                .param("grant_type", "client_credentials")
+                .param("scope", scopes));
+    }
+
+    private static String serviceScopes() {
+        return "iam.authorization.check iam.relationship.write";
     }
 
     private static MockHttpServletRequestBuilder authorizationRequest(
