@@ -132,7 +132,7 @@ class AuthenticationSessionTransactionIntegrationTest {
                 }
 
                 @Override
-                public boolean revokeOwned(
+                public boolean revokeByIdForAccount(
                         UUID accountId,
                         UUID sessionId,
                         SessionRevokeReason reason,
