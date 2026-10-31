@@ -4,6 +4,7 @@ import com.vkplatform.iam.session.api.OAuthClientOperations;
 import com.vkplatform.iam.session.api.command.OperatorContext;
 import com.vkplatform.iam.session.api.command.RotateOAuthClientSecret;
 import com.vkplatform.iam.session.api.result.OAuthClientSecretRotation;
+import com.vkplatform.iam.session.application.port.out.IamSecurityTelemetry;
 import com.vkplatform.iam.session.domain.OAuthClientEventType;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.OAuthClientEventEntity;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.OperatorOperationEntity;
@@ -33,6 +34,7 @@ public class JpaOAuthClientCredentialService implements OAuthClientOperations {
     private final SpringDataOperatorOperationRepository operations;
     private final PasswordEncoder passwordEncoder;
     private final Clock clock;
+    private final IamSecurityTelemetry telemetry;
 
     JpaOAuthClientCredentialService(
             SpringDataOAuthClientOperationGuardRepository guard,
@@ -40,6 +42,7 @@ public class JpaOAuthClientCredentialService implements OAuthClientOperations {
             SpringDataOAuthClientEventRepository events,
             SpringDataOperatorOperationRepository operations,
             PasswordEncoder passwordEncoder,
+            IamSecurityTelemetry telemetry,
             Clock clock
     ) {
         this.guard = guard;
@@ -47,12 +50,14 @@ public class JpaOAuthClientCredentialService implements OAuthClientOperations {
         this.events = events;
         this.operations = operations;
         this.passwordEncoder = passwordEncoder;
+        this.telemetry = telemetry;
         this.clock = clock;
     }
 
     @Override
     @Transactional
     public OAuthClientSecretRotation rotateSecret(RotateOAuthClientSecret command) {
+        long startedAt = telemetry.start();
         validate(command);
         String clientId = command.clientId().strip();
         byte[] fingerprint = fingerprint(clientId, command.newSecret(), command.expiresAt());
@@ -62,6 +67,11 @@ public class JpaOAuthClientCredentialService implements OAuthClientOperations {
         ).orElse(null);
         if (previous != null) {
             validateRetry(previous, command.operator(), clientId, fingerprint);
+            telemetry.record(
+                    IamSecurityTelemetry.Operation.OAUTH_CLIENT_SECRET_ROTATION,
+                    IamSecurityTelemetry.Outcome.NOOP,
+                    startedAt
+            );
             return new OAuthClientSecretRotation(
                     clientId,
                     previous.completedAt(),
@@ -100,6 +110,11 @@ public class JpaOAuthClientCredentialService implements OAuthClientOperations {
                 command.expiresAt(),
                 now
         ));
+        telemetry.recordAfterCommit(
+                IamSecurityTelemetry.Operation.OAUTH_CLIENT_SECRET_ROTATION,
+                IamSecurityTelemetry.Outcome.SUCCESS,
+                startedAt
+        );
         return new OAuthClientSecretRotation(clientId, now, command.expiresAt());
     }
 

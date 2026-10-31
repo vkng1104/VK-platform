@@ -71,13 +71,7 @@ class OAuthAuthorizationServerConfigurationTest {
                 "vk-platform-service",
                 "s".repeat(32),
                 audience,
-                "iam.authorization.check,iam.relationship.write",
-                "",
-                "",
-                "",
-                "",
-                "",
-                null
+                "iam.authorization.check,iam.relationship.write"
         );
     }
 }

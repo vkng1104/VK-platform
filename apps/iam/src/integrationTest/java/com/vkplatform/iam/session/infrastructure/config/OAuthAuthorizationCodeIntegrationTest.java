@@ -339,6 +339,11 @@ class OAuthAuthorizationCodeIntegrationTest {
                 FROM iam_session.oauth_refresh_tokens
                 WHERE consumed_at IS NOT NULL AND replacement_id IS NOT NULL
                 """, Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM iam_identity.security_events
+                WHERE event_type = 'refresh_token_rotated'
+                """, Integer.class)).isOne();
 
         refresh(firstRefresh)
                 .andExpect(status().isBadRequest())
@@ -362,6 +367,11 @@ class OAuthAuthorizationCodeIntegrationTest {
                 SELECT count(*)
                 FROM iam_session.oauth_refresh_tokens
                 WHERE reuse_detected_at IS NOT NULL
+                """, Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM iam_identity.security_events
+                WHERE event_type = 'refresh_token_reused'
                 """, Integer.class)).isOne();
 
         refresh(rotatedRefresh)

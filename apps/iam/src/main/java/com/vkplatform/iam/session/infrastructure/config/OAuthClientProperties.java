@@ -2,7 +2,6 @@ package com.vkplatform.iam.session.infrastructure.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-import java.time.Instant;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -12,13 +11,7 @@ public record OAuthClientProperties(
         String serviceClientId,
         String serviceBootstrapSecret,
         String serviceAudience,
-        String serviceScopes,
-        String operatorOperation,
-        String operatorActor,
-        String operatorOperationId,
-        String operatorClientId,
-        String operatorClientSecret,
-        Instant operatorClientSecretExpiresAt
+        String serviceScopes
 ) {
     public static final Set<String> REQUIRED_SERVICE_SCOPES = Set.of(
             "iam.authorization.check",

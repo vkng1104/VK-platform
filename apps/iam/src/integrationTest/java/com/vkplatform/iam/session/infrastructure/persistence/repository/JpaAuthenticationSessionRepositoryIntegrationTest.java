@@ -249,7 +249,7 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
                 "vk-platform-bff",
                 SessionRevokeReason.USER_REQUEST,
                 NOW.plusSeconds(40)
-        )).isEqualTo(AuthenticationSessionRepository.RevokeResult.REVOKED);
+        )).isEqualTo(AuthenticationSessionRepository.RevokeResult.UNCHANGED);
         assertThat(repository.findById(targetId)).contains(revoked);
     }
 

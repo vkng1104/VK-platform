@@ -5,6 +5,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.vkplatform.iam.platform.web.GlobalExceptionHandler;
 import com.vkplatform.iam.platform.web.RequestIdFilter;
+import com.vkplatform.iam.platform.web.RequestBodyLimitFilter;
 import com.vkplatform.iam.verification.api.EmailVerificationOperations;
 import com.vkplatform.iam.verification.api.command.StartEmailVerification;
 import com.vkplatform.iam.verification.api.command.StartSignInEmailVerification;
@@ -13,7 +14,6 @@ import com.vkplatform.iam.verification.api.result.EmailVerified;
 import com.vkplatform.iam.verification.api.result.VerificationChallengeStarted;
 import com.vkplatform.iam.verification.domain.VerificationFailure;
 import com.vkplatform.iam.verification.web.error.EmailVerificationExceptionHandler;
-import com.vkplatform.iam.verification.web.filter.EmailVerificationBodyLimitFilter;
 import com.vkplatform.iam.verification.web.mapper.EmailVerificationHttpMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,7 +62,7 @@ class EmailVerificationControllerTest {
                         new GlobalExceptionHandler()
                 )
                 .setMessageConverters(new JacksonJsonHttpMessageConverter(objectMapper))
-                .addFilters(new RequestIdFilter(), new EmailVerificationBodyLimitFilter())
+                .addFilters(new RequestIdFilter(), new RequestBodyLimitFilter(objectMapper))
                 .build();
     }
 
@@ -116,8 +116,9 @@ class EmailVerificationControllerTest {
         mockMvc.perform(post("/api/v1/email-verifications")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(oversized))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_REQUEST_BODY"));
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.code").value("REQUEST_BODY_TOO_LARGE"));
     }
 
     @Test
