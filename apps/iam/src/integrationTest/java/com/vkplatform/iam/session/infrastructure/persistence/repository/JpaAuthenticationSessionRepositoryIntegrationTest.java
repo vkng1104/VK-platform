@@ -114,7 +114,7 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
         AuthenticationSession active = createSession(sessionId, ACCOUNT_ID);
         repository.create(active);
 
-        assertThat(repository.revokeOwned(
+        assertThat(repository.revokeByIdForAccount(
                 UUID.randomUUID(),
                 sessionId,
                 SessionRevokeReason.USER_REQUEST,
@@ -122,7 +122,7 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
         )).isFalse();
         assertThat(repository.findById(sessionId)).contains(active);
 
-        assertThat(repository.revokeOwned(
+        assertThat(repository.revokeByIdForAccount(
                 ACCOUNT_ID,
                 sessionId,
                 SessionRevokeReason.USER_REQUEST,
@@ -133,7 +133,7 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
         assertThat(revoked.revokedAt()).isEqualTo(NOW.plusSeconds(20));
         assertThat(revoked.revokeReason()).isEqualTo(SessionRevokeReason.USER_REQUEST);
 
-        assertThat(repository.revokeOwned(
+        assertThat(repository.revokeByIdForAccount(
                 ACCOUNT_ID,
                 sessionId,
                 SessionRevokeReason.LOGOUT,
