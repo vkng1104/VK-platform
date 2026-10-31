@@ -10,6 +10,7 @@ import com.vkplatform.iam.session.api.command.ExchangeAuthenticationGrant;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
 import com.vkplatform.iam.session.domain.SessionPolicy;
+import com.vkplatform.iam.session.domain.SessionRevokeReason;
 import com.vkplatform.iam.verification.api.EmailVerificationOperations;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -112,6 +113,25 @@ class AuthenticationSessionTransactionIntegrationTest {
                 @Override
                 public Optional<AuthenticationSession> findById(UUID id) {
                     return Optional.empty();
+                }
+
+                @Override
+                public boolean revokeByIdForAccount(
+                        UUID accountId,
+                        UUID sessionId,
+                        SessionRevokeReason reason,
+                        Instant revokedAt
+                ) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public int revokeAll(
+                        UUID accountId,
+                        SessionRevokeReason reason,
+                        Instant revokedAt
+                ) {
+                    throw new UnsupportedOperationException();
                 }
             };
         }

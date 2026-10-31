@@ -10,7 +10,9 @@ public record AuthenticationSession(
         String clientId,
         SessionStatus status,
         Instant createdAt,
-        Instant expiresAt
+        Instant expiresAt,
+        Instant revokedAt,
+        SessionRevokeReason revokeReason
 ) {
     public AuthenticationSession {
         Objects.requireNonNull(id);
@@ -24,6 +26,13 @@ public record AuthenticationSession(
         }
         if (!expiresAt.isAfter(createdAt)) {
             throw new IllegalArgumentException("session expiry must follow creation");
+        }
+        if (status == SessionStatus.ACTIVE && (revokedAt != null || revokeReason != null)) {
+            throw new IllegalArgumentException("active session cannot have revocation state");
+        }
+        if (status == SessionStatus.REVOKED
+                && (revokedAt == null || revokeReason == null || revokedAt.isBefore(createdAt))) {
+            throw new IllegalArgumentException("revoked session state is incomplete");
         }
     }
 
@@ -40,7 +49,30 @@ public record AuthenticationSession(
                 clientId,
                 SessionStatus.ACTIVE,
                 createdAt,
-                expiresAt
+                expiresAt,
+                null,
+                null
+        );
+    }
+
+    public AuthenticationSession revoke(SessionRevokeReason reason, Instant now) {
+        Objects.requireNonNull(reason);
+        Objects.requireNonNull(now);
+        if (status == SessionStatus.REVOKED) {
+            return this;
+        }
+        if (now.isBefore(createdAt)) {
+            throw new IllegalArgumentException("session revocation precedes creation");
+        }
+        return new AuthenticationSession(
+                id,
+                accountId,
+                clientId,
+                SessionStatus.REVOKED,
+                createdAt,
+                expiresAt,
+                now,
+                reason
         );
     }
 

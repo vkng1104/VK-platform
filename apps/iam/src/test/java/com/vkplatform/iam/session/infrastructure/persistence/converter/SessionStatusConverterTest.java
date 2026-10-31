@@ -10,14 +10,16 @@ class SessionStatusConverterTest {
     private final SessionStatusConverter converter = new SessionStatusConverter();
 
     @Test
-    void storesTheSingleSupportedStatusUsingItsWireValue() {
+    void storesEverySupportedStatusUsingItsWireValue() {
         assertThat(converter.convertToDatabaseColumn(SessionStatus.ACTIVE)).isEqualTo("active");
         assertThat(converter.convertToEntityAttribute("active")).isEqualTo(SessionStatus.ACTIVE);
+        assertThat(converter.convertToDatabaseColumn(SessionStatus.REVOKED)).isEqualTo("revoked");
+        assertThat(converter.convertToEntityAttribute("revoked")).isEqualTo(SessionStatus.REVOKED);
     }
 
     @Test
-    void rejectsUnimplementedFutureStatuses() {
-        assertThatThrownBy(() -> converter.convertToEntityAttribute("revoked"))
+    void rejectsUnknownStatuses() {
+        assertThatThrownBy(() -> converter.convertToEntityAttribute("expired"))
                 .isInstanceOf(IllegalStateException.class);
     }
 }

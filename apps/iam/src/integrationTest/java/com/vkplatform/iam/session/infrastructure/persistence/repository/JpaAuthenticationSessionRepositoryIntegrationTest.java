@@ -1,6 +1,7 @@
 package com.vkplatform.iam.session.infrastructure.persistence.repository;
 
 import com.vkplatform.iam.session.domain.AuthenticationSession;
+import com.vkplatform.iam.session.domain.SessionRevokeReason;
 import com.vkplatform.iam.session.domain.SessionStatus;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.SessionEntity_;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +45,9 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
     void flywaySchemaMatchesTheSingleGeneratedSessionEntity() {
         assertThat(SessionEntity_.id).isNotNull();
         assertThat(SessionEntity_.accountId).isNotNull();
+        assertThat(SessionEntity_.status).isNotNull();
+        assertThat(SessionEntity_.revokedAt).isNotNull();
+        assertThat(SessionEntity_.revokeReason).isNotNull();
         assertThat(jdbcTemplate.queryForList("""
                 SELECT column_name
                 FROM information_schema.columns
@@ -55,12 +59,14 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
                 "client_id",
                 "status",
                 "created_at",
-                "expires_at"
+                "expires_at",
+                "revoked_at",
+                "revoke_reason"
         );
     }
 
     @Test
-    void createsAnActiveSessionWithOnlyTheExchangeState() {
+    void createsAnActiveSessionWithoutRevocationState() {
         UUID sessionId = UUID.fromString("f447ad02-3b85-4c4b-97bb-afbac7a93458");
         AuthenticationSession session = AuthenticationSession.create(
                 sessionId,
@@ -83,10 +89,14 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
                 Instant.class,
                 sessionId
         )).isEqualTo(NOW.plusSeconds(3600));
+        assertThat(jdbcTemplate.queryForMap(
+                "SELECT revoked_at, revoke_reason FROM iam_session.sessions WHERE id = ?",
+                sessionId
+        )).containsEntry("revoked_at", null).containsEntry("revoke_reason", null);
     }
 
     @Test
-    void databaseRejectsUnknownAccountsAndUnimplementedStatuses() {
+    void databaseRejectsUnknownAccounts() {
         AuthenticationSession missingAccount = AuthenticationSession.create(
                 UUID.randomUUID(),
                 UUID.randomUUID(),
@@ -96,20 +106,124 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
         );
         assertThatThrownBy(() -> repository.create(missingAccount))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
 
-        assertThatThrownBy(() -> jdbcTemplate.update("""
+    @Test
+    void revokesOnlyTheOwnedSessionAndPreservesTheFirstTransition() {
+        UUID sessionId = UUID.randomUUID();
+        AuthenticationSession active = createSession(sessionId, ACCOUNT_ID);
+        repository.create(active);
+
+        assertThat(repository.revokeByIdForAccount(
+                UUID.randomUUID(),
+                sessionId,
+                SessionRevokeReason.USER_REQUEST,
+                NOW.plusSeconds(10)
+        )).isFalse();
+        assertThat(repository.findById(sessionId)).contains(active);
+
+        assertThat(repository.revokeByIdForAccount(
+                ACCOUNT_ID,
+                sessionId,
+                SessionRevokeReason.USER_REQUEST,
+                NOW.plusSeconds(20)
+        )).isTrue();
+        AuthenticationSession revoked = repository.findById(sessionId).orElseThrow();
+        assertThat(revoked.status()).isEqualTo(SessionStatus.REVOKED);
+        assertThat(revoked.revokedAt()).isEqualTo(NOW.plusSeconds(20));
+        assertThat(revoked.revokeReason()).isEqualTo(SessionRevokeReason.USER_REQUEST);
+
+        assertThat(repository.revokeByIdForAccount(
+                ACCOUNT_ID,
+                sessionId,
+                SessionRevokeReason.LOGOUT,
+                NOW.plusSeconds(30)
+        )).isTrue();
+        assertThat(repository.findById(sessionId)).contains(revoked);
+    }
+
+    @Test
+    void revokesEveryActiveSessionForOneAccount() {
+        UUID otherAccountId = UUID.randomUUID();
+        insertAccount(otherAccountId);
+        AuthenticationSession first = repository.create(createSession(UUID.randomUUID(), ACCOUNT_ID));
+        AuthenticationSession second = repository.create(createSession(UUID.randomUUID(), ACCOUNT_ID));
+        AuthenticationSession other = repository.create(createSession(UUID.randomUUID(), otherAccountId));
+
+        assertThat(repository.revokeAll(
+                ACCOUNT_ID,
+                SessionRevokeReason.ALL_SESSIONS_REVOKED,
+                NOW.plusSeconds(40)
+        )).isEqualTo(2);
+        assertThat(repository.revokeAll(
+                ACCOUNT_ID,
+                SessionRevokeReason.ALL_SESSIONS_REVOKED,
+                NOW.plusSeconds(50)
+        )).isZero();
+        assertThat(repository.findById(first.id()).orElseThrow().status()).isEqualTo(SessionStatus.REVOKED);
+        assertThat(repository.findById(second.id()).orElseThrow().status()).isEqualTo(SessionStatus.REVOKED);
+        assertThat(repository.findById(other.id())).contains(other);
+    }
+
+    @Test
+    void databaseRejectsInconsistentRevocationState() {
+        assertThatThrownBy(() -> insertRawSession(
+                SessionStatus.REVOKED.wireValue(),
+                null,
+                null,
+                NOW
+        )).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> insertRawSession(
+                SessionStatus.ACTIVE.wireValue(),
+                NOW.plusSeconds(1),
+                SessionRevokeReason.USER_REQUEST.wireValue(),
+                NOW
+        )).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> insertRawSession(
+                SessionStatus.REVOKED.wireValue(),
+                NOW.plusSeconds(1),
+                "refresh_token_reuse",
+                NOW
+        )).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> insertRawSession(
+                SessionStatus.REVOKED.wireValue(),
+                NOW.minusSeconds(1),
+                SessionRevokeReason.USER_REQUEST.wireValue(),
+                NOW
+        )).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    private void insertRawSession(
+            String status,
+            Instant revokedAt,
+            String revokeReason,
+            Instant createdAt
+    ) {
+        jdbcTemplate.update("""
                 INSERT INTO iam_session.sessions (
-                    id, account_id, client_id, status, created_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    id, account_id, client_id, status, created_at, expires_at,
+                    revoked_at, revoke_reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 UUID.randomUUID(),
                 ACCOUNT_ID,
                 "vk-platform-bff",
-                "revoked",
-                timestamp(NOW),
-                timestamp(NOW.plusSeconds(3600))
-        )).isInstanceOf(DataIntegrityViolationException.class);
-        assertThat(SessionStatus.values()).containsExactly(SessionStatus.ACTIVE);
+                status,
+                timestamp(createdAt),
+                timestamp(createdAt.plusSeconds(3600)),
+                revokedAt == null ? null : timestamp(revokedAt),
+                revokeReason
+        );
+    }
+
+    private AuthenticationSession createSession(UUID sessionId, UUID accountId) {
+        return AuthenticationSession.create(
+                sessionId,
+                accountId,
+                "vk-platform-bff",
+                NOW,
+                NOW.plusSeconds(3600)
+        );
     }
 
     private void insertAccount(UUID accountId) {

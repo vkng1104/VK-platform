@@ -2,6 +2,7 @@ package com.vkplatform.iam.session.infrastructure.config;
 
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
+import com.vkplatform.iam.session.domain.SessionRevokeReason;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -88,6 +89,24 @@ class DatabaseValidatingSecurityContextRepositoryTest {
                 NOW.minusSeconds(7200),
                 NOW.minusSeconds(3600)
         )));
+
+        SecurityContext context = repository.loadDeferredContext(browser.request()).get();
+
+        assertThat(context.getAuthentication()).isNull();
+        assertThat(browser.session().isInvalid()).isTrue();
+    }
+
+    @Test
+    void clearsTheFrameworkContextWhenTheDatabaseSessionWasRevoked() {
+        BrowserContext browser = browserContext(SESSION_ID.toString());
+        AuthenticationSession revoked = AuthenticationSession.create(
+                SESSION_ID,
+                ACCOUNT_ID,
+                CLIENT_ID,
+                NOW.minusSeconds(60),
+                NOW.plusSeconds(3600)
+        ).revoke(SessionRevokeReason.LOGOUT, NOW.minusSeconds(1));
+        when(sessions.findById(SESSION_ID)).thenReturn(Optional.of(revoked));
 
         SecurityContext context = repository.loadDeferredContext(browser.request()).get();
 

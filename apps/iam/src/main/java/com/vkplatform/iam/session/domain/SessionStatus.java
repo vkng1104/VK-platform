@@ -1,7 +1,8 @@
 package com.vkplatform.iam.session.domain;
 
 public enum SessionStatus {
-    ACTIVE("active");
+    ACTIVE("active"),
+    REVOKED("revoked");
 
     private final String wireValue;
 
