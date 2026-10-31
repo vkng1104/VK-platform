@@ -1,12 +1,10 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.jwk.JWKSet;
-import com.nimbusds.jose.jwk.KeyUse;
-import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
-import com.vkplatform.iam.session.infrastructure.crypto.RsaKeyLoader;
+import com.vkplatform.iam.session.infrastructure.crypto.AesGcmSigningKeyProtector;
+import com.vkplatform.iam.session.infrastructure.crypto.SigningKeyProtector;
+import com.vkplatform.iam.session.infrastructure.crypto.SigningKeyRuntime;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -20,33 +18,36 @@ import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 
-import java.security.KeyPair;
-import java.security.interfaces.RSAPrivateKey;
-import java.security.interfaces.RSAPublicKey;
+import java.security.SecureRandom;
 
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = "iam.oauth.enabled", havingValue = "true")
 public class OAuthSigningConfiguration {
     @Bean
-    RSAKey oauthSigningKey(OAuthProperties properties) {
-        KeyPair pair = RsaKeyLoader.load(
-                properties.signingPrivateKeyPkcs8Base64(),
-                properties.signingPublicKeyX509Base64()
+    SigningKeyProtector signingKeyProtector(
+            SigningKeyProperties properties,
+            SecureRandom random
+    ) {
+        return new AesGcmSigningKeyProtector(
+                properties.protectionVersion(),
+                AesGcmSigningKeyProtector.parseProtectionKeys(properties.protectionKeys()),
+                random
         );
-        return new RSAKey.Builder((RSAPublicKey) pair.getPublic())
-                .privateKey((RSAPrivateKey) pair.getPrivate())
-                .keyUse(KeyUse.SIGNATURE)
-                .algorithm(JWSAlgorithm.RS256)
-                .keyID(properties.signingKeyId())
-                .build();
     }
 
     @Bean
-    JWKSource<SecurityContext> oauthSigningJwkSource(RSAKey signingKey) {
-        JWKSet keySet = new JWKSet(signingKey);
-        return (selector, context) -> selector.select(keySet);
+    JWKSource<SecurityContext> oauthSigningJwkSource(
+            SigningKeyRuntime signingKeys,
+            OAuthProperties oauth,
+            OAuthAuthorizationProperties authorization
+    ) {
+        if (oauth.jwksCacheTtl().compareTo(authorization.accessTokenTtl()) > 0) {
+            throw new IllegalStateException(
+                    "IAM_OAUTH_JWKS_CACHE_TTL cannot exceed IAM_OAUTH_ACCESS_TOKEN_TTL"
+            );
+        }
+        return (selector, context) -> signingKeys.select(selector);
     }
 
     @Bean
@@ -56,12 +57,10 @@ public class OAuthSigningConfiguration {
 
     @Bean
     JwtDecoder oauthJwtDecoder(
-            RSAKey signingKey,
+            JWKSource<SecurityContext> signingKeys,
             OAuthAuthorizationProperties properties
-    ) throws com.nimbusds.jose.JOSEException {
-        NimbusJwtDecoder decoder = NimbusJwtDecoder.withPublicKey(signingKey.toRSAPublicKey())
-                .signatureAlgorithm(SignatureAlgorithm.RS256)
-                .build();
+    ) {
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSource(signingKeys).build();
         OAuth2TokenValidator<Jwt> audience = token -> token.getAudience().contains(properties.audience())
                 ? OAuth2TokenValidatorResult.success()
                 : OAuth2TokenValidatorResult.failure(new OAuth2Error(

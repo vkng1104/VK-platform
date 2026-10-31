@@ -93,7 +93,11 @@ tasks.register("generatePersistence") {
 			"com/vkplatform/iam/identity/infrastructure/persistence/entity/SecurityEventEntity_.java",
 			"com/vkplatform/iam/identity/infrastructure/persistence/entity/VerificationGrantEntity_.java",
 			"com/vkplatform/iam/session/infrastructure/persistence/entity/OAuthAuthorizationEntity_.java",
+			"com/vkplatform/iam/session/infrastructure/persistence/entity/OperatorOperationEntity_.java",
 			"com/vkplatform/iam/session/infrastructure/persistence/entity/SessionEntity_.java",
+			"com/vkplatform/iam/session/infrastructure/persistence/entity/SigningKeyEntity_.java",
+			"com/vkplatform/iam/session/infrastructure/persistence/entity/SigningKeyEventEntity_.java",
+			"com/vkplatform/iam/session/infrastructure/persistence/entity/SigningKeyOperationGuardEntity_.java",
 			"com/vkplatform/iam/verification/infrastructure/persistence/entity/EmailVerificationChallengeEntity_.java",
 			"com/vkplatform/iam/verification/infrastructure/persistence/entity/EmailVerificationOperationGuardEntity_.java"
 		)

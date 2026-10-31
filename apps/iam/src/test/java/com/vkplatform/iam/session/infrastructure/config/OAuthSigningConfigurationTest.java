@@ -1,8 +1,12 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
 import com.nimbusds.jose.jwk.RSAKey;
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.jwk.KeyUse;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
+import com.vkplatform.iam.session.infrastructure.crypto.SigningKeyRuntime;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -22,6 +26,10 @@ import java.util.Base64;
 import java.net.URI;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class OAuthSigningConfigurationTest {
     @Test
@@ -35,8 +43,22 @@ class OAuthSigningConfigurationTest {
                 Duration.ofMinutes(5)
         );
         OAuthSigningConfiguration configuration = new OAuthSigningConfiguration();
-        RSAKey signingKey = configuration.oauthSigningKey(properties);
-        JWKSource<SecurityContext> source = configuration.oauthSigningJwkSource(signingKey);
+        RSAKey signingKey = new RSAKey.Builder((RSAPublicKey) pair.getPublic())
+                .privateKey(pair.getPrivate())
+                .keyUse(KeyUse.SIGNATURE)
+                .algorithm(JWSAlgorithm.RS256)
+                .keyID("oauth-signing-2026")
+                .build();
+        OAuthAuthorizationProperties authorization = authorization(Duration.ofMinutes(5));
+        SigningKeyRuntime signingKeys = mock(SigningKeyRuntime.class);
+        when(signingKeys.select(any())).thenAnswer(invocation -> invocation
+                .<com.nimbusds.jose.jwk.JWKSelector>getArgument(0)
+                .select(new JWKSet(signingKey)));
+        JWKSource<SecurityContext> source = configuration.oauthSigningJwkSource(
+                signingKeys,
+                properties,
+                authorization
+        );
         JwtEncoder encoder = configuration.oauthJwtEncoder(source);
         Instant now = Instant.now();
 
@@ -58,18 +80,40 @@ class OAuthSigningConfigurationTest {
         assertThat(encoded.getHeaders().get("kid")).isEqualTo("oauth-signing-2026");
         assertThat(decoded.getSubject()).isEqualTo("account-123");
 
-        OAuthAuthorizationProperties authorization = new OAuthAuthorizationProperties(
+        JwtDecoder applicationDecoder = configuration.oauthJwtDecoder(source, authorization);
+        assertThat(applicationDecoder.decode(encoded.getTokenValue()).getSubject())
+                .isEqualTo("account-123");
+    }
+
+    @Test
+    void rejectsAJwksCacheWindowLongerThanTheAccessTokenLifetime() {
+        OAuthSigningConfiguration configuration = new OAuthSigningConfiguration();
+        OAuthProperties oauth = new OAuthProperties(
+                true,
+                null,
+                null,
+                null,
+                Duration.ofMinutes(6)
+        );
+
+        assertThatThrownBy(() -> configuration.oauthSigningJwkSource(
+                mock(SigningKeyRuntime.class),
+                oauth,
+                authorization(Duration.ofMinutes(5))
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("IAM_OAUTH_JWKS_CACHE_TTL");
+    }
+
+    private static OAuthAuthorizationProperties authorization(Duration accessTokenTtl) {
+        return new OAuthAuthorizationProperties(
                 URI.create("https://iam.example.test"),
                 "vk-platform-api",
                 URI.create("https://web.example.test/sign-in"),
                 URI.create("https://web.example.test/api/auth/callback"),
                 Duration.ofMinutes(5),
-                Duration.ofMinutes(5),
+                accessTokenTtl,
                 Duration.ofDays(30)
         );
-        JwtDecoder applicationDecoder = configuration.oauthJwtDecoder(signingKey, authorization);
-        assertThat(applicationDecoder.decode(encoded.getTokenValue()).getSubject())
-                .isEqualTo("account-123");
     }
 
     private static KeyPair rsaPair() throws Exception {

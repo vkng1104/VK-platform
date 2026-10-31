@@ -27,6 +27,10 @@ public class HealthController {
         if (databaseHealth == null || !Status.UP.equals(databaseHealth.getStatus())) {
             throw new IllegalStateException("IAM database is not ready");
         }
+        HealthDescriptor signingKeyHealth = healthEndpoint.healthForPath("signingKey");
+        if (signingKeyHealth != null && !Status.UP.equals(signingKeyHealth.getStatus())) {
+            throw new IllegalStateException("IAM signing key is not ready");
+        }
         return Map.of("status", "ready", "service", "iam");
     }
 }
