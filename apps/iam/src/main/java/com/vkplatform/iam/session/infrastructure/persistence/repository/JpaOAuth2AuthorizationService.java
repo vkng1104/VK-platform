@@ -76,11 +76,18 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         UUID requestedSessionId = sessionId(authorization);
         UUID persistedSessionId = existing == null ? null : existing.sessionId();
         UUID effectiveSessionId = requestedSessionId == null ? persistedSessionId : requestedSessionId;
-        lockUsableSession(
-                effectiveSessionId,
-                authorization.getPrincipalName(),
-                authorization.getRegisteredClientId()
-        );
+        if (AuthorizationGrantType.CLIENT_CREDENTIALS.equals(
+                authorization.getAuthorizationGrantType()
+        )) {
+            validateClientCredentialsAuthorization(authorization, effectiveSessionId);
+            effectiveSessionId = null;
+        } else {
+            lockUsableSession(
+                    effectiveSessionId,
+                    authorization.getPrincipalName(),
+                    authorization.getRegisteredClientId()
+            );
+        }
         OAuthAuthorizationEntity entity = authorizations.findLockedById(authorization.getId())
                 .orElseGet(OAuthAuthorizationEntity::new);
         if (entity.invalidatedAt() != null) {
@@ -100,7 +107,9 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         if (candidate == null) {
             return;
         }
-        lockUsableSession(candidate);
+        if (!isClientCredentials(candidate)) {
+            lockUsableSession(candidate);
+        }
         authorizations.findLockedById(authorization.getId()).ifPresent(entity -> entity.invalidate(
                 clock.instant(),
                 OAuthAuthorizationInvalidationReason.AUTHORIZATION_REMOVED
@@ -198,6 +207,10 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
     }
 
     private boolean lockUsableSession(OAuthAuthorizationEntity authorization) {
+        if (isClientCredentials(authorization)) {
+            return authorization.invalidatedAt() == null
+                    && clients.findById(authorization.registeredClientId()) != null;
+        }
         try {
             lockUsableSession(
                     authorization.sessionId(),
@@ -232,6 +245,9 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
     private boolean isUsable(OAuthAuthorizationEntity entity) {
         if (entity.invalidatedAt() != null) {
             return false;
+        }
+        if (isClientCredentials(entity)) {
+            return clients.findById(entity.registeredClientId()) != null;
         }
         return sessions.findById(entity.sessionId())
                 .map(SessionEntity::toDomain)
@@ -292,6 +308,26 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         ));
         sessions.findLockedById(entity.sessionId())
                 .ifPresent(session -> session.apply(session.toDomain().touch(now)));
+    }
+
+    private void validateClientCredentialsAuthorization(
+            OAuth2Authorization authorization,
+            UUID sessionId
+    ) {
+        if (sessionId != null) {
+            throw new IllegalStateException("service OAuth authorization cannot reference a user session");
+        }
+        RegisteredClient client = clients.findById(authorization.getRegisteredClientId());
+        if (client == null
+                || !client.getAuthorizationGrantTypes().contains(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                || !client.getClientId().equals(authorization.getPrincipalName())) {
+            throw new IllegalStateException("service OAuth authorization is invalid");
+        }
+    }
+
+    private static boolean isClientCredentials(OAuthAuthorizationEntity authorization) {
+        return AuthorizationGrantType.CLIENT_CREDENTIALS.getValue()
+                .equals(authorization.authorizationGrantType());
     }
 
     private void mapAuthorization(

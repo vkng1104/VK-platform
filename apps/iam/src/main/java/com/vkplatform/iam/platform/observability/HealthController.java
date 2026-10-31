@@ -31,6 +31,10 @@ public class HealthController {
         if (signingKeyHealth != null && !Status.UP.equals(signingKeyHealth.getStatus())) {
             throw new IllegalStateException("IAM signing key is not ready");
         }
+        HealthDescriptor oauthClientHealth = healthEndpoint.healthForPath("oauthClient");
+        if (oauthClientHealth != null && !Status.UP.equals(oauthClientHealth.getStatus())) {
+            throw new IllegalStateException("IAM OAuth clients are not ready");
+        }
         return Map.of("status", "ready", "service", "iam");
     }
 }
