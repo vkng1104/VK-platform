@@ -32,6 +32,7 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
+        jdbcTemplate.update("DELETE FROM iam_session.oauth_refresh_tokens");
         jdbcTemplate.update("DELETE FROM iam_session.oauth_authorizations");
         jdbcTemplate.update("DELETE FROM iam_session.sessions");
         jdbcTemplate.update("DELETE FROM iam_identity.security_events");
@@ -46,7 +47,9 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
         assertThat(SessionEntity_.id).isNotNull();
         assertThat(SessionEntity_.accountId).isNotNull();
         assertThat(SessionEntity_.status).isNotNull();
+        assertThat(SessionEntity_.lastRefreshedAt).isNotNull();
         assertThat(SessionEntity_.revokedAt).isNotNull();
+        assertThat(SessionEntity_.compromisedAt).isNotNull();
         assertThat(SessionEntity_.revokeReason).isNotNull();
         assertThat(jdbcTemplate.queryForList("""
                 SELECT column_name
@@ -59,9 +62,12 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
                 "client_id",
                 "status",
                 "created_at",
+                "last_refreshed_at",
                 "expires_at",
                 "revoked_at",
-                "revoke_reason"
+                "compromised_at",
+                "revoke_reason",
+                "version"
         );
     }
 
@@ -201,14 +207,15 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
     ) {
         jdbcTemplate.update("""
                 INSERT INTO iam_session.sessions (
-                    id, account_id, client_id, status, created_at, expires_at,
+                    id, account_id, client_id, status, created_at, last_refreshed_at, expires_at,
                     revoked_at, revoke_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 UUID.randomUUID(),
                 ACCOUNT_ID,
                 "vk-platform-bff",
                 status,
+                timestamp(createdAt),
                 timestamp(createdAt),
                 timestamp(createdAt.plusSeconds(3600)),
                 revokedAt == null ? null : timestamp(revokedAt),
