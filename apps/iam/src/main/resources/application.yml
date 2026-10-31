@@ -59,6 +59,8 @@ iam:
     bff-client-secret: ${IAM_BFF_CLIENT_SECRET:}
     bff-origin: ${IAM_BFF_ORIGIN:http://localhost:3000}
     absolute-ttl: ${IAM_ABSOLUTE_SESSION_TTL:P30D}
+    browser-cookie-name: ${IAM_SESSION_COOKIE_NAME:VK_IAM_SESSION}
+    browser-cookie-secure: ${IAM_SESSION_COOKIE_SECURE:true}
   oauth:
     enabled: ${IAM_OAUTH_ENABLED:false}
     signing-key-id: ${IAM_OAUTH_SIGNING_KEY_ID:}

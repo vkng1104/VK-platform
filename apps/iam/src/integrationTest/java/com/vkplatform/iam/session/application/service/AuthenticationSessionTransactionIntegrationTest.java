@@ -117,6 +117,21 @@ class AuthenticationSessionTransactionIntegrationTest {
                 }
 
                 @Override
+                public Optional<AuthenticationSession> findOwned(UUID accountId, UUID sessionId) {
+                    return Optional.empty();
+                }
+
+                @Override
+                public SessionPage findActiveByAccount(
+                        UUID accountId,
+                        Instant now,
+                        int page,
+                        int size
+                ) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
                 public boolean revokeByIdForAccount(
                         UUID accountId,
                         UUID sessionId,
@@ -129,6 +144,39 @@ class AuthenticationSessionTransactionIntegrationTest {
                 @Override
                 public int revokeAll(
                         UUID accountId,
+                        SessionRevokeReason reason,
+                        Instant revokedAt
+                ) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public boolean revokeOwnedAndInvalidate(
+                        UUID accountId,
+                        UUID sessionId,
+                        SessionRevokeReason reason,
+                        Instant revokedAt
+                ) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public RevokeResult revokeOwnedFromCurrent(
+                        UUID accountId,
+                        UUID currentSessionId,
+                        UUID targetSessionId,
+                        String expectedClientId,
+                        SessionRevokeReason reason,
+                        Instant revokedAt
+                ) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public RevokeAllResult revokeAllFromCurrent(
+                        UUID accountId,
+                        UUID currentSessionId,
+                        String expectedClientId,
                         SessionRevokeReason reason,
                         Instant revokedAt
                 ) {
