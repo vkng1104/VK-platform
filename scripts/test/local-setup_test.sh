@@ -19,6 +19,8 @@ make -n db-seed-local SOURCE_ENV=development >/dev/null
 make -n generate-persistence >/dev/null
 make -n check-persistence >/dev/null
 make -n test-persistence >/dev/null
+make -n dbdiagram >/dev/null
+make -n check-dbdiagram >/dev/null
 
 monitor_command="$(make -n dev-monitor)"
 case "$monitor_command" in
@@ -69,6 +71,7 @@ grep -q '^  iam:$' .github/workflows/lint.yml || fail "IAM compile checks are mi
 grep -q '^  persistence:$' .github/workflows/lint.yml || fail "persistence architecture checks are missing from CI"
 grep -q '^  changes:$' .github/workflows/lint.yml || fail "lint does not detect changed areas"
 grep -q '^  changes:$' .github/workflows/tests.yml || fail "PR tests do not detect changed areas"
+grep -q '^  dbdiagram:$' .github/workflows/lint.yml || fail "dbdiagram checks are missing from CI"
 grep -Fq 'config/persistence/custom-query-registry.txt' README.md ||
   fail "the reviewed custom-query registry is not documented"
 if [ -e config/persistence/raw-query-allowlist.txt ]; then
@@ -78,5 +81,6 @@ fi
 "$repository_root/scripts/test/repository-policy_test.sh"
 "$repository_root/scripts/test/db-seed-local_test.sh"
 "$repository_root/scripts/test/changed-areas_test.sh"
+"$repository_root/scripts/test/dbdiagram_test.sh"
 
 echo "local setup tests passed"

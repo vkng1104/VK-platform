@@ -25,6 +25,7 @@ jobs:
       api: ${{ steps.areas.outputs.api }}
       iam: ${{ steps.areas.outputs.iam }}
       persistence: ${{ steps.areas.outputs.persistence }}
+      dbdiagram: ${{ steps.areas.outputs.dbdiagram }}
 
     steps:
       - name: Check out repository
@@ -114,3 +115,17 @@ jobs:
 
       - name: Check ORM boundaries and generated persistence
         run: make check-persistence
+
+  dbdiagram:
+    name: Database diagrams
+    needs: changes
+    if: needs.changes.outputs.dbdiagram == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Check dbdiagram files match migrations
+        run: make check-dbdiagram

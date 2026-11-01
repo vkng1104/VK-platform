@@ -4,7 +4,7 @@ set -eu
 
 repository_root="$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)"
 changed_areas_script="$repository_root/scripts/ci/changed-areas.sh"
-all_areas='web api iam persistence setup'
+all_areas='web api iam persistence setup dbdiagram'
 
 fail() {
   echo "changed areas test failed: $1" >&2
@@ -60,5 +60,16 @@ assert_areas 'mixed changes run the union of their areas' \
   'README.md
 apps/web/src/app/page.tsx' \
   'web setup'
+assert_areas 'an IAM migration also checks the diagrams' \
+  'apps/iam/src/main/resources/db/migration/V8__add_refresh_token_rotation.sql' \
+  'iam persistence dbdiagram'
+assert_areas 'an API migration also checks the diagrams' \
+  'apps/api/migrations/000003_add_project_tags.up.sql' \
+  'api persistence dbdiagram'
+assert_areas 'diagram files alone run only the diagram check' 'apps/iam/dbdiagram/iam_session.dbml' 'dbdiagram'
+assert_areas 'the diagram manifest runs only the diagram check' 'config/dbdiagram/services.txt' 'dbdiagram'
+assert_areas 'diagram scripts run the diagram check and its tests' \
+  'scripts/generate-dbdiagram.sh' \
+  'setup dbdiagram'
 
 echo "changed areas tests passed"

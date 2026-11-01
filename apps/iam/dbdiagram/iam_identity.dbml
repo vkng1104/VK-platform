@@ -1,0 +1,161 @@
+// GENERATED FILE - DO NOT EDIT.
+// Source of truth: apps/iam/src/main/resources/db/migration
+// Regenerate with: make dbdiagram
+
+Project iam_identity {
+  database_type: 'PostgreSQL'
+}
+
+Table iam_identity.accounts {
+  id uuid [pk]
+  status text [not null]
+  token_not_before timestamptz [not null]
+  version bigint [not null, default: 0]
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+  deleted_at timestamptz
+
+  Note: '''
+    Checks:
+    - accounts_deleted_state_check: CHECK (status = 'deleted'::text AND deleted_at IS NOT NULL OR status <> 'deleted'::text AND deleted_at IS NULL)
+    - accounts_status_check: CHECK (status = ANY (ARRAY['active'::text, 'suspended'::text, 'recovery_locked'::text, 'deleted'::text]))
+    - accounts_timeline_check: CHECK (token_not_before >= created_at AND updated_at >= created_at AND (deleted_at IS NULL OR deleted_at >= created_at))
+    - accounts_version_check: CHECK (version >= 0)
+  '''
+}
+
+Table iam_identity.email_verification_challenges {
+  id uuid [pk]
+  purpose text [not null]
+  email_fingerprint bytea [not null]
+  requester_fingerprint bytea
+  otp_digest bytea [not null]
+  attempt_count smallint [not null, default: 0]
+  max_attempts smallint [not null]
+  expires_at timestamptz [not null]
+  resend_not_before timestamptz [not null]
+  delivery_status text [not null]
+  sent_at timestamptz
+  verified_at timestamptz
+  invalidated_at timestamptz
+  created_at timestamptz [not null]
+
+  Indexes {
+    created_at [name: 'email_verification_challenges_created_idx']
+    (email_fingerprint, `created_at DESC`) [name: 'email_verification_challenges_email_created_idx']
+    expires_at [name: 'email_verification_challenges_expires_idx']
+    created_at [name: 'email_verification_challenges_failed_created_idx', note: 'WHERE (delivery_status = \'failed\'::text)']
+    invalidated_at [name: 'email_verification_challenges_invalidated_idx', note: 'WHERE (invalidated_at IS NOT NULL)']
+    (requester_fingerprint, `created_at DESC`) [name: 'email_verification_challenges_requester_created_idx', note: 'WHERE (requester_fingerprint IS NOT NULL)']
+    verified_at [name: 'email_verification_challenges_verified_idx', note: 'WHERE (verified_at IS NOT NULL)']
+  }
+
+  Note: '''
+    Checks:
+    - email_verification_challenges_attempt_count_check: CHECK (attempt_count >= 0 AND attempt_count <= max_attempts)
+    - email_verification_challenges_delivery_status_check: CHECK (delivery_status = ANY (ARRAY['pending'::text, 'sent'::text, 'failed'::text]))
+    - email_verification_challenges_email_fingerprint_check: CHECK (octet_length(email_fingerprint) = 32)
+    - email_verification_challenges_expiry_check: CHECK (expires_at > created_at)
+    - email_verification_challenges_max_attempts_check: CHECK (max_attempts > 0)
+    - email_verification_challenges_otp_digest_check: CHECK (octet_length(otp_digest) = 32)
+    - email_verification_challenges_purpose_check: CHECK (purpose = ANY (ARRAY['restricted_resource_access'::text, 'sign_in'::text]))
+    - email_verification_challenges_requester_fingerprint_check: CHECK (requester_fingerprint IS NULL OR octet_length(requester_fingerprint) = 32)
+    - email_verification_challenges_resend_check: CHECK (resend_not_before > created_at)
+    - email_verification_challenges_sent_state_check: CHECK (delivery_status = 'pending'::text AND sent_at IS NULL OR delivery_status = 'sent'::text AND sent_at IS NOT NULL OR delivery_status = 'failed'::text)
+    - email_verification_challenges_timeline_check: CHECK ((sent_at IS NULL OR sent_at >= created_at) AND (verified_at IS NULL OR verified_at >= created_at) AND (invalidated_at IS NULL OR invalidated_at >= created_at))
+    - email_verification_challenges_verified_state_check: CHECK (verified_at IS NULL OR delivery_status = 'sent'::text AND sent_at IS NOT NULL)
+  '''
+}
+
+Table iam_identity.email_verification_operation_guards {
+  id smallint [pk]
+
+  Note: '''
+    Checks:
+    - email_verification_operation_guards_singleton_check: CHECK (id = 1)
+  '''
+}
+
+Table iam_identity.identity_operation_guards {
+  id smallint [pk]
+
+  Note: '''
+    Checks:
+    - identity_operation_guards_range_check: CHECK (id >= 0 AND id <= 63)
+  '''
+}
+
+Table iam_identity.login_identities {
+  id uuid [pk]
+  account_id uuid [not null]
+  kind text [not null]
+  identifier_fingerprint bytea [not null]
+  verified_at timestamptz [not null]
+  created_at timestamptz [not null]
+
+  Indexes {
+    account_id [name: 'login_identities_account_idx']
+    (kind, identifier_fingerprint) [unique, name: 'login_identities_kind_fingerprint_unique']
+  }
+
+  Note: '''
+    Checks:
+    - login_identities_fingerprint_check: CHECK (octet_length(identifier_fingerprint) = 32)
+    - login_identities_kind_check: CHECK (kind = 'email'::text)
+    - login_identities_timeline_check: CHECK (verified_at >= created_at)
+  '''
+}
+
+Table iam_identity.security_events {
+  id uuid [pk]
+  event_type text [not null]
+  account_id uuid
+  target_id uuid
+  actor_id varchar(128)
+  request_id varchar(128)
+  occurred_at timestamptz [not null]
+
+  Indexes {
+    (account_id, `occurred_at DESC`) [name: 'security_events_account_occurred_idx']
+    (`occurred_at DESC`) [name: 'security_events_occurred_idx']
+  }
+
+  Note: '''
+    Checks:
+    - security_events_actor_check: CHECK (actor_id IS NULL OR actor_id::text <> ''::text AND actor_id::text = btrim(actor_id::text))
+    - security_events_request_check: CHECK (request_id IS NULL OR request_id::text <> ''::text AND request_id::text = btrim(request_id::text))
+    - security_events_type_check: CHECK (event_type = ANY (ARRAY['account_created'::text, 'login_identity_linked'::text, 'sign_in_grant_issued'::text, 'sign_in_grant_consumed'::text, 'account_suspended'::text, 'account_reactivated'::text, 'account_deleted'::text]))
+  '''
+}
+
+Table iam_identity.verification_grants {
+  id uuid [pk]
+  purpose text [not null]
+  account_id uuid [not null]
+  identity_fingerprint bytea [not null]
+  grant_digest bytea [not null]
+  audience varchar(128) [not null]
+  expires_at timestamptz [not null]
+  consumed_at timestamptz
+  created_at timestamptz [not null]
+
+  Indexes {
+    (account_id, `created_at DESC`) [name: 'verification_grants_account_created_idx']
+    grant_digest [unique, name: 'verification_grants_digest_unique']
+    (expires_at, consumed_at) [name: 'verification_grants_terminal_idx']
+  }
+
+  Note: '''
+    Checks:
+    - verification_grants_audience_check: CHECK (audience::text <> ''::text AND audience::text = btrim(audience::text))
+    - verification_grants_consumed_timeline_check: CHECK (consumed_at IS NULL OR consumed_at >= created_at)
+    - verification_grants_digest_check: CHECK (octet_length(grant_digest) = 32)
+    - verification_grants_expiry_check: CHECK (expires_at > created_at)
+    - verification_grants_identity_fingerprint_check: CHECK (octet_length(identity_fingerprint) = 32)
+    - verification_grants_purpose_check: CHECK (purpose = 'sign_in'::text)
+  '''
+}
+
+Ref login_identities_account_id_fkey: iam_identity.login_identities.account_id > iam_identity.accounts.id [delete: restrict]
+Ref security_events_account_id_fkey: iam_identity.security_events.account_id > iam_identity.accounts.id [delete: restrict]
+Ref verification_grants_account_id_fkey: iam_identity.verification_grants.account_id > iam_identity.accounts.id [delete: restrict]

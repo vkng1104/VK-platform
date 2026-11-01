@@ -12,6 +12,7 @@ api=false
 iam=false
 persistence=false
 setup=false
+dbdiagram=false
 changed=false
 
 enable_all() {
@@ -20,6 +21,7 @@ enable_all() {
   iam=true
   persistence=true
   setup=true
+  dbdiagram=true
 }
 
 while IFS= read -r path || [ -n "$path" ]; do
@@ -34,6 +36,19 @@ while IFS= read -r path || [ -n "$path" ]; do
       ;;
     AGENTS.md|README.md|.agents/*|.env.example)
       setup=true
+      ;;
+    apps/api/dbdiagram/*|apps/iam/dbdiagram/*|config/dbdiagram/*)
+      dbdiagram=true
+      ;;
+    apps/api/migrations/*)
+      api=true
+      persistence=true
+      dbdiagram=true
+      ;;
+    apps/iam/src/main/resources/db/migration/*)
+      iam=true
+      persistence=true
+      dbdiagram=true
       ;;
     apps/web/*|internal/content/*|package.json|package-lock.json|.nvmrc)
       web=true
@@ -50,6 +65,10 @@ while IFS= read -r path || [ -n "$path" ]; do
       persistence=true
       setup=true
       ;;
+    scripts/*dbdiagram*)
+      dbdiagram=true
+      setup=true
+      ;;
     config/*|scripts/*)
       setup=true
       ;;
@@ -63,5 +82,5 @@ done
 
 [ "$changed" = true ] || enable_all
 
-printf 'web=%s\napi=%s\niam=%s\npersistence=%s\nsetup=%s\n' \
-  "$web" "$api" "$iam" "$persistence" "$setup"
+printf 'web=%s\napi=%s\niam=%s\npersistence=%s\nsetup=%s\ndbdiagram=%s\n' \
+  "$web" "$api" "$iam" "$persistence" "$setup" "$dbdiagram"

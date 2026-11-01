@@ -1,0 +1,31 @@
+// GENERATED FILE - DO NOT EDIT.
+// Source of truth: ledger/migrations
+// Regenerate with: make dbdiagram
+
+Project ledger_public {
+  database_type: 'PostgreSQL'
+}
+
+Table public.accounts {
+  id bigint [pk, increment]
+  code text [not null]
+
+  Indexes {
+    (`lower(code)`) [unique, name: 'accounts_code_lower_idx']
+  }
+}
+
+Table public.entries {
+  id bigint [pk, increment]
+  account_id bigint [not null]
+  amount numeric(12,2) [not null]
+  booked_on date [not null]
+  tags "text[]" [not null, default: '{}']
+  memo text
+
+  Indexes {
+    (account_id, booked_on) [name: 'entries_account_booked_idx']
+  }
+}
+
+Ref entries_account_id_fkey: public.entries.account_id > public.accounts.id

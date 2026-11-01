@@ -1,0 +1,51 @@
+// GENERATED FILE - DO NOT EDIT.
+// Source of truth: shop/migrations
+// Regenerate with: make dbdiagram
+
+Project shop_ordering {
+  database_type: 'PostgreSQL'
+}
+
+Table shop_ordering.order_lines {
+  order_id uuid [not null]
+  line_number smallint [not null]
+  product_id uuid [not null]
+  quantity integer [not null]
+
+  Indexes {
+    (order_id, line_number) [pk]
+    (product_id, `order_id DESC`) [name: 'order_lines_product_idx']
+  }
+}
+
+Table shop_ordering.order_receipts {
+  order_id uuid [pk]
+  issued_at timestamptz [not null]
+}
+
+Table shop_ordering.orders {
+  id uuid [pk]
+  status text [not null]
+  placed_at timestamptz [not null]
+  reference varchar(32)
+
+  Indexes {
+    placed_at [unique, name: 'orders_pending_placed_idx', note: 'WHERE (status = \'pending\'::text)']
+    reference [unique, name: 'orders_reference_unique']
+  }
+
+  Note: '''
+    Checks:
+    - orders_status_check: CHECK (status = ANY (ARRAY['pending'::text, 'paid'::text]))
+  '''
+}
+
+Table shop_catalog.products [headercolor: #BDBDBD] {
+  id uuid [pk]
+
+  Note: 'Defined in shop_catalog.dbml'
+}
+
+Ref order_lines_order_id_fkey: shop_ordering.order_lines.order_id > shop_ordering.orders.id [delete: cascade]
+Ref order_lines_product_id_fkey: shop_ordering.order_lines.product_id > shop_catalog.products.id [delete: restrict]
+Ref order_receipts_order_id_fkey: shop_ordering.order_receipts.order_id - shop_ordering.orders.id

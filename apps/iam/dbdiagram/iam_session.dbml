@@ -1,0 +1,74 @@
+// GENERATED FILE - DO NOT EDIT.
+// Source of truth: apps/iam/src/main/resources/db/migration
+// Regenerate with: make dbdiagram
+
+Project iam_session {
+  database_type: 'PostgreSQL'
+}
+
+Table iam_session.oauth_authorizations {
+  id varchar(100) [pk]
+  registered_client_id varchar(128) [not null]
+  principal_name varchar(200) [not null]
+  session_id uuid [not null]
+  authorization_grant_type varchar(64) [not null]
+  authorized_scopes varchar(1000) [not null]
+  attributes_json text [not null]
+  state_digest bytea
+  authorization_code_digest bytea
+  authorization_code_issued_at timestamptz
+  authorization_code_expires_at timestamptz
+  authorization_code_metadata_json text
+  version bigint [not null, default: 0]
+
+  Indexes {
+    authorization_code_digest [unique, name: 'oauth_authorizations_code_digest_idx', note: 'WHERE (authorization_code_digest IS NOT NULL)']
+    session_id [name: 'oauth_authorizations_session_idx']
+    state_digest [unique, name: 'oauth_authorizations_state_digest_idx', note: 'WHERE (state_digest IS NOT NULL)']
+  }
+
+  Note: '''
+    Checks:
+    - oauth_authorizations_client_check: CHECK (registered_client_id::text <> ''::text AND registered_client_id::text = btrim(registered_client_id::text))
+    - oauth_authorizations_code_digest_check: CHECK (authorization_code_digest IS NULL OR octet_length(authorization_code_digest) = 32)
+    - oauth_authorizations_code_tuple_check: CHECK (authorization_code_digest IS NULL AND authorization_code_issued_at IS NULL AND authorization_code_expires_at IS NULL AND authorization_code_metadata_json IS NULL OR authorization_code_digest IS NOT NULL AND authorization_code_issued_at IS NOT NULL AND authorization_code_expires_at > authorization_code_issued_at AND authorization_code_metadata_json IS NOT NULL)
+    - oauth_authorizations_grant_check: CHECK (authorization_grant_type::text = 'authorization_code'::text)
+    - oauth_authorizations_principal_check: CHECK (principal_name::text <> ''::text AND principal_name::text = btrim(principal_name::text))
+    - oauth_authorizations_state_digest_check: CHECK (state_digest IS NULL OR octet_length(state_digest) = 32)
+    - oauth_authorizations_version_check: CHECK (version >= 0)
+  '''
+}
+
+Table iam_session.sessions {
+  id uuid [pk]
+  account_id uuid [not null]
+  client_id varchar(128) [not null]
+  status text [not null]
+  created_at timestamptz [not null]
+  expires_at timestamptz [not null]
+  revoked_at timestamptz
+  revoke_reason text
+
+  Indexes {
+    (account_id, status, id) [name: 'sessions_account_status_id_idx']
+  }
+
+  Note: '''
+    Checks:
+    - sessions_client_check: CHECK (client_id::text <> ''::text AND client_id::text = btrim(client_id::text))
+    - sessions_expiry_check: CHECK (expires_at > created_at)
+    - sessions_revocation_state_check: CHECK (status = 'active'::text AND revoked_at IS NULL AND revoke_reason IS NULL OR status = 'revoked'::text AND revoked_at IS NOT NULL AND revoke_reason IS NOT NULL)
+    - sessions_revocation_timeline_check: CHECK (revoked_at IS NULL OR revoked_at >= created_at)
+    - sessions_revoke_reason_check: CHECK (revoke_reason IS NULL OR (revoke_reason = ANY (ARRAY['user_request'::text, 'logout'::text, 'all_sessions_revoked'::text, 'account_state_changed'::text])))
+    - sessions_status_check: CHECK (status = ANY (ARRAY['active'::text, 'revoked'::text]))
+  '''
+}
+
+Table iam_identity.accounts [headercolor: #BDBDBD] {
+  id uuid [pk]
+
+  Note: 'Defined in iam_identity.dbml'
+}
+
+Ref oauth_authorizations_session_id_fkey: iam_session.oauth_authorizations.session_id > iam_session.sessions.id [delete: restrict]
+Ref sessions_account_id_fkey: iam_session.sessions.account_id > iam_identity.accounts.id [delete: restrict]

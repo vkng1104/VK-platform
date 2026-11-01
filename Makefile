@@ -5,7 +5,7 @@ SOURCE_ENV ?=
 	db-migrate-up db-migrate-down db-migrate-iam-up db-seed db-seed-local build \
 	lint lint-web lint-api lint-iam typecheck test test-setup test-web test-api test-iam \
 	test-integration generate-persistence check-persistence-generation \
-	check-persistence-boundaries test-persistence check-persistence check
+	check-persistence-boundaries test-persistence check-persistence dbdiagram check-dbdiagram check
 
 install:
 	npm install
@@ -134,4 +134,10 @@ test-persistence:
 
 check-persistence: check-persistence-boundaries check-persistence-generation
 
-check: lint typecheck check-persistence test test-integration build
+dbdiagram:
+	./scripts/generate-dbdiagram.sh
+
+check-dbdiagram:
+	./scripts/check-dbdiagram.sh
+
+check: lint typecheck check-persistence check-dbdiagram test test-integration build
