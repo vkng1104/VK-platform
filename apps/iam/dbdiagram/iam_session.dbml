@@ -90,6 +90,26 @@ Table iam_session.oauth_refresh_tokens {
   '''
 }
 
+Table iam_session.operator_operations {
+  operation_id varchar(128) [pk]
+  operation_type varchar(64) [not null]
+  actor_id varchar(128) [not null]
+  target_id varchar(128)
+  result_key_id varchar(128)
+  result_count integer
+  completed_at timestamptz [not null]
+
+  Indexes {
+    (operation_type, `completed_at DESC`) [name: 'operator_operations_type_completed_idx']
+  }
+
+  Note: '''
+    Checks:
+    - operator_operations_context_check: CHECK (operation_id::text <> ''::text AND operation_id::text = btrim(operation_id::text) AND operation_type::text <> ''::text AND operation_type::text = btrim(operation_type::text) AND actor_id::text <> ''::text AND actor_id::text = btrim(actor_id::text) AND (target_id IS NULL OR target_id::text <> ''::text AND target_id::text = btrim(target_id::text)) AND (result_key_id IS NULL OR result_key_id::text <> ''::text AND result_key_id::text = btrim(result_key_id::text)))
+    - operator_operations_result_count_check: CHECK (result_count IS NULL OR result_count >= 0)
+  '''
+}
+
 Table iam_session.sessions {
   id uuid [pk]
   account_id uuid [not null]
@@ -120,6 +140,71 @@ Table iam_session.sessions {
   '''
 }
 
+Table iam_session.signing_key_events {
+  id uuid [pk]
+  key_id varchar(128) [not null]
+  event_type varchar(32) [not null]
+  actor_id varchar(128) [not null]
+  operation_id varchar(128) [not null]
+  occurred_at timestamptz [not null]
+
+  Indexes {
+    (key_id, `occurred_at DESC`) [name: 'signing_key_events_key_time_idx']
+    (operation_id, key_id, event_type) [unique, name: 'signing_key_events_operation_event_unique']
+  }
+
+  Note: '''
+    Checks:
+    - signing_key_events_context_check: CHECK (actor_id::text <> ''::text AND actor_id::text = btrim(actor_id::text) AND operation_id::text <> ''::text AND operation_id::text = btrim(operation_id::text))
+    - signing_key_events_type_check: CHECK (event_type::text = ANY (ARRAY['bootstrapped'::character varying, 'rotation_started'::character varying, 'activated'::character varying, 'retired'::character varying, 'compromised'::character varying, 'reencrypted'::character varying]::text[]))
+  '''
+}
+
+Table iam_session.signing_key_operation_guard {
+  id smallint [pk]
+
+  Note: '''
+    Checks:
+    - signing_key_operation_guard_id_check: CHECK (id = 1)
+  '''
+}
+
+Table iam_session.signing_keys {
+  id varchar(128) [pk]
+  algorithm varchar(16) [not null]
+  public_key_x509 bytea [not null]
+  encrypted_private_key bytea [not null]
+  encryption_nonce bytea [not null]
+  protection_key_version varchar(64) [not null]
+  status varchar(16) [not null]
+  created_at timestamptz [not null]
+  activated_at timestamptz [not null]
+  publish_until timestamptz
+  retired_at timestamptz
+  compromised_at timestamptz
+  version bigint [not null, default: 0]
+
+  Indexes {
+    status [unique, name: 'signing_keys_one_active_idx', note: 'WHERE ((status)::text = \'ACTIVE\'::text)']
+    (protection_key_version, id) [name: 'signing_keys_protection_version_id_idx']
+    (status, publish_until, `activated_at DESC`) [name: 'signing_keys_publication_idx']
+  }
+
+  Note: '''
+    Checks:
+    - signing_keys_algorithm_check: CHECK (algorithm::text = 'RS256'::text)
+    - signing_keys_id_check: CHECK (id::text <> ''::text AND id::text = btrim(id::text))
+    - signing_keys_nonce_check: CHECK (octet_length(encryption_nonce) = 12)
+    - signing_keys_private_key_check: CHECK (octet_length(encrypted_private_key) >= 256)
+    - signing_keys_protection_version_check: CHECK (protection_key_version::text <> ''::text AND protection_key_version::text = btrim(protection_key_version::text))
+    - signing_keys_public_key_check: CHECK (octet_length(public_key_x509) >= 256)
+    - signing_keys_state_check: CHECK (status::text = 'ACTIVE'::text AND publish_until IS NULL AND retired_at IS NULL AND compromised_at IS NULL OR status::text = 'RETIRING'::text AND publish_until IS NOT NULL AND retired_at IS NULL AND compromised_at IS NULL OR status::text = 'RETIRED'::text AND publish_until IS NOT NULL AND retired_at IS NOT NULL AND compromised_at IS NULL OR status::text = 'COMPROMISED'::text AND publish_until IS NOT NULL AND retired_at IS NULL AND compromised_at IS NOT NULL)
+    - signing_keys_status_check: CHECK (status::text = ANY (ARRAY['ACTIVE'::character varying, 'RETIRING'::character varying, 'RETIRED'::character varying, 'COMPROMISED'::character varying]::text[]))
+    - signing_keys_timeline_check: CHECK (activated_at >= created_at AND (publish_until IS NULL OR publish_until >= activated_at) AND (retired_at IS NULL OR retired_at >= publish_until) AND (compromised_at IS NULL OR compromised_at >= activated_at))
+    - signing_keys_version_check: CHECK (version >= 0)
+  '''
+}
+
 Table iam_identity.accounts [headercolor: #BDBDBD] {
   id uuid [pk]
 
@@ -131,3 +216,4 @@ Ref oauth_refresh_tokens_authorization_id_fkey: iam_session.oauth_refresh_tokens
 Ref oauth_refresh_tokens_parent_id_fkey: iam_session.oauth_refresh_tokens.parent_id > iam_session.oauth_refresh_tokens.id [delete: restrict]
 Ref oauth_refresh_tokens_replacement_fk: iam_session.oauth_refresh_tokens.replacement_id > iam_session.oauth_refresh_tokens.id [delete: restrict]
 Ref sessions_account_id_fkey: iam_session.sessions.account_id > iam_identity.accounts.id [delete: restrict]
+Ref signing_key_events_key_id_fkey: iam_session.signing_key_events.key_id > iam_session.signing_keys.id [delete: restrict]
