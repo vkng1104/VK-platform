@@ -16,8 +16,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      web: ${{ steps.areas.outputs.web }}
+      api: ${{ steps.areas.outputs.api }}
+      iam: ${{ steps.areas.outputs.iam }}
+      persistence: ${{ steps.areas.outputs.persistence }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Map changed files to CI areas
+        id: areas
+        shell: bash
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git diff --name-only HEAD^1 HEAD
+          fi | scripts/ci/changed-areas.sh | tee -a "$GITHUB_OUTPUT"
+
   frontend:
     name: Frontend lint
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -43,6 +69,8 @@ jobs:
 
   api:
     name: API lint
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -61,6 +89,8 @@ jobs:
 
   iam:
     name: IAM compile check
+    needs: changes
+    if: needs.changes.outputs.iam == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -73,6 +103,8 @@ jobs:
 
   persistence:
     name: Persistence architecture
+    needs: changes
+    if: needs.changes.outputs.persistence == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 

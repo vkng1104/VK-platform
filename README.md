@@ -186,6 +186,7 @@ Generator registrations live in `config/persistence/generators.txt`. Java build-
 
 - `.github/workflows/tests.yml` runs frontend, API/IAM unit, setup, and multi-service integration tests for pull requests targeting `master`, including every pushed PR commit. It intentionally does not run after merge.
 - `.github/workflows/lint.yml` runs frontend lint/type-checking, API formatting/vet checks, an IAM compile check, and ORM persistence boundary/generation checks for pull requests targeting `master` and pushes to `master`.
+- Both workflows start with a `changes` job that maps a pull request's changed files to CI areas with `scripts/ci/changed-areas.sh`, and each job runs only when its area changed. Shared build files (`Makefile`, `docker-compose.yml`, workflow files), unrecognized paths, and pushes to `master` run every job. Skipped jobs report success, so they never block a required check.
 
 Configure the repository's `master` branch protection to require the PR test and lint checks before merging.
 
