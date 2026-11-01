@@ -54,3 +54,12 @@ For TypeScript and Python, preserve the same layer ownership while using the fra
 ## Test Handoff
 
 Report exactly which commands ran and their result. If a relevant suite was not run, state why. Keep test files, fixtures, and test-only configuration in the separate `test:` commit required by `.agents/skills/feature-delivery/SKILL.md`.
+
+## Agent Budget
+
+Agents cost the user money, so keep their number small:
+
+- Use at most 2-3 spawned agents for the whole task, across planning, implementation, testing, and review. Subagents, forks, parallel sessions, and workflow agents all count.
+- Do quick searches, reads, and small edits yourself instead of handing them to another agent.
+- Keep this budget even when a plan or another skill suggests more agents.
+- Exceed three only when more agents would clearly finish the work meaningfully faster at a reasonable cost, and state that reason in one line before starting them.

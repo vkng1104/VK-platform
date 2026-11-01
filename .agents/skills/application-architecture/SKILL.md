@@ -17,3 +17,12 @@ Apply its boundaries to the current task:
 - Use reversible constrained migrations and real PostgreSQL integration tests for persistence behavior.
 
 Refactor nearby code when it violates these boundaries and the refactor is necessary for the requested feature. Do not reorganize unrelated domains merely for visual consistency.
+
+## Agent Budget
+
+Agents cost the user money, so keep their number small:
+
+- Use at most 2-3 spawned agents for the whole task, across planning, implementation, testing, and review. Subagents, forks, parallel sessions, and workflow agents all count.
+- Do quick searches, reads, and small edits yourself instead of handing them to another agent.
+- Keep this budget even when a plan or another skill suggests more agents.
+- Exceed three only when more agents would clearly finish the work meaningfully faster at a reasonable cost, and state that reason in one line before starting them.
