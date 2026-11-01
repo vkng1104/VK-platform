@@ -1,0 +1,3 @@
+# service|migration_tool|migrations_dir|output_dir
+shop|flyway|shop/migrations|shop/dbdiagram
+ledger|golang-migrate|ledger/migrations|ledger/dbdiagram

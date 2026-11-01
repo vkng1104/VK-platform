@@ -1,0 +1,7 @@
+# service|migration_tool|migrations_dir|output_dir
+#
+# `make dbdiagram` replays each service's migrations into a throwaway
+# PostgreSQL database and writes one DBML file per schema to output_dir.
+# migration_tool is flyway (V<n>__*.sql) or golang-migrate (<n>_*.up.sql).
+api|golang-migrate|apps/api/migrations|apps/api/dbdiagram
+iam|flyway|apps/iam/src/main/resources/db/migration|apps/iam/dbdiagram

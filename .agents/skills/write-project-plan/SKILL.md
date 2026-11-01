@@ -29,3 +29,13 @@ plans/Oct-2026/05-Monday-add-response-caching.md
 Create the month folder when it does not exist. Update an existing plan in place when the request continues the same planned work; do not create a duplicate only because the date changed. Do not rename user-authored or pre-existing plans unless the user requests it.
 
 The `plans/` directory is intentionally Git-ignored. Files there remain readable and editable by local agents. Do not force-add a plan to Git unless the user explicitly asks.
+
+## Agent Budget
+
+Agents cost the user money, so keep their number small:
+
+- Use at most 2-3 spawned agents for the whole task, across planning, implementation, testing, and review. Subagents, forks, parallel sessions, and workflow agents all count.
+- Do quick searches, reads, and small edits yourself instead of handing them to another agent.
+- Keep this budget even when a plan or another skill suggests more agents.
+- Exceed three only when more agents would clearly finish the work meaningfully faster at a reasonable cost, and state that reason in one line before starting them.
+- When a plan splits work across agents, name how many it uses and keep the split within this budget.

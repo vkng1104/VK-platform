@@ -18,8 +18,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      web: ${{ steps.areas.outputs.web }}
+      api: ${{ steps.areas.outputs.api }}
+      iam: ${{ steps.areas.outputs.iam }}
+      setup: ${{ steps.areas.outputs.setup }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Map changed files to CI areas
+        id: areas
+        shell: bash
+        run: git diff --name-only HEAD^1 HEAD | scripts/ci/changed-areas.sh | tee -a "$GITHUB_OUTPUT"
+
   frontend:
     name: Frontend tests
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -42,6 +65,8 @@ jobs:
 
   backend-unit:
     name: ${{ matrix.service }} unit tests
+    needs: changes
+    if: needs.changes.outputs.api == 'true' || needs.changes.outputs.iam == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -51,15 +76,20 @@ jobs:
           - api
           - iam
 
+    # Job conditions cannot read the matrix, so each service skips its own steps.
     steps:
       - name: Check out repository
+        if: needs.changes.outputs[matrix.service] == 'true'
         uses: actions/checkout@v7
 
       - name: Run backend unit tests in Docker
+        if: needs.changes.outputs[matrix.service] == 'true'
         run: make test-${{ matrix.service }}
 
   backend-integration:
     name: Backend integration tests
+    needs: changes
+    if: needs.changes.outputs.api == 'true' || needs.changes.outputs.iam == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -72,6 +102,8 @@ jobs:
 
   setup:
     name: Local and CI setup tests
+    needs: changes
+    if: needs.changes.outputs.setup == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 

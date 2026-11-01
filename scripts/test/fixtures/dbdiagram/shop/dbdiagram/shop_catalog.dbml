@@ -1,0 +1,23 @@
+// GENERATED FILE - DO NOT EDIT.
+// Source of truth: shop/migrations
+// Regenerate with: make dbdiagram
+
+Project shop_catalog {
+  database_type: 'PostgreSQL'
+}
+
+Table shop_catalog.products {
+  id uuid [pk, default: `gen_random_uuid()`]
+  sku varchar(64) [not null, unique, note: 'Stock keeping unit shown on invoices.']
+  name text [not null]
+  status text [not null, default: 'draft']
+  price_cents integer [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: '''
+    Items that can be ordered.
+
+    Checks:
+    - products_price_check: CHECK (price_cents >= 0)
+  '''
+}

@@ -48,3 +48,12 @@ Before rewriting any local commit, prove that it has never been pushed. When tha
    - Under `Related Issues`, link relevant tickets, PRs, or commits using forms such as `Related to #123`, `Follows #123`, or `Follows commit <hash>`. Use `None` when there is no relation.
 5. Push a new ready branch with `git push -u origin khanh/feat/<feature-name>`. Update an existing remote branch with a normal fast-forward `git push`; never force-push it.
 6. Give the user the PR title and completed PR body. Do not run any command that opens or merges a PR unless the user explicitly requests it.
+
+## Agent Budget
+
+Agents cost the user money, so keep their number small:
+
+- Use at most 2-3 spawned agents for the whole task, across planning, implementation, testing, and review. Subagents, forks, parallel sessions, and workflow agents all count.
+- Do quick searches, reads, and small edits yourself instead of handing them to another agent.
+- Keep this budget even when a plan or another skill suggests more agents.
+- Exceed three only when more agents would clearly finish the work meaningfully faster at a reasonable cost, and state that reason in one line before starting them.

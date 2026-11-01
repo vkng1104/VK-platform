@@ -16,6 +16,7 @@ Keep this file small. Load the relevant repository skill for detailed workflow g
 - Preserve unrelated user changes. Stage only files that belong to the current feature or its tests.
 - Apply the repository's bottom-up testing strategy. Put branch coverage at the layer that owns the behavior instead of duplicating it through high-level tests.
 - Follow `DESIGN.md` for frontend Atomic Design boundaries and backend modular-monolith request flow.
+- After adding or changing a database migration, run `make dbdiagram` and commit the regenerated `apps/<service>/dbdiagram/*.dbml` files. CI fails when they no longer match the migrations.
 - When the branch is complete and verified, prepare a concise PR title and a bullet-based PR body that follows `.github/pull_request_template.md`, then push the branch to `origin`.
 - Never open or merge a pull request unless the user explicitly asks. The user owns PR creation by default.
 - Store every new AI-authored plan at `plans/<Mon-YYYY>/<DD>-<Weekday>-<kebab-case-purpose>.md`. Use the plan's local creation date in `Asia/Ho_Chi_Minh`.

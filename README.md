@@ -182,10 +182,22 @@ The boundary check flags handwritten application SQL, JPQL/HQL strings, and dire
 
 Generator registrations live in `config/persistence/generators.txt`. Java build-generated metamodel output is not committed; deterministic Go Ent output will be committed and checked for drift once its generator is registered.
 
+## Database diagrams
+
+Each backend service keeps one generated [DBML](https://dbml.dbdiagram.io/docs/) file per PostgreSQL schema under `apps/<service>/dbdiagram/`, such as `apps/iam/dbdiagram/iam_identity.dbml` and `apps/iam/dbdiagram/iam_session.dbml`. Paste a file into [dbdiagram.io](https://dbdiagram.io) to view it. The files are rendered from the service's migrations, so do not edit them by hand:
+
+```bash
+make dbdiagram
+make check-dbdiagram
+```
+
+`make dbdiagram` replays each service's migrations, in the order its migration tool applies them, into a throwaway `postgres:17-alpine` container and rewrites the files. Run it after adding or changing a migration and commit the result. `make check-dbdiagram` fails when the committed files no longer match the migrations; a data-only migration leaves them unchanged. Tables referenced from another schema appear as grey placeholders. Services are registered in `config/dbdiagram/services.txt`.
+
 ## CI behavior
 
 - `.github/workflows/tests.yml` runs frontend, API/IAM unit, setup, and multi-service integration tests for pull requests targeting `master`, including every pushed PR commit. It intentionally does not run after merge.
-- `.github/workflows/lint.yml` runs frontend lint/type-checking, API formatting/vet checks, an IAM compile check, and ORM persistence boundary/generation checks for pull requests targeting `master` and pushes to `master`.
+- `.github/workflows/lint.yml` runs frontend lint/type-checking, API formatting/vet checks, an IAM compile check, ORM persistence boundary/generation checks, and the database-diagram check for pull requests targeting `master` and pushes to `master`.
+- Both workflows start with a `changes` job that maps a pull request's changed files to CI areas with `scripts/ci/changed-areas.sh`, and each job runs only when its area changed. Shared build files (`Makefile`, `docker-compose.yml`, workflow files), unrecognized paths, and pushes to `master` run every job. Skipped jobs report success, so they never block a required check.
 
 Configure the repository's `master` branch protection to require the PR test and lint checks before merging.
 
