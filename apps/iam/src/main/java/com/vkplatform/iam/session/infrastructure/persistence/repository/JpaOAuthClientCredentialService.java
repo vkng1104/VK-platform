@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.UUID;
@@ -55,7 +56,8 @@ public class JpaOAuthClientCredentialService implements OAuthClientOperations {
     public OAuthClientSecretRotation rotateSecret(RotateOAuthClientSecret command) {
         validate(command);
         String clientId = command.clientId().strip();
-        byte[] fingerprint = fingerprint(clientId, command.newSecret(), command.expiresAt());
+        Instant expiresAt = toDatabasePrecision(command.expiresAt());
+        byte[] fingerprint = fingerprint(clientId, command.newSecret(), expiresAt);
         lockOperations();
         OperatorOperationEntity previous = operations.findById(
                 command.operator().operationId()
@@ -68,8 +70,8 @@ public class JpaOAuthClientCredentialService implements OAuthClientOperations {
                     previous.resultTimestamp()
             );
         }
-        Instant now = clock.instant();
-        if (command.expiresAt() != null && !command.expiresAt().isAfter(now)) {
+        Instant now = toDatabasePrecision(clock.instant());
+        if (expiresAt != null && !expiresAt.isAfter(now)) {
             throw new IllegalArgumentException("OAuth client credential expiry must be in the future");
         }
         RegisteredClient current = clients.findLockedByClientId(clientId);
@@ -78,7 +80,7 @@ public class JpaOAuthClientCredentialService implements OAuthClientOperations {
         }
         RegisteredClient changed = RegisteredClient.from(current)
                 .clientSecret(passwordEncoder.encode(command.newSecret()))
-                .clientSecretExpiresAt(command.expiresAt())
+                .clientSecretExpiresAt(expiresAt)
                 .build();
         clients.save(changed);
         events.save(new OAuthClientEventEntity(
@@ -97,10 +99,10 @@ public class JpaOAuthClientCredentialService implements OAuthClientOperations {
                 null,
                 null,
                 fingerprint,
-                command.expiresAt(),
+                expiresAt,
                 now
         ));
-        return new OAuthClientSecretRotation(clientId, now, command.expiresAt());
+        return new OAuthClientSecretRotation(clientId, now, expiresAt);
     }
 
     private void lockOperations() {
@@ -144,5 +146,9 @@ public class JpaOAuthClientCredentialService implements OAuthClientOperations {
         } finally {
             Arrays.fill(material, (byte) 0);
         }
+    }
+
+    private static Instant toDatabasePrecision(Instant value) {
+        return value == null ? null : value.truncatedTo(ChronoUnit.MICROS);
     }
 }
