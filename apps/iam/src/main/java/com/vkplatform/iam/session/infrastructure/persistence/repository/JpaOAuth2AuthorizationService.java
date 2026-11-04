@@ -7,6 +7,7 @@ import com.vkplatform.iam.session.infrastructure.crypto.TokenDigest;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.OAuthAuthorizationEntity;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.OAuthRefreshTokenEntity;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.SessionEntity;
+import com.vkplatform.iam.session.infrastructure.persistence.repository.SpringDataOAuthAuthorizationRepository.AuthorizationLockTarget;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataRetrievalFailureException;
 import org.springframework.security.core.Authentication;
@@ -72,10 +73,10 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
     @Transactional
     public void save(OAuth2Authorization authorization) {
         Assert.notNull(authorization, "authorization cannot be null");
-        OAuthAuthorizationEntity existing = authorizations.findById(authorization.getId()).orElse(null);
         UUID requestedSessionId = sessionId(authorization);
-        UUID persistedSessionId = existing == null ? null : existing.sessionId();
-        UUID effectiveSessionId = requestedSessionId == null ? persistedSessionId : requestedSessionId;
+        UUID effectiveSessionId = requestedSessionId == null
+                ? authorizations.findSessionIdById(authorization.getId()).orElse(null)
+                : requestedSessionId;
         lockUsableSession(
                 effectiveSessionId,
                 authorization.getPrincipalName(),
@@ -96,12 +97,12 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
     @Transactional
     public void remove(OAuth2Authorization authorization) {
         Assert.notNull(authorization, "authorization cannot be null");
-        OAuthAuthorizationEntity candidate = authorizations.findById(authorization.getId()).orElse(null);
-        if (candidate == null) {
+        AuthorizationLockTarget target = authorizations.findLockTargetById(authorization.getId()).orElse(null);
+        if (target == null) {
             return;
         }
-        lockUsableSession(candidate);
-        authorizations.findLockedById(authorization.getId()).ifPresent(entity -> entity.invalidate(
+        lockUsableSession(target);
+        authorizations.findLockedById(target.getId()).ifPresent(entity -> entity.invalidate(
                 clock.instant(),
                 OAuthAuthorizationInvalidationReason.AUTHORIZATION_REMOVED
         ));
@@ -127,9 +128,9 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
             if (state != null) {
                 return usable(state, new PresentedToken(null, token, digest));
             }
-            OAuthAuthorizationEntity code = authorizations.findByAuthorizationCodeDigest(digest).orElse(null);
+            AuthorizationLockTarget code = authorizations.findLockTargetByAuthorizationCodeDigest(digest).orElse(null);
             if (code != null) {
-                return usable(lockAuthorizationForSession(code), new PresentedToken(null, token, digest));
+                return usable(lockAuthorization(code), new PresentedToken(null, token, digest));
             }
             OAuthAuthorizationEntity access = authorizations.findByAccessTokenDigest(digest).orElse(null);
             if (access != null) {
@@ -145,8 +146,8 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
                     .orElse(null);
         }
         if (OAuth2ParameterNames.CODE.equals(type)) {
-            return authorizations.findByAuthorizationCodeDigest(digest)
-                    .map(this::lockAuthorizationForSession)
+            return authorizations.findLockTargetByAuthorizationCodeDigest(digest)
+                    .map(this::lockAuthorization)
                     .map(entity -> usable(entity, new PresentedToken(type, token, digest)))
                     .orElse(null);
         }
@@ -162,18 +163,16 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
     }
 
     private OAuth2Authorization findByRefreshToken(String rawToken, byte[] digest) {
-        String authorizationId = refreshTokens.findAuthorizationIdByTokenDigest(digest).orElse(null);
-        if (authorizationId == null) {
+        OAuthAuthorizationEntity authorization = refreshTokens.findAuthorizationIdByTokenDigest(digest)
+                .flatMap(authorizations::findLockTargetById)
+                .map(this::lockAuthorization)
+                .orElse(null);
+        if (authorization == null) {
             return null;
         }
-        OAuthAuthorizationEntity candidate = authorizations.findById(authorizationId).orElse(null);
-        if (candidate == null || !lockUsableSession(candidate)) {
-            return null;
-        }
-        OAuthAuthorizationEntity authorization = authorizations.findLockedById(authorizationId).orElse(null);
         OAuthRefreshTokenEntity refresh = refreshTokens.findLockedByTokenDigest(digest).orElse(null);
         Instant now = clock.instant();
-        if (authorization == null || refresh == null || authorization.invalidatedAt() != null) {
+        if (refresh == null || authorization.invalidatedAt() != null) {
             return null;
         }
         if (refresh.consumedAt() != null) {
@@ -189,22 +188,20 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         );
     }
 
-    private com.vkplatform.iam.session.infrastructure.persistence.entity.OAuthAuthorizationEntity
-            lockAuthorizationForSession(OAuthAuthorizationEntity candidate) {
-        if (candidate == null || !lockUsableSession(candidate)) {
+    // The authorization must not be loaded before its session lock is held: a locked re-read of
+    // an instance already in the persistence context fails Hibernate's version check when a
+    // concurrent token request has committed in between.
+    private OAuthAuthorizationEntity lockAuthorization(AuthorizationLockTarget target) {
+        if (!lockUsableSession(target)) {
             return null;
         }
-        return authorizations.findLockedById(candidate.getId()).orElse(null);
+        return authorizations.findLockedById(target.getId()).orElse(null);
     }
 
-    private boolean lockUsableSession(OAuthAuthorizationEntity authorization) {
+    private boolean lockUsableSession(AuthorizationLockTarget target) {
         try {
-            lockUsableSession(
-                    authorization.sessionId(),
-                    authorization.principalName(),
-                    authorization.registeredClientId()
-            );
-            return authorization.invalidatedAt() == null;
+            lockUsableSession(target.getSessionId(), target.getPrincipalName(), target.getRegisteredClientId());
+            return true;
         } catch (IllegalStateException exception) {
             return false;
         }
