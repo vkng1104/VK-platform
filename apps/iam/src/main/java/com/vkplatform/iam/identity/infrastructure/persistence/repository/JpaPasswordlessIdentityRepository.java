@@ -14,6 +14,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -141,8 +142,8 @@ public class JpaPasswordlessIdentityRepository implements PasswordlessIdentityRe
 
     @Override
     @Transactional
-    public Account findAccountForTokenIssuance(UUID accountId) {
-        return lockedAccount(accountId).toDomain();
+    public Optional<Account> findAccountForTokenIssuance(UUID accountId) {
+        return accounts.findLockedById(accountId).map(AccountEntity::toDomain);
     }
 
     @Override

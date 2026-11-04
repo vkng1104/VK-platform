@@ -48,10 +48,10 @@ class OAuthTokenClaimsCustomizerTest {
     void setUp() {
         sessions = mock(AuthenticationSessionRepository.class);
         identities = mock(PasswordlessIdentityOperations.class);
-        when(identities.activeAccount(ACCOUNT_ID)).thenReturn(new AuthenticatedAccount(
+        when(identities.findActiveAccount(ACCOUNT_ID)).thenReturn(Optional.of(new AuthenticatedAccount(
                 ACCOUNT_ID,
                 NOW.minusSeconds(30)
-        ));
+        )));
         RSAKey signingKey = mock(RSAKey.class);
         when(signingKey.getKeyID()).thenReturn("oauth-signing-2026");
         customizer = new OAuthTokenClaimsCustomizer(
@@ -95,7 +95,7 @@ class OAuthTokenClaimsCustomizerTest {
         assertThat(claims.getClaimAsStringList("amr")).containsExactly("email_otp");
         assertThat(claims.getExpiresAt()).isEqualTo(NOW.plusSeconds(180));
         assertThat(claims.getClaims()).doesNotContainKeys("email", "role", "permissions");
-        verify(identities).activeAccount(ACCOUNT_ID);
+        verify(identities).findActiveAccount(ACCOUNT_ID);
     }
 
     @Test
@@ -105,6 +105,15 @@ class OAuthTokenClaimsCustomizerTest {
         assertThatThrownBy(() -> customizer.customize(context(client(), principal())))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("session is unavailable");
+    }
+
+    @Test
+    void refusesToIssueForAnInactiveAccount() {
+        when(identities.findActiveAccount(ACCOUNT_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> customizer.customize(context(client(), principal())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("account is unavailable");
     }
 
     private static RegisteredClient client() {

@@ -38,6 +38,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -131,7 +132,8 @@ class OAuthAuthorizationCodeIntegrationTest {
         );
         reset(identities);
         when(identities.consumeSignInGrant(any())).thenReturn(new AuthenticatedAccount(ACCOUNT_ID, now));
-        when(identities.activeAccount(ACCOUNT_ID)).thenReturn(new AuthenticatedAccount(ACCOUNT_ID, now));
+        when(identities.findActiveAccount(ACCOUNT_ID))
+                .thenReturn(Optional.of(new AuthenticatedAccount(ACCOUNT_ID, now)));
     }
 
     @Test
@@ -248,6 +250,31 @@ class OAuthAuthorizationCodeIntegrationTest {
         refresh(rotatedRefresh)
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("invalid_grant"));
+    }
+
+    @Test
+    void rejectsARefreshForAnInactiveAccountWithInvalidGrant() throws Exception {
+        MockHttpSession browser = exchangeGrant();
+        String code = authorizationCode(browser, BFF_REDIRECT, true);
+        String refreshToken = objectMapper.readTree(
+                exchangeCode(code).getResponse().getContentAsString()
+        ).get("refresh_token").asText();
+        when(identities.findActiveAccount(ACCOUNT_ID)).thenReturn(Optional.empty());
+
+        refresh(refreshToken)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_grant"));
+
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM iam_session.oauth_refresh_tokens
+                WHERE consumed_at IS NOT NULL OR reuse_detected_at IS NOT NULL
+                """, Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM iam_session.sessions WHERE account_id = ?",
+                String.class,
+                ACCOUNT_ID
+        )).isEqualTo("active");
     }
 
     @Test

@@ -27,6 +27,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 public class PasswordlessIdentityService implements PasswordlessIdentityOperations {
@@ -67,10 +68,10 @@ public class PasswordlessIdentityService implements PasswordlessIdentityOperatio
 
     @Override
     @Transactional
-    public AuthenticatedAccount activeAccount(UUID accountId) {
-        Account account = repository.findAccountForTokenIssuance(Objects.requireNonNull(accountId));
-        account.requireActive();
-        return new AuthenticatedAccount(account.id(), account.tokenNotBefore());
+    public Optional<AuthenticatedAccount> findActiveAccount(UUID accountId) {
+        return repository.findAccountForTokenIssuance(Objects.requireNonNull(accountId))
+                .filter(account -> account.status() == AccountStatus.ACTIVE)
+                .map(account -> new AuthenticatedAccount(account.id(), account.tokenNotBefore()));
     }
 
     @Override

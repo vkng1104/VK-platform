@@ -32,6 +32,7 @@ import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -183,16 +184,19 @@ class PasswordlessIdentityServiceTest {
     }
 
     @Test
-    void locksAndRequiresAnActiveAccountForTokenIssuance() {
-        AuthenticatedAccount account = service.activeAccount(ACCOUNT_ID);
-
-        assertThat(account.accountId()).isEqualTo(ACCOUNT_ID);
+    void findsOnlyAnActiveAccountForTokenIssuanceWithoutThrowing() {
+        assertThat(service.findActiveAccount(ACCOUNT_ID))
+                .hasValue(new AuthenticatedAccount(ACCOUNT_ID, NOW));
         assertThat(repository.tokenIssuanceLookup).isEqualTo(ACCOUNT_ID);
 
-        repository.activeAccount = RecordingRepository.account(AccountStatus.SUSPENDED, null);
-        assertThatThrownBy(() -> service.activeAccount(ACCOUNT_ID))
-                .isInstanceOfSatisfying(IdentityFailure.class, failure ->
-                        assertThat(failure.reason()).isEqualTo(IdentityFailure.Reason.ACCOUNT_UNAVAILABLE));
+        repository.tokenIssuanceAccount = Optional.of(RecordingRepository.account(AccountStatus.SUSPENDED, null));
+        assertThat(service.findActiveAccount(ACCOUNT_ID)).isEmpty();
+
+        repository.tokenIssuanceAccount = Optional.of(RecordingRepository.account(AccountStatus.DELETED, NOW));
+        assertThat(service.findActiveAccount(ACCOUNT_ID)).isEmpty();
+
+        repository.tokenIssuanceAccount = Optional.empty();
+        assertThat(service.findActiveAccount(ACCOUNT_ID)).isEmpty();
     }
 
     @Test
@@ -257,7 +261,7 @@ class PasswordlessIdentityServiceTest {
         private byte[] consumedDigest;
         private int consumeCalls;
         private UUID tokenIssuanceLookup;
-        private Account activeAccount = account(AccountStatus.ACTIVE, null);
+        private Optional<Account> tokenIssuanceAccount = Optional.of(account(AccountStatus.ACTIVE, null));
         private Account statusChangeAccount = account(AccountStatus.ACTIVE, null);
         private Runnable onStatusChangeLock = () -> {
         };
@@ -304,9 +308,9 @@ class PasswordlessIdentityServiceTest {
         }
 
         @Override
-        public Account findAccountForTokenIssuance(UUID accountId) {
+        public Optional<Account> findAccountForTokenIssuance(UUID accountId) {
             tokenIssuanceLookup = accountId;
-            return activeAccount;
+            return tokenIssuanceAccount;
         }
 
         @Override

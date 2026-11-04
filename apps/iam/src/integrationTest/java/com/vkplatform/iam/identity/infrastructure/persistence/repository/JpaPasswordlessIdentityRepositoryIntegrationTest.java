@@ -253,6 +253,21 @@ class JpaPasswordlessIdentityRepositoryIntegrationTest {
     }
 
     @Test
+    void tokenIssuanceLookupLocksAnExistingAccountAndIsEmptyForAMissingOne() throws Exception {
+        UUID accountId = issue(bytes(22), bytes(23), NOW, "request-token-issuance").accountId();
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            assertThat(repository.findAccountForTokenIssuance(accountId))
+                    .hasValueSatisfying(account -> assertThat(account.id()).isEqualTo(accountId));
+            assertThatThrownBy(() -> lockWithoutWaiting(accountId))
+                    .isInstanceOfSatisfying(SQLException.class, failure ->
+                            assertThat(failure.getSQLState()).isEqualTo("55P03"));
+        });
+
+        assertThat(repository.findAccountForTokenIssuance(UUID.randomUUID())).isEmpty();
+    }
+
+    @Test
     void statusChangeLookupLocksTheAccountUntilItsTransactionEnds() throws Exception {
         UUID accountId = issue(bytes(20), bytes(21), NOW, "request-lock").accountId();
 

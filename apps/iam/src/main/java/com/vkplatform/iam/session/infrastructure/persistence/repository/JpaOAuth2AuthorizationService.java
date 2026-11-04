@@ -216,7 +216,9 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
             throw new IllegalStateException("OAuth browser session is missing");
         }
         UUID accountId = accountId(principalName);
-        identities.activeAccount(accountId);
+        if (identities.findActiveAccount(accountId).isEmpty()) {
+            throw new IllegalStateException("OAuth account is unavailable");
+        }
         SessionEntity entity = sessions.findLockedById(sessionId)
                 .orElseThrow(() -> new IllegalStateException("OAuth browser session is unavailable"));
         AuthenticationSession session = entity.toDomain();

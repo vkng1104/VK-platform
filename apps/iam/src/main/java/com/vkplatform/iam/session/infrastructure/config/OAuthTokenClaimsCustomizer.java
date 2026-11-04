@@ -44,7 +44,8 @@ final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncod
         }
         Authentication principal = context.getPrincipal();
         UUID accountId = parseUuid(principal.getName(), "authenticated account id");
-        AuthenticatedAccount account = identities.activeAccount(accountId);
+        AuthenticatedAccount account = identities.findActiveAccount(accountId)
+                .orElseThrow(() -> new IllegalStateException("OAuth account is unavailable"));
         Map<?, ?> details = principal.getDetails() instanceof Map<?, ?> values ? values : Map.of();
         UUID sessionId = parseUuid(requireDetail(details, "session_id"), "authenticated session id");
         String authenticationMethod = requireDetail(details, "amr");

@@ -3,6 +3,7 @@ package com.vkplatform.iam.identity.application.service;
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
 import com.vkplatform.iam.identity.api.command.AccountAdministrationCommand;
 import com.vkplatform.iam.identity.api.command.VerifyPasswordlessSignIn;
+import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.identity.application.port.out.GrantTokenCodec;
 import com.vkplatform.iam.identity.application.port.out.PasswordlessIdentityRepository;
 import com.vkplatform.iam.identity.domain.IdentityPolicy;
@@ -27,6 +28,8 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -34,6 +37,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,6 +60,9 @@ class PasswordlessIdentityTransactionIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @BeforeEach
     void cleanDatabase() {
@@ -109,6 +116,33 @@ class PasswordlessIdentityTransactionIntegrationTest {
                 "SELECT count(*) FROM iam_identity.verification_grants",
                 Integer.class
         )).isEqualTo(1);
+    }
+
+    @Test
+    void inactiveAccountLookupLeavesTheCallersTransactionCommittable() {
+        UUID accountId = identities.issueSignInGrant(
+                bytes(41),
+                bytes(42),
+                "vk-platform-web",
+                NOW.plusSeconds(300),
+                NOW,
+                "inactive-account-seed"
+        ).accountId();
+        jdbcTemplate.update("UPDATE iam_identity.accounts SET status = 'suspended' WHERE id = ?", accountId);
+
+        Optional<AuthenticatedAccount> found = new TransactionTemplate(transactionManager).execute(status -> {
+            Optional<AuthenticatedAccount> lookup = operations.findActiveAccount(accountId);
+            jdbcTemplate.update(
+                    "UPDATE iam_identity.accounts SET updated_at = ? WHERE id = ?",
+                    NOW.plusSeconds(1).atOffset(ZoneOffset.UTC),
+                    accountId
+            );
+            return lookup;
+        });
+
+        assertThat(found).isEmpty();
+        assertThat(timestamp("SELECT updated_at FROM iam_identity.accounts WHERE id = ?", accountId))
+                .isEqualTo(NOW.plusSeconds(1));
     }
 
     @Test

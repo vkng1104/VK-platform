@@ -3,6 +3,7 @@ package com.vkplatform.iam.identity.application.port.out;
 import com.vkplatform.iam.identity.domain.Account;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface PasswordlessIdentityRepository {
@@ -24,7 +25,7 @@ public interface PasswordlessIdentityRepository {
 
     Account findAccount(UUID accountId);
 
-    Account findAccountForTokenIssuance(UUID accountId);
+    Optional<Account> findAccountForTokenIssuance(UUID accountId);
 
     Account findAccountForStatusChange(UUID accountId);
 
