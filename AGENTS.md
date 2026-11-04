@@ -6,6 +6,7 @@ Keep this file small. Load the relevant repository skill for detailed workflow g
 - Test design or test changes: `.agents/skills/bottom-up-testing/SKILL.md`
 - Plans created by an AI agent: `.agents/skills/write-project-plan/SKILL.md`
 - Frontend or backend application architecture: `.agents/skills/application-architecture/SKILL.md`
+- Feature or branch walkthroughs with an end-to-end example and per-table record states: `.agents/skills/change-walkthrough/SKILL.md`
 
 ## Required Rules
 
