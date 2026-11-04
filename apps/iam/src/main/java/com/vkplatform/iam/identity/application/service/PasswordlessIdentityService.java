@@ -159,18 +159,21 @@ public class PasswordlessIdentityService implements PasswordlessIdentityOperatio
         if (command.accountId() == null) {
             throw IdentityFailure.invalidAdminContext();
         }
-        Instant now = clock.instant();
-        PasswordlessIdentityRepository.AccountStatusChange change = repository.changeAccountStatus(
-                command.accountId(),
-                status,
-                now,
-                requireContext(command.actorId()),
-                requireContext(command.requestId())
-        );
-        if (change.changed()) {
-            events.publishEvent(new AccountAuthenticationInvalidated(change.account().id(), now));
+        String actorId = requireContext(command.actorId());
+        String requestId = requireContext(command.requestId());
+        Account current = repository.findAccountForStatusChange(command.accountId());
+        Instant transitionAt = clock.instant();
+        Account changed = switch (status) {
+            case ACTIVE -> current.reactivate(transitionAt);
+            case SUSPENDED -> current.suspend(transitionAt);
+            case DELETED -> current.delete(transitionAt);
+            case RECOVERY_LOCKED -> throw new IllegalArgumentException("recovery lock requires a dedicated operation");
+        };
+        if (changed.status() != current.status()) {
+            repository.recordAccountStatusChange(changed, actorId, requestId, transitionAt);
+            events.publishEvent(new AccountAuthenticationInvalidated(changed.id(), transitionAt));
         }
-        return summary(change.account());
+        return summary(changed);
     }
 
     private static AccountSummary summary(Account account) {

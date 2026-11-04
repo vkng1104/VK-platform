@@ -147,27 +147,20 @@ public class JpaPasswordlessIdentityRepository implements PasswordlessIdentityRe
 
     @Override
     @Transactional
-    public AccountStatusChange changeAccountStatus(
-            UUID accountId,
-            AccountStatus status,
-            Instant now,
+    public Account findAccountForStatusChange(UUID accountId) {
+        return lockedAccount(accountId).toDomain();
+    }
+
+    @Override
+    @Transactional
+    public void recordAccountStatusChange(
+            Account changed,
             String actorId,
-            String requestId
+            String requestId,
+            Instant transitionAt
     ) {
-        AccountEntity entity = lockedAccount(accountId);
-        Account current = entity.toDomain();
-        Account changed = switch (status) {
-            case ACTIVE -> current.reactivate(now);
-            case SUSPENDED -> current.suspend(now);
-            case DELETED -> current.delete(now);
-            case RECOVERY_LOCKED -> throw new IllegalArgumentException("recovery lock requires a dedicated operation");
-        };
-        boolean statusChanged = changed.status() != current.status();
-        if (statusChanged) {
-            entity.apply(changed);
-            appendEvent(eventFor(status), accountId, accountId, actorId, requestId, now);
-        }
-        return new AccountStatusChange(changed, statusChanged);
+        lockedAccount(changed.id()).apply(changed);
+        appendEvent(eventFor(changed.status()), changed.id(), changed.id(), actorId, requestId, transitionAt);
     }
 
     private AccountEntity lockedAccount(UUID accountId) {

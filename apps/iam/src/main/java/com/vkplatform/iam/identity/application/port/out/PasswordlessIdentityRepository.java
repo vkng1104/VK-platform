@@ -1,7 +1,6 @@
 package com.vkplatform.iam.identity.application.port.out;
 
 import com.vkplatform.iam.identity.domain.Account;
-import com.vkplatform.iam.identity.domain.AccountStatus;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -27,17 +26,15 @@ public interface PasswordlessIdentityRepository {
 
     Account findAccountForTokenIssuance(UUID accountId);
 
-    AccountStatusChange changeAccountStatus(
-            UUID accountId,
-            AccountStatus status,
-            Instant now,
+    Account findAccountForStatusChange(UUID accountId);
+
+    void recordAccountStatusChange(
+            Account changed,
             String actorId,
-            String requestId
+            String requestId,
+            Instant transitionAt
     );
 
     record IssuedGrant(UUID accountId, Instant expiresAt) {
-    }
-
-    record AccountStatusChange(Account account, boolean changed) {
     }
 }

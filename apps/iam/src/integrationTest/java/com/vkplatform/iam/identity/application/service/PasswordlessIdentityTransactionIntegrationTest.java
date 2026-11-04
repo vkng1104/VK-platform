@@ -30,8 +30,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -115,8 +117,8 @@ class PasswordlessIdentityTransactionIntegrationTest {
                 bytes(31),
                 bytes(32),
                 "vk-platform-web",
-                NOW.plusSeconds(300),
-                NOW,
+                NOW.plusSeconds(240),
+                NOW.minusSeconds(60),
                 "account-state-seed"
         ).accountId();
         UUID sessionId = UUID.randomUUID();
@@ -127,8 +129,8 @@ class PasswordlessIdentityTransactionIntegrationTest {
                 """,
                 sessionId,
                 accountId,
-                NOW.atOffset(ZoneOffset.UTC),
-                NOW.atOffset(ZoneOffset.UTC),
+                NOW.minusSeconds(60).atOffset(ZoneOffset.UTC),
+                NOW.minusSeconds(30).atOffset(ZoneOffset.UTC),
                 NOW.plusSeconds(3600).atOffset(ZoneOffset.UTC)
         );
         jdbcTemplate.update("""
@@ -163,6 +165,24 @@ class PasswordlessIdentityTransactionIntegrationTest {
                 String.class,
                 "authorization-account-state"
         )).isEqualTo("account_state_changed");
+        assertThat(List.of(
+                timestamp("SELECT updated_at FROM iam_identity.accounts WHERE id = ?", accountId),
+                timestamp("SELECT token_not_before FROM iam_identity.accounts WHERE id = ?", accountId),
+                timestamp("""
+                        SELECT occurred_at
+                        FROM iam_identity.security_events
+                        WHERE account_id = ? AND event_type = 'account_suspended'
+                        """, accountId),
+                timestamp("SELECT revoked_at FROM iam_session.sessions WHERE id = ?", sessionId),
+                timestamp(
+                        "SELECT invalidated_at FROM iam_session.oauth_authorizations WHERE id = ?",
+                        "authorization-account-state"
+                )
+        )).containsOnly(NOW);
+    }
+
+    private Instant timestamp(String sql, Object parameter) {
+        return jdbcTemplate.queryForObject(sql, OffsetDateTime.class, parameter).toInstant();
     }
 
     @TestConfiguration(proxyBeanMethods = false)

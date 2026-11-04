@@ -5,6 +5,7 @@ import com.vkplatform.iam.identity.api.command.ConsumeSignInGrant;
 import com.vkplatform.iam.identity.api.command.StartPasswordlessSignIn;
 import com.vkplatform.iam.identity.api.command.VerifyPasswordlessSignIn;
 import com.vkplatform.iam.identity.api.AccountAuthenticationInvalidated;
+import com.vkplatform.iam.identity.api.result.AccountSummary;
 import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.identity.api.result.AuthenticationChallengeStarted;
 import com.vkplatform.iam.identity.api.result.AuthenticationGrantIssued;
@@ -26,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.ArrayList;
@@ -42,6 +44,7 @@ class PasswordlessIdentityServiceTest {
 
     private RecordingVerification verification;
     private RecordingRepository repository;
+    private SteppingClock clock;
     private List<Object> events;
     private PasswordlessIdentityService service;
 
@@ -49,6 +52,7 @@ class PasswordlessIdentityServiceTest {
     void setUp() {
         verification = new RecordingVerification();
         repository = new RecordingRepository();
+        clock = new SteppingClock(NOW);
         events = new ArrayList<>();
         GrantTokenCodec grants = new GrantTokenCodec() {
             @Override
@@ -68,7 +72,7 @@ class PasswordlessIdentityServiceTest {
                 verification,
                 repository,
                 grants,
-                Clock.fixed(NOW, ZoneOffset.UTC),
+                clock,
                 new IdentityPolicy("vk-platform-web", Duration.ofMinutes(5)),
                 events::add
         );
@@ -131,12 +135,13 @@ class PasswordlessIdentityServiceTest {
         var command = new AccountAdministrationCommand(ACCOUNT_ID, "admin-service", "request-4");
 
         assertThat(service.suspendAccount(command).status()).isEqualTo("suspended");
-        assertThat(repository.changedStatus).isEqualTo(AccountStatus.SUSPENDED);
+        assertThat(repository.recordedAccount.status()).isEqualTo(AccountStatus.SUSPENDED);
         assertThat(service.reactivateAccount(command).status()).isEqualTo("active");
-        assertThat(repository.changedStatus).isEqualTo(AccountStatus.ACTIVE);
+        assertThat(repository.recordedAccount.status()).isEqualTo(AccountStatus.ACTIVE);
         assertThat(service.deleteAccount(command).status()).isEqualTo("deleted");
-        assertThat(repository.changedStatus).isEqualTo(AccountStatus.DELETED);
-        assertThat(repository.actorId).isEqualTo("admin-service");
+        assertThat(repository.recordedAccount.status()).isEqualTo(AccountStatus.DELETED);
+        assertThat(repository.recordedActorId).isEqualTo("admin-service");
+        assertThat(repository.recordedRequestId).isEqualTo("request-4");
         assertThat(events).containsExactly(
                 new AccountAuthenticationInvalidated(ACCOUNT_ID, NOW),
                 new AccountAuthenticationInvalidated(ACCOUNT_ID, NOW),
@@ -145,8 +150,27 @@ class PasswordlessIdentityServiceTest {
     }
 
     @Test
+    void samplesTheTransitionTimeAfterLockingTheAccount() {
+        Instant lockedAt = NOW.plusSeconds(5);
+        repository.onStatusChangeLock = () -> clock.advanceTo(lockedAt);
+
+        AccountSummary summary = service.suspendAccount(new AccountAdministrationCommand(
+                ACCOUNT_ID,
+                "admin-service",
+                "request-locked"
+        ));
+
+        assertThat(repository.statusChangeLookup).isEqualTo(ACCOUNT_ID);
+        assertThat(repository.recordedAt).isEqualTo(lockedAt);
+        assertThat(repository.recordedAccount.updatedAt()).isEqualTo(lockedAt);
+        assertThat(repository.recordedAccount.tokenNotBefore()).isEqualTo(lockedAt);
+        assertThat(summary.updatedAt()).isEqualTo(lockedAt);
+        assertThat(events).containsExactly(new AccountAuthenticationInvalidated(ACCOUNT_ID, lockedAt));
+    }
+
+    @Test
     void doesNotPublishInvalidationForAnIdempotentAccountTransition() {
-        repository.statusChanged = false;
+        repository.statusChangeAccount = RecordingRepository.account(AccountStatus.SUSPENDED, null);
 
         service.suspendAccount(new AccountAdministrationCommand(
                 ACCOUNT_ID,
@@ -154,6 +178,7 @@ class PasswordlessIdentityServiceTest {
                 "request-idempotent"
         ));
 
+        assertThat(repository.recordCalls).isZero();
         assertThat(events).isEmpty();
     }
 
@@ -184,6 +209,7 @@ class PasswordlessIdentityServiceTest {
                 "request"
         ))).isInstanceOfSatisfying(IdentityFailure.class, failure ->
                 assertThat(failure.reason()).isEqualTo(IdentityFailure.Reason.INVALID_ADMIN_CONTEXT));
+        assertThat(repository.statusChangeLookup).isNull();
     }
 
     private static final class RecordingVerification implements EmailVerificationOperations {
@@ -230,11 +256,17 @@ class PasswordlessIdentityServiceTest {
         private String requestId;
         private byte[] consumedDigest;
         private int consumeCalls;
-        private AccountStatus changedStatus;
-        private String actorId;
         private UUID tokenIssuanceLookup;
         private Account activeAccount = account(AccountStatus.ACTIVE, null);
-        private boolean statusChanged = true;
+        private Account statusChangeAccount = account(AccountStatus.ACTIVE, null);
+        private Runnable onStatusChangeLock = () -> {
+        };
+        private UUID statusChangeLookup;
+        private Account recordedAccount;
+        private String recordedActorId;
+        private String recordedRequestId;
+        private Instant recordedAt;
+        private int recordCalls;
 
         @Override
         public IssuedGrant issueSignInGrant(
@@ -278,23 +310,56 @@ class PasswordlessIdentityServiceTest {
         }
 
         @Override
-        public AccountStatusChange changeAccountStatus(
-                UUID accountId,
-                AccountStatus status,
-                Instant now,
+        public Account findAccountForStatusChange(UUID accountId) {
+            statusChangeLookup = accountId;
+            onStatusChangeLock.run();
+            return statusChangeAccount;
+        }
+
+        @Override
+        public void recordAccountStatusChange(
+                Account changed,
                 String actorId,
-                String requestId
+                String requestId,
+                Instant transitionAt
         ) {
-            changedStatus = status;
-            this.actorId = actorId;
-            return new AccountStatusChange(
-                    account(status, status == AccountStatus.DELETED ? now : null),
-                    statusChanged
-            );
+            recordCalls++;
+            recordedAccount = changed;
+            recordedActorId = actorId;
+            recordedRequestId = requestId;
+            recordedAt = transitionAt;
+            statusChangeAccount = changed;
         }
 
         private static Account account(AccountStatus status, Instant deletedAt) {
             return new Account(ACCOUNT_ID, status, NOW, 0, NOW, NOW, deletedAt);
+        }
+    }
+
+    private static final class SteppingClock extends Clock {
+        private Instant now;
+
+        private SteppingClock(Instant now) {
+            this.now = now;
+        }
+
+        private void advanceTo(Instant next) {
+            now = next;
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Instant instant() {
+            return now;
         }
     }
 
