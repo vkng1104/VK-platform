@@ -5,6 +5,7 @@ import com.vkplatform.iam.session.domain.SessionRevokeReason;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.OAuthAuthorizationEntity;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.SessionEntity;
 import com.vkplatform.iam.session.infrastructure.persistence.repository.JpaAuthenticationSessionRepository;
+import com.vkplatform.iam.verification.domain.VerificationChallenge;
 import com.vkplatform.iam.verification.domain.VerificationPurpose;
 import com.vkplatform.iam.verification.infrastructure.persistence.entity.EmailVerificationChallengeEntity;
 import jakarta.persistence.EntityManager;
@@ -117,17 +118,17 @@ class AssignedIdEntityPersistenceIntegrationTest {
 
     @Test
     void savesANewChallengeWithOneInsertAndNoSelect() {
-        EmailVerificationChallengeEntity challenge = new EmailVerificationChallengeEntity(
+        EmailVerificationChallengeEntity challenge = new EmailVerificationChallengeEntity(VerificationChallenge.pending(
                 UUID.randomUUID(),
                 VerificationPurpose.RESTRICTED_RESOURCE_ACCESS,
                 new byte[32],
                 null,
                 new byte[32],
-                (short) 5,
+                5,
                 NOW.plusSeconds(600),
                 NOW.plusSeconds(60),
                 NOW
-        );
+        ));
 
         statistics().clear();
         EmailVerificationChallengeEntity saved = inTransaction(

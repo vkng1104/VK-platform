@@ -8,6 +8,7 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.data.domain.Persistable;
 import org.springframework.modulith.core.ApplicationModules;
 
@@ -32,6 +33,23 @@ class ArchitectureTest {
                 .that().resideOutsideOfPackage("..platform.persistence..")
                 .should(directlyImplement(Persistable.class))
                 .because("assigned-ID entities extend AbstractAssignedIdEntity instead of copying its newness logic")
+                .check(PRODUCTION_CLASSES);
+    }
+
+    @Test
+    void onlyServicesPersistenceAndWiringUseRepositoryPorts() {
+        noClasses()
+                .that().resideOutsideOfPackages(
+                        "..application.service..",
+                        "..application.port.out..",
+                        "..infrastructure.persistence.."
+                )
+                .and().areNotAnnotatedWith(Configuration.class)
+                .should().dependOnClassesThat(
+                        JavaClass.Predicates.resideInAPackage("..application.port.out..")
+                                .and(JavaClass.Predicates.simpleNameEndingWith("Repository"))
+                )
+                .because("adapters such as controllers, listeners and framework hooks go through an application service")
                 .check(PRODUCTION_CLASSES);
     }
 

@@ -122,6 +122,7 @@ Read-only endpoints still use response DTOs and explicit domain-to-transport map
 ### Repositories and PostgreSQL
 
 - One repository owns one table. Its methods only read, lock, insert, update, or delete rows of that table (its persistence entity) and map them to and from the domain object. A repository never writes a second table and never calls another repository.
+- A read may eager-load child rows that exist only as part of the stored thing, such as a project's technology links, so the domain object is built in one query. This is read-only: writes to those child rows still go through their own repository.
 - Repositories make no business decisions. Timestamps, reasons, and statuses come from the caller, either as arguments or as a domain-object transition the caller already applied. A repository does not choose, default, or clamp them, and does not decide which other rows must change. A filter that defines the method's scope, such as "only rows not invalidated yet" or "only sessions of this account", is fine.
 - Name a repository after the stored thing its table holds, such as `AuthenticationSessionRepository` or `OAuthAuthorizationRepository`. A repository named after an action, such as `AccountAuthenticationInvalidationRepository`, is a sign that its logic belongs in a service.
 - Repository adapters own ORM use, persistence-to-domain mapping, and database error translation.

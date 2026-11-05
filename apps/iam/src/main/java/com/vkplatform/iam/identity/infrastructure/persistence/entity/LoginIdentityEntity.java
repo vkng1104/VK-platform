@@ -1,6 +1,7 @@
 package com.vkplatform.iam.identity.infrastructure.persistence.entity;
 
 import com.vkplatform.iam.identity.domain.IdentityKind;
+import com.vkplatform.iam.identity.domain.LoginIdentity;
 import com.vkplatform.iam.identity.infrastructure.persistence.converter.IdentityKindConverter;
 import com.vkplatform.iam.platform.persistence.AbstractAssignedIdEntity;
 import jakarta.persistence.Column;
@@ -37,28 +38,17 @@ public class LoginIdentityEntity extends AbstractAssignedIdEntity<UUID> {
     protected LoginIdentityEntity() {
     }
 
-    public LoginIdentityEntity(
-            UUID id,
-            UUID accountId,
-            IdentityKind kind,
-            byte[] identifierFingerprint,
-            Instant verifiedAt,
-            Instant createdAt
-    ) {
-        this.id = id;
-        this.accountId = accountId;
-        this.kind = kind;
+    public LoginIdentityEntity(LoginIdentity identity, byte[] identifierFingerprint) {
+        this.id = identity.id();
+        this.accountId = identity.accountId();
+        this.kind = identity.kind();
         this.identifierFingerprint = identifierFingerprint.clone();
-        this.verifiedAt = verifiedAt;
-        this.createdAt = createdAt;
+        this.verifiedAt = identity.verifiedAt();
+        this.createdAt = identity.createdAt();
     }
 
-    public UUID id() {
-        return id;
-    }
-
-    public UUID accountId() {
-        return accountId;
+    public LoginIdentity toDomain() {
+        return new LoginIdentity(id, accountId, kind, verifiedAt, createdAt);
     }
 
     @Override

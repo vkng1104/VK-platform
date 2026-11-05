@@ -1,5 +1,6 @@
 package com.vkplatform.iam.identity.infrastructure.persistence.entity;
 
+import com.vkplatform.iam.identity.domain.SecurityEvent;
 import com.vkplatform.iam.identity.domain.SecurityEventType;
 import com.vkplatform.iam.identity.infrastructure.persistence.converter.SecurityEventTypeConverter;
 import com.vkplatform.iam.platform.persistence.AbstractAssignedIdEntity;
@@ -40,22 +41,14 @@ public class SecurityEventEntity extends AbstractAssignedIdEntity<UUID> {
     protected SecurityEventEntity() {
     }
 
-    public SecurityEventEntity(
-            UUID id,
-            SecurityEventType eventType,
-            UUID accountId,
-            UUID targetId,
-            String actorId,
-            String requestId,
-            Instant occurredAt
-    ) {
-        this.id = id;
-        this.eventType = eventType;
-        this.accountId = accountId;
-        this.targetId = targetId;
-        this.actorId = actorId;
-        this.requestId = requestId;
-        this.occurredAt = occurredAt;
+    public SecurityEventEntity(SecurityEvent event) {
+        this.id = event.id();
+        this.eventType = event.type();
+        this.accountId = event.accountId();
+        this.targetId = event.targetId();
+        this.actorId = event.actorId();
+        this.requestId = event.requestId();
+        this.occurredAt = event.occurredAt();
     }
 
     @Override

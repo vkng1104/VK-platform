@@ -5,6 +5,7 @@ import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
 import com.vkplatform.iam.session.application.port.out.OAuthAuthorizationRepository;
 import com.vkplatform.iam.session.application.port.out.OAuthRefreshTokenRepository;
+import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService.AccessTokenWindow;
 import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService.RefreshTokenUse;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
 import com.vkplatform.iam.session.domain.OAuthAuthorizationInvalidationReason;
@@ -17,6 +18,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
@@ -60,8 +62,63 @@ class OAuthTokenLifecycleServiceTest {
                 authorizations,
                 refreshTokens,
                 identities,
-                Clock.fixed(NOW, ZoneOffset.UTC)
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                Duration.ofMinutes(5)
         );
+    }
+
+    @Test
+    void accessTokenWindowStartsNowAndLastsTheTtlForAFreshAccountAndLongSession() {
+        activeAccount();
+        when(sessions.findById(SESSION_ID)).thenReturn(Optional.of(activeSession()));
+
+        AccessTokenWindow window = service.accessTokenWindow(ACCOUNT_ID, SESSION_ID, CLIENT_ID);
+
+        assertThat(window.notBefore()).isEqualTo(NOW);
+        assertThat(window.expiresAt()).isEqualTo(NOW.plusSeconds(300));
+        verify(sessions, never()).findLockedById(any());
+    }
+
+    @Test
+    void accessTokenWindowRespectsTokenNotBeforeAndTheSessionExpiry() {
+        when(identities.findActiveAccount(ACCOUNT_ID))
+                .thenReturn(Optional.of(new AuthenticatedAccount(ACCOUNT_ID, NOW.plusSeconds(10))));
+        when(sessions.findById(SESSION_ID)).thenReturn(Optional.of(AuthenticationSession.create(
+                SESSION_ID,
+                ACCOUNT_ID,
+                CLIENT_ID,
+                CREATED_AT,
+                NOW.plusSeconds(120)
+        )));
+
+        AccessTokenWindow window = service.accessTokenWindow(ACCOUNT_ID, SESSION_ID, CLIENT_ID);
+
+        assertThat(window.notBefore()).isEqualTo(NOW.plusSeconds(10));
+        assertThat(window.expiresAt()).isEqualTo(NOW.plusSeconds(120));
+    }
+
+    @Test
+    void accessTokenWindowRefusesAnInactiveAccountBeforeReadingTheSession() {
+        when(identities.findActiveAccount(ACCOUNT_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.accessTokenWindow(ACCOUNT_ID, SESSION_ID, CLIENT_ID))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("account is unavailable");
+        verifyNoInteractions(sessions);
+    }
+
+    @Test
+    void accessTokenWindowRefusesAMissingOrUnusableSession() {
+        activeAccount();
+        when(sessions.findById(SESSION_ID)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.accessTokenWindow(ACCOUNT_ID, SESSION_ID, CLIENT_ID))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("session is unavailable");
+
+        when(sessions.findById(SESSION_ID)).thenReturn(Optional.of(activeSession()));
+        assertThatThrownBy(() -> service.accessTokenWindow(ACCOUNT_ID, SESSION_ID, "other-client"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("session is unavailable");
     }
 
     @Test

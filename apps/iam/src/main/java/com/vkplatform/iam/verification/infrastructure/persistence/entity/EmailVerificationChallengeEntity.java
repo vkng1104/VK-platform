@@ -1,6 +1,8 @@
 package com.vkplatform.iam.verification.infrastructure.persistence.entity;
 
 import com.vkplatform.iam.platform.persistence.AbstractAssignedIdEntity;
+import com.vkplatform.iam.verification.domain.EmailDeliveryStatus;
+import com.vkplatform.iam.verification.domain.VerificationChallenge;
 import com.vkplatform.iam.verification.domain.VerificationPurpose;
 import com.vkplatform.iam.verification.infrastructure.persistence.converter.EmailDeliveryStatusConverter;
 import com.vkplatform.iam.verification.infrastructure.persistence.converter.VerificationPurposeConverter;
@@ -11,6 +13,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 @Entity
@@ -63,80 +66,62 @@ public class EmailVerificationChallengeEntity extends AbstractAssignedIdEntity<U
     protected EmailVerificationChallengeEntity() {
     }
 
-    public EmailVerificationChallengeEntity(
-            UUID id,
-            VerificationPurpose purpose,
-            byte[] emailFingerprint,
-            byte[] requesterFingerprint,
-            byte[] otpDigest,
-            short maxAttempts,
-            Instant expiresAt,
-            Instant resendNotBefore,
-            Instant createdAt
-    ) {
-        this.id = id;
-        this.purpose = purpose;
-        this.emailFingerprint = emailFingerprint.clone();
-        this.requesterFingerprint = requesterFingerprint == null ? null : requesterFingerprint.clone();
-        this.otpDigest = otpDigest.clone();
-        this.attemptCount = 0;
-        this.maxAttempts = maxAttempts;
-        this.expiresAt = expiresAt;
-        this.resendNotBefore = resendNotBefore;
-        this.deliveryStatus = EmailDeliveryStatus.PENDING;
-        this.createdAt = createdAt;
+    public EmailVerificationChallengeEntity(VerificationChallenge challenge) {
+        Objects.requireNonNull(challenge);
+        this.id = challenge.id();
+        this.purpose = challenge.purpose();
+        this.emailFingerprint = challenge.emailFingerprint();
+        this.requesterFingerprint = challenge.requesterFingerprint();
+        this.otpDigest = challenge.otpDigest();
+        this.attemptCount = (short) challenge.attemptCount();
+        this.maxAttempts = (short) challenge.maxAttempts();
+        this.expiresAt = challenge.expiresAt();
+        this.resendNotBefore = challenge.resendNotBefore();
+        this.deliveryStatus = challenge.deliveryStatus();
+        this.sentAt = challenge.sentAt();
+        this.verifiedAt = challenge.verifiedAt();
+        this.invalidatedAt = challenge.invalidatedAt();
+        this.createdAt = challenge.createdAt();
+    }
+
+    public VerificationChallenge toDomain() {
+        return new VerificationChallenge(
+                id,
+                purpose,
+                emailFingerprint,
+                requesterFingerprint,
+                otpDigest,
+                attemptCount,
+                maxAttempts,
+                expiresAt,
+                resendNotBefore,
+                deliveryStatus,
+                sentAt,
+                verifiedAt,
+                invalidatedAt,
+                createdAt
+        );
+    }
+
+    /**
+     * Copies a failed attempt or a verification the caller applied. The challenge's identity
+     * cannot change, and its delivery and invalidation state change only through their own
+     * updates.
+     */
+    public void apply(VerificationChallenge challenge) {
+        if (!id.equals(challenge.id())
+                || purpose != challenge.purpose()
+                || maxAttempts != challenge.maxAttempts()
+                || !expiresAt.equals(challenge.expiresAt())
+                || !createdAt.equals(challenge.createdAt())) {
+            throw new IllegalArgumentException("email verification challenge identity cannot change");
+        }
+        attemptCount = (short) challenge.attemptCount();
+        verifiedAt = challenge.verifiedAt();
     }
 
     @Override
     public UUID getId() {
         return id;
-    }
-
-    public VerificationPurpose purpose() {
-        return purpose;
-    }
-
-    public byte[] emailFingerprint() {
-        return emailFingerprint.clone();
-    }
-
-    public byte[] otpDigest() {
-        return otpDigest.clone();
-    }
-
-    public short attemptCount() {
-        return attemptCount;
-    }
-
-    public short maxAttempts() {
-        return maxAttempts;
-    }
-
-    public Instant expiresAt() {
-        return expiresAt;
-    }
-
-    public EmailDeliveryStatus deliveryStatus() {
-        return deliveryStatus;
-    }
-
-    public Instant verifiedAt() {
-        return verifiedAt;
-    }
-
-    public Instant invalidatedAt() {
-        return invalidatedAt;
-    }
-
-    public Instant createdAt() {
-        return createdAt;
-    }
-
-    public void recordFailedAttempt() {
-        attemptCount++;
-    }
-
-    public void markVerified(Instant at) {
-        verifiedAt = at;
     }
 }

@@ -4,6 +4,7 @@ import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
 import com.vkplatform.iam.session.api.AuthenticationSessionOperations;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
 import com.vkplatform.iam.session.application.service.AuthenticationSessionService;
+import com.vkplatform.iam.session.application.service.AuthenticationSessionValidationService;
 import com.vkplatform.iam.session.domain.SessionPolicy;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -27,5 +28,13 @@ public class AuthenticationSessionConfiguration {
             Clock clock
     ) {
         return new AuthenticationSessionService(identities, sessions, policy, clock);
+    }
+
+    @Bean
+    AuthenticationSessionValidationService authenticationSessionValidationService(
+            AuthenticationSessionRepository sessions,
+            Clock clock
+    ) {
+        return new AuthenticationSessionValidationService(sessions, clock);
     }
 }
