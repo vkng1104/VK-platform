@@ -1,5 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.persistence.entity;
 
+import com.vkplatform.iam.platform.persistence.AbstractAssignedIdEntity;
 import com.vkplatform.iam.session.domain.OAuthRefreshToken;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -12,7 +13,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "oauth_refresh_tokens", schema = "iam_session")
-public class OAuthRefreshTokenEntity extends AbstractSessionUuidEntity {
+public class OAuthRefreshTokenEntity extends AbstractAssignedIdEntity<UUID> {
     @Id
     private UUID id;
 

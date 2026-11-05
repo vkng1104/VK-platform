@@ -2,6 +2,7 @@ package com.vkplatform.iam.identity.infrastructure.persistence.entity;
 
 import com.vkplatform.iam.identity.domain.SecurityEventType;
 import com.vkplatform.iam.identity.infrastructure.persistence.converter.SecurityEventTypeConverter;
+import com.vkplatform.iam.platform.persistence.AbstractAssignedIdEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
@@ -13,7 +14,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "security_events", schema = "iam_identity")
-public class SecurityEventEntity extends AbstractUuidEntity {
+public class SecurityEventEntity extends AbstractAssignedIdEntity<UUID> {
     @Id
     private UUID id;
 

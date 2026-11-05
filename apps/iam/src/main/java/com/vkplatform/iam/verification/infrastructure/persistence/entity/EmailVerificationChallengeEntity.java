@@ -1,5 +1,6 @@
 package com.vkplatform.iam.verification.infrastructure.persistence.entity;
 
+import com.vkplatform.iam.platform.persistence.AbstractAssignedIdEntity;
 import com.vkplatform.iam.verification.domain.VerificationPurpose;
 import com.vkplatform.iam.verification.infrastructure.persistence.converter.EmailDeliveryStatusConverter;
 import com.vkplatform.iam.verification.infrastructure.persistence.converter.VerificationPurposeConverter;
@@ -14,7 +15,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "email_verification_challenges", schema = "iam_identity")
-public class EmailVerificationChallengeEntity {
+public class EmailVerificationChallengeEntity extends AbstractAssignedIdEntity<UUID> {
     @Id
     private UUID id;
 
@@ -84,6 +85,11 @@ public class EmailVerificationChallengeEntity {
         this.resendNotBefore = resendNotBefore;
         this.deliveryStatus = EmailDeliveryStatus.PENDING;
         this.createdAt = createdAt;
+    }
+
+    @Override
+    public UUID getId() {
+        return id;
     }
 
     public VerificationPurpose purpose() {
