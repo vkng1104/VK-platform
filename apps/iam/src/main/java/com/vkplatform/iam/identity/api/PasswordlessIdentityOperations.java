@@ -9,6 +9,7 @@ import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.identity.api.result.AuthenticationChallengeStarted;
 import com.vkplatform.iam.identity.api.result.AuthenticationGrantIssued;
 
+import java.util.Optional;
 import java.util.UUID;
 
 public interface PasswordlessIdentityOperations {
@@ -17,6 +18,12 @@ public interface PasswordlessIdentityOperations {
     AuthenticationGrantIssued verifySignIn(VerifyPasswordlessSignIn command);
 
     AuthenticatedAccount consumeSignInGrant(ConsumeSignInGrant command);
+
+    /**
+     * Locks the account for token issuance. Returns empty for a missing or inactive account
+     * instead of throwing, because callers share the token request's transaction.
+     */
+    Optional<AuthenticatedAccount> findActiveAccount(UUID accountId);
 
     AccountSummary account(UUID accountId);
 

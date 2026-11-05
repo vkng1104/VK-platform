@@ -14,6 +14,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -141,26 +142,26 @@ public class JpaPasswordlessIdentityRepository implements PasswordlessIdentityRe
 
     @Override
     @Transactional
-    public Account changeAccountStatus(
-            UUID accountId,
-            AccountStatus status,
-            Instant now,
+    public Optional<Account> findAccountForTokenIssuance(UUID accountId) {
+        return accounts.findLockedById(accountId).map(AccountEntity::toDomain);
+    }
+
+    @Override
+    @Transactional
+    public Account findAccountForStatusChange(UUID accountId) {
+        return lockedAccount(accountId).toDomain();
+    }
+
+    @Override
+    @Transactional
+    public void recordAccountStatusChange(
+            Account changed,
             String actorId,
-            String requestId
+            String requestId,
+            Instant transitionAt
     ) {
-        AccountEntity entity = lockedAccount(accountId);
-        Account current = entity.toDomain();
-        Account changed = switch (status) {
-            case ACTIVE -> current.reactivate(now);
-            case SUSPENDED -> current.suspend(now);
-            case DELETED -> current.delete(now);
-            case RECOVERY_LOCKED -> throw new IllegalArgumentException("recovery lock requires a dedicated operation");
-        };
-        if (changed.status() != current.status()) {
-            entity.apply(changed);
-            appendEvent(eventFor(status), accountId, accountId, actorId, requestId, now);
-        }
-        return changed;
+        lockedAccount(changed.id()).apply(changed);
+        appendEvent(eventFor(changed.status()), changed.id(), changed.id(), actorId, requestId, transitionAt);
     }
 
     private AccountEntity lockedAccount(UUID accountId) {

@@ -4,7 +4,8 @@ public enum SessionRevokeReason {
     USER_REQUEST("user_request"),
     LOGOUT("logout"),
     ALL_SESSIONS_REVOKED("all_sessions_revoked"),
-    ACCOUNT_STATE_CHANGED("account_state_changed");
+    ACCOUNT_STATE_CHANGED("account_state_changed"),
+    REFRESH_TOKEN_REUSED("refresh_token_reused");
 
     private final String wireValue;
 

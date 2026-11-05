@@ -1,13 +1,16 @@
 package com.vkplatform.iam.session.infrastructure.persistence.repository;
 
-import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
-import com.vkplatform.iam.session.domain.AuthenticationSession;
+import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService;
+import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService.RefreshTokenUse;
 import com.vkplatform.iam.session.infrastructure.crypto.TokenDigest;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.OAuthAuthorizationEntity;
+import com.vkplatform.iam.session.infrastructure.persistence.repository.SpringDataOAuthAuthorizationRepository.AuthorizationLockTarget;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataRetrievalFailureException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.OAuth2AccessToken;
+import org.springframework.security.oauth2.core.OAuth2RefreshToken;
 import org.springframework.security.oauth2.core.OAuth2Token;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
@@ -23,62 +26,76 @@ import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 import java.security.Principal;
-import java.time.Clock;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 @Repository
 @ConditionalOnProperty(
         name = {"iam.oauth.enabled", "iam.session.enabled"},
         havingValue = "true"
 )
+/**
+ * Spring Authorization Server's store for {@link OAuth2Authorization}. It owns the
+ * {@code oauth_authorizations} table and the mapping to and from the framework object. Session,
+ * account, and refresh-token rules live in {@link OAuthTokenLifecycleService}.
+ */
 public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService {
     private static final String SESSION_ID_DETAIL = "session_id";
 
     private final SpringDataOAuthAuthorizationRepository authorizations;
-    private final AuthenticationSessionRepository sessions;
+    private final OAuthTokenLifecycleService tokenLifecycle;
     private final RegisteredClientRepository clients;
-    private final Clock clock;
     private final OAuthJsonCodec json = new OAuthJsonCodec();
 
     JpaOAuth2AuthorizationService(
             SpringDataOAuthAuthorizationRepository authorizations,
-            AuthenticationSessionRepository sessions,
-            RegisteredClientRepository clients,
-            Clock clock
+            OAuthTokenLifecycleService tokenLifecycle,
+            RegisteredClientRepository clients
     ) {
         this.authorizations = authorizations;
-        this.sessions = sessions;
+        this.tokenLifecycle = tokenLifecycle;
         this.clients = clients;
-        this.clock = clock;
     }
 
     @Override
     @Transactional
     public void save(OAuth2Authorization authorization) {
         Assert.notNull(authorization, "authorization cannot be null");
-        OAuthAuthorizationEntity entity = authorizations.findLockedById(authorization.getId())
-                .orElseGet(OAuthAuthorizationEntity::new);
-        UUID sessionId = sessionId(authorization);
-        if (sessionId == null) {
-            sessionId = entity.sessionId();
-        }
-        AuthenticationSession session = requireUsableSession(
-                sessionId,
+        UUID requestedSessionId = sessionId(authorization);
+        UUID effectiveSessionId = requestedSessionId == null
+                ? authorizations.findSessionIdById(authorization.getId()).orElse(null)
+                : requestedSessionId;
+        requireUsableSession(
+                effectiveSessionId,
                 authorization.getPrincipalName(),
                 authorization.getRegisteredClientId()
         );
-        mapAuthorization(authorization, session.id(), entity);
+        OAuthAuthorizationEntity entity = authorizations.findLockedById(authorization.getId())
+                .orElseGet(OAuthAuthorizationEntity::new);
+        if (entity.invalidatedAt() != null) {
+            throw new IllegalStateException("invalidated OAuth authorization cannot be changed");
+        }
+        byte[] previousRefreshDigest = entity.refreshTokenDigest();
+        mapAuthorization(authorization, effectiveSessionId, entity);
         authorizations.saveAndFlush(entity);
+        recordRefreshTokenIfIssued(entity, previousRefreshDigest);
     }
 
     @Override
     @Transactional
     public void remove(OAuth2Authorization authorization) {
         Assert.notNull(authorization, "authorization cannot be null");
-        authorizations.deleteById(authorization.getId());
+        AuthorizationLockTarget target = authorizations.findLockTargetById(authorization.getId()).orElse(null);
+        if (target == null) {
+            return;
+        }
+        // Lock the session first even when it is no longer usable, to keep the lock order.
+        lockUsableSession(target);
+        tokenLifecycle.recordAuthorizationRemoved(target.getId());
     }
 
     @Override
@@ -96,25 +113,84 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
     public OAuth2Authorization findByToken(String token, OAuth2TokenType tokenType) {
         Assert.hasText(token, "token cannot be empty");
         byte[] digest = TokenDigest.sha256(token);
-        String type = tokenType == null ? null : tokenType.getValue();
-        OAuthAuthorizationEntity entity;
-        if (type == null) {
-            entity = authorizations.findByStateDigest(digest)
-                    .orElseGet(() -> authorizations.findLockedByAuthorizationCodeDigest(digest).orElse(null));
-        } else if (OAuth2ParameterNames.STATE.equals(type)) {
-            entity = authorizations.findByStateDigest(digest).orElse(null);
-        } else if (OAuth2ParameterNames.CODE.equals(type)) {
-            entity = authorizations.findLockedByAuthorizationCodeDigest(digest).orElse(null);
-        } else {
-            return null;
+        if (tokenType == null) {
+            OAuthAuthorizationEntity state = authorizations.findByStateDigest(digest).orElse(null);
+            if (state != null) {
+                return usable(state, new PresentedToken(null, token, digest));
+            }
+            AuthorizationLockTarget code = authorizations.findLockTargetByAuthorizationCodeDigest(digest).orElse(null);
+            if (code != null) {
+                return usable(lockAuthorization(code), new PresentedToken(null, token, digest));
+            }
+            OAuthAuthorizationEntity access = authorizations.findByAccessTokenDigest(digest).orElse(null);
+            if (access != null) {
+                return usable(access, new PresentedToken(null, token, digest));
+            }
+            return findByRefreshToken(token, digest);
         }
-        if (entity == null || !isUsable(entity)) {
-            return null;
+
+        String type = tokenType.getValue();
+        if (OAuth2ParameterNames.STATE.equals(type)) {
+            return authorizations.findByStateDigest(digest)
+                    .map(entity -> usable(entity, new PresentedToken(type, token, digest)))
+                    .orElse(null);
         }
-        return toObject(entity, new PresentedToken(type, token, digest));
+        if (OAuth2ParameterNames.CODE.equals(type)) {
+            return authorizations.findLockTargetByAuthorizationCodeDigest(digest)
+                    .map(this::lockAuthorization)
+                    .map(entity -> usable(entity, new PresentedToken(type, token, digest)))
+                    .orElse(null);
+        }
+        if (OAuth2ParameterNames.ACCESS_TOKEN.equals(type)) {
+            return authorizations.findByAccessTokenDigest(digest)
+                    .map(entity -> usable(entity, new PresentedToken(type, token, digest)))
+                    .orElse(null);
+        }
+        if (OAuth2ParameterNames.REFRESH_TOKEN.equals(type)) {
+            return findByRefreshToken(token, digest);
+        }
+        return null;
     }
 
-    private AuthenticationSession requireUsableSession(
+    private OAuth2Authorization findByRefreshToken(String rawToken, byte[] digest) {
+        OAuthAuthorizationEntity authorization = tokenLifecycle.findAuthorizationIdByRefreshToken(digest)
+                .flatMap(authorizations::findLockTargetById)
+                .map(this::lockAuthorization)
+                .orElse(null);
+        if (authorization == null || authorization.invalidatedAt() != null) {
+            return null;
+        }
+        RefreshTokenUse use = tokenLifecycle.useRefreshToken(digest, authorization.sessionId());
+        if (use != RefreshTokenUse.ACTIVE
+                || !TokenDigest.matches(authorization.refreshTokenDigest(), digest)) {
+            return null;
+        }
+        return toObject(
+                authorization,
+                new PresentedToken(OAuth2ParameterNames.REFRESH_TOKEN, rawToken, digest)
+        );
+    }
+
+    // The authorization must not be loaded before its session lock is held: a locked re-read of
+    // an instance already in the persistence context fails Hibernate's version check when a
+    // concurrent token request has committed in between.
+    private OAuthAuthorizationEntity lockAuthorization(AuthorizationLockTarget target) {
+        if (!lockUsableSession(target)) {
+            return null;
+        }
+        return authorizations.findLockedById(target.getId()).orElse(null);
+    }
+
+    private boolean lockUsableSession(AuthorizationLockTarget target) {
+        try {
+            requireUsableSession(target.getSessionId(), target.getPrincipalName(), target.getRegisteredClientId());
+            return true;
+        } catch (IllegalStateException exception) {
+            return false;
+        }
+    }
+
+    private void requireUsableSession(
             UUID sessionId,
             String principalName,
             String registeredClientId
@@ -122,27 +198,39 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         if (sessionId == null) {
             throw new IllegalStateException("OAuth browser session is missing");
         }
-        UUID accountId = accountId(principalName);
-        return sessions.findById(sessionId)
-                .filter(session -> session.canAuthorize(accountId, clientId(registeredClientId), clock.instant()))
-                .orElseThrow(() -> new IllegalStateException("OAuth browser session is unavailable"));
+        if (!tokenLifecycle.lockUsableSession(sessionId, accountId(principalName), clientId(registeredClientId))) {
+            throw new IllegalStateException("OAuth browser session is unavailable");
+        }
     }
 
     private boolean isUsable(OAuthAuthorizationEntity entity) {
-        try {
-            requireUsableSession(entity.sessionId(), entity.principalName(), entity.registeredClientId());
-            return true;
-        } catch (IllegalStateException exception) {
+        if (entity.invalidatedAt() != null) {
             return false;
         }
+        return tokenLifecycle.isSessionUsable(
+                entity.sessionId(),
+                accountId(entity.principalName()),
+                clientId(entity.registeredClientId())
+        );
     }
 
-    private String clientId(String registeredClientId) {
-        RegisteredClient client = clients.findById(registeredClientId);
-        if (client == null) {
-            throw new DataRetrievalFailureException("OAuth registered client is missing");
+    private OAuth2Authorization usable(OAuthAuthorizationEntity entity, PresentedToken presented) {
+        return entity != null && isUsable(entity) ? toObject(entity, presented) : null;
+    }
+
+    private void recordRefreshTokenIfIssued(OAuthAuthorizationEntity entity, byte[] previousDigest) {
+        byte[] currentDigest = entity.refreshTokenDigest();
+        if (currentDigest == null || TokenDigest.matches(previousDigest, currentDigest)) {
+            return;
         }
-        return client.getClientId();
+        tokenLifecycle.recordRefreshTokenIssued(
+                entity.getId(),
+                entity.sessionId(),
+                previousDigest,
+                currentDigest,
+                entity.refreshTokenIssuedAt(),
+                entity.refreshTokenExpiresAt()
+        );
     }
 
     private void mapAuthorization(
@@ -150,9 +238,6 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
             UUID sessionId,
             OAuthAuthorizationEntity entity
     ) {
-        if (!AuthorizationGrantType.AUTHORIZATION_CODE.equals(authorization.getAuthorizationGrantType())) {
-            throw new IllegalArgumentException("only the authorization_code grant is supported");
-        }
         entity.id(authorization.getId());
         entity.registeredClientId(authorization.getRegisteredClientId());
         entity.principalName(authorization.getPrincipalName());
@@ -166,21 +251,58 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
                 authorization.getAttributes(),
                 tokenValue(entity.stateDigest(), OAuth2ParameterNames.STATE, null)
         )));
+        setToken(
+                authorization.getToken(OAuth2AuthorizationCode.class),
+                entity::authorizationCodeDigest,
+                entity::authorizationCodeIssuedAt,
+                entity::authorizationCodeExpiresAt,
+                entity::authorizationCodeMetadataJson
+        );
+        OAuth2Authorization.Token<OAuth2AccessToken> access = authorization.getAccessToken();
+        setToken(
+                access,
+                entity::accessTokenDigest,
+                entity::accessTokenIssuedAt,
+                entity::accessTokenExpiresAt,
+                entity::accessTokenMetadataJson
+        );
+        if (access == null) {
+            entity.accessTokenType(null);
+            entity.accessTokenScopes(null);
+        } else {
+            entity.accessTokenType(access.getToken().getTokenType().getValue());
+            entity.accessTokenScopes(StringUtils.collectionToCommaDelimitedString(
+                    access.getToken().getScopes()
+            ));
+        }
+        setToken(
+                authorization.getRefreshToken(),
+                entity::refreshTokenDigest,
+                entity::refreshTokenIssuedAt,
+                entity::refreshTokenExpiresAt,
+                entity::refreshTokenMetadataJson
+        );
+    }
 
-        OAuth2Authorization.Token<OAuth2AuthorizationCode> code =
-                authorization.getToken(OAuth2AuthorizationCode.class);
-        if (code == null) {
-            entity.authorizationCodeDigest(null);
-            entity.authorizationCodeIssuedAt(null);
-            entity.authorizationCodeExpiresAt(null);
-            entity.authorizationCodeMetadataJson(null);
+    private void setToken(
+            OAuth2Authorization.Token<?> token,
+            Consumer<byte[]> digest,
+            Consumer<Instant> issuedAt,
+            Consumer<Instant> expiresAt,
+            Consumer<String> metadata
+    ) {
+        if (token == null) {
+            digest.accept(null);
+            issuedAt.accept(null);
+            expiresAt.accept(null);
+            metadata.accept(null);
             return;
         }
-        OAuth2Token value = code.getToken();
-        entity.authorizationCodeDigest(TokenDigest.digestOrRestore(value.getTokenValue()));
-        entity.authorizationCodeIssuedAt(value.getIssuedAt());
-        entity.authorizationCodeExpiresAt(value.getExpiresAt());
-        entity.authorizationCodeMetadataJson(json.writeMap(code.getMetadata()));
+        OAuth2Token value = token.getToken();
+        digest.accept(TokenDigest.digestOrRestore(value.getTokenValue()));
+        issuedAt.accept(value.getIssuedAt());
+        expiresAt.accept(value.getExpiresAt());
+        metadata.accept(json.writeMap(token.getMetadata()));
     }
 
     private OAuth2Authorization toObject(OAuthAuthorizationEntity entity, PresentedToken presented) {
@@ -191,7 +313,7 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         OAuth2Authorization.Builder builder = OAuth2Authorization.withRegisteredClient(client)
                 .id(entity.getId())
                 .principalName(entity.principalName())
-                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .authorizationGrantType(grantType(entity.authorizationGrantType()))
                 .authorizedScopes(values(entity.authorizedScopes()))
                 .attributes(attributes -> attributes.putAll(attributesWithProtectedState(
                         json.readMap(entity.attributesJson()),
@@ -207,7 +329,37 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
                     entity.authorizationCodeMetadataJson()
             )));
         }
+        if (entity.accessTokenDigest() != null) {
+            OAuth2AccessToken access = new OAuth2AccessToken(
+                    accessTokenType(entity.accessTokenType()),
+                    tokenValue(entity.accessTokenDigest(), OAuth2ParameterNames.ACCESS_TOKEN, presented),
+                    entity.accessTokenIssuedAt(),
+                    entity.accessTokenExpiresAt(),
+                    values(entity.accessTokenScopes())
+            );
+            builder.token(access, metadata -> metadata.putAll(json.readMap(
+                    entity.accessTokenMetadataJson()
+            )));
+        }
+        if (entity.refreshTokenDigest() != null) {
+            OAuth2RefreshToken refresh = new OAuth2RefreshToken(
+                    tokenValue(entity.refreshTokenDigest(), OAuth2ParameterNames.REFRESH_TOKEN, presented),
+                    entity.refreshTokenIssuedAt(),
+                    entity.refreshTokenExpiresAt()
+            );
+            builder.token(refresh, metadata -> metadata.putAll(json.readMap(
+                    entity.refreshTokenMetadataJson()
+            )));
+        }
         return builder.build();
+    }
+
+    private String clientId(String registeredClientId) {
+        RegisteredClient client = clients.findById(registeredClientId);
+        if (client == null) {
+            throw new DataRetrievalFailureException("OAuth registered client is missing");
+        }
+        return client.getClientId();
     }
 
     private static UUID sessionId(OAuth2Authorization authorization) {
@@ -277,6 +429,26 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
 
     private static Set<String> values(String value) {
         return value == null ? Set.of() : StringUtils.commaDelimitedListToSet(value);
+    }
+
+    private static AuthorizationGrantType grantType(String value) {
+        if (AuthorizationGrantType.AUTHORIZATION_CODE.getValue().equals(value)) {
+            return AuthorizationGrantType.AUTHORIZATION_CODE;
+        }
+        if (AuthorizationGrantType.REFRESH_TOKEN.getValue().equals(value)) {
+            return AuthorizationGrantType.REFRESH_TOKEN;
+        }
+        return new AuthorizationGrantType(value);
+    }
+
+    private static OAuth2AccessToken.TokenType accessTokenType(String value) {
+        if (OAuth2AccessToken.TokenType.BEARER.getValue().equals(value)) {
+            return OAuth2AccessToken.TokenType.BEARER;
+        }
+        if (OAuth2AccessToken.TokenType.DPOP.getValue().equals(value)) {
+            return OAuth2AccessToken.TokenType.DPOP;
+        }
+        return new OAuth2AccessToken.TokenType(value);
     }
 
     private record PresentedToken(String type, String value, byte[] digest) {

@@ -18,9 +18,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -30,6 +36,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -51,8 +58,15 @@ class JpaPasswordlessIdentityRepositoryIntegrationTest {
     @Autowired
     private EntityManagerFactory entityManagerFactory;
 
+    @Autowired
+    private DataSource dataSource;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+
     @BeforeEach
     void cleanDatabase() {
+        jdbcTemplate.update("DELETE FROM iam_session.oauth_refresh_tokens");
         jdbcTemplate.update("DELETE FROM iam_session.oauth_authorizations");
         jdbcTemplate.update("DELETE FROM iam_session.sessions");
         jdbcTemplate.update("DELETE FROM iam_identity.security_events");
@@ -185,14 +199,13 @@ class JpaPasswordlessIdentityRepositoryIntegrationTest {
     void accountStateChangesAreAuditedAndDeletionRetainsSafeIdentityHistory() {
         UUID accountId = issue(bytes(15), bytes(16), NOW, "request-create").accountId();
 
-        Account suspended = repository.changeAccountStatus(
-                accountId,
-                AccountStatus.SUSPENDED,
-                NOW.plusSeconds(10),
-                "admin-service",
-                "request-suspend"
-        );
-        assertThat(suspended.tokenNotBefore()).isEqualTo(NOW.plusSeconds(10));
+        Account suspended = repository.findAccountForStatusChange(accountId).suspend(NOW.plusSeconds(10));
+        repository.recordAccountStatusChange(suspended, "admin-service", "request-suspend", NOW.plusSeconds(10));
+        Account stored = repository.findAccount(accountId);
+        assertThat(stored.status()).isEqualTo(AccountStatus.SUSPENDED);
+        assertThat(stored.tokenNotBefore()).isEqualTo(NOW.plusSeconds(10));
+        assertThat(stored.updatedAt()).isEqualTo(NOW.plusSeconds(10));
+        assertThat(eventTime("request-suspend")).isEqualTo(NOW.plusSeconds(10));
         assertThatThrownBy(() -> issue(
                 bytes(15),
                 bytes(17),
@@ -201,13 +214,8 @@ class JpaPasswordlessIdentityRepositoryIntegrationTest {
         )).isInstanceOfSatisfying(IdentityFailure.class, failure ->
                 assertThat(failure.reason()).isEqualTo(IdentityFailure.Reason.ACCOUNT_UNAVAILABLE));
 
-        repository.changeAccountStatus(
-                accountId,
-                AccountStatus.ACTIVE,
-                NOW.plusSeconds(20),
-                "admin-service",
-                "request-reactivate"
-        );
+        Account reactivated = repository.findAccountForStatusChange(accountId).reactivate(NOW.plusSeconds(20));
+        repository.recordAccountStatusChange(reactivated, "admin-service", "request-reactivate", NOW.plusSeconds(20));
         assertThat(repository.consumeSignInGrant(
                 bytes(16),
                 AUDIENCE,
@@ -215,14 +223,9 @@ class JpaPasswordlessIdentityRepositoryIntegrationTest {
                 "request-consume"
         ).id()).isEqualTo(accountId);
 
-        Account deleted = repository.changeAccountStatus(
-                accountId,
-                AccountStatus.DELETED,
-                NOW.plusSeconds(30),
-                "admin-service",
-                "request-delete"
-        );
-        assertThat(deleted.deletedAt()).isEqualTo(NOW.plusSeconds(30));
+        Account deleted = repository.findAccountForStatusChange(accountId).delete(NOW.plusSeconds(30));
+        repository.recordAccountStatusChange(deleted, "admin-service", "request-delete", NOW.plusSeconds(30));
+        assertThat(repository.findAccount(accountId).deletedAt()).isEqualTo(NOW.plusSeconds(30));
         assertThat(count("login_identities")).isEqualTo(1);
         assertThat(count("verification_grants")).isEqualTo(1);
         assertThat(jdbcTemplate.queryForList(
@@ -247,14 +250,38 @@ class JpaPasswordlessIdentityRepositoryIntegrationTest {
                 Long.class,
                 accountId
         )).isEqualTo(3L);
-        assertThatThrownBy(() -> repository.changeAccountStatus(
-                accountId,
-                AccountStatus.ACTIVE,
-                NOW.plusSeconds(31),
-                "admin-service",
-                "request-invalid-reactivation"
-        )).isInstanceOfSatisfying(IdentityFailure.class, failure ->
-                assertThat(failure.reason()).isEqualTo(IdentityFailure.Reason.ACCOUNT_UNAVAILABLE));
+    }
+
+    @Test
+    void tokenIssuanceLookupLocksAnExistingAccountAndIsEmptyForAMissingOne() throws Exception {
+        UUID accountId = issue(bytes(22), bytes(23), NOW, "request-token-issuance").accountId();
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            assertThat(repository.findAccountForTokenIssuance(accountId))
+                    .hasValueSatisfying(account -> assertThat(account.id()).isEqualTo(accountId));
+            assertThatThrownBy(() -> lockWithoutWaiting(accountId))
+                    .isInstanceOfSatisfying(SQLException.class, failure ->
+                            assertThat(failure.getSQLState()).isEqualTo("55P03"));
+        });
+
+        assertThat(repository.findAccountForTokenIssuance(UUID.randomUUID())).isEmpty();
+    }
+
+    @Test
+    void statusChangeLookupLocksTheAccountUntilItsTransactionEnds() throws Exception {
+        UUID accountId = issue(bytes(20), bytes(21), NOW, "request-lock").accountId();
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            assertThat(repository.findAccountForStatusChange(accountId).id()).isEqualTo(accountId);
+            assertThatThrownBy(() -> lockWithoutWaiting(accountId))
+                    .isInstanceOfSatisfying(SQLException.class, failure ->
+                            assertThat(failure.getSQLState()).isEqualTo("55P03"));
+        });
+
+        lockWithoutWaiting(accountId);
+        assertThatThrownBy(() -> repository.findAccountForStatusChange(UUID.randomUUID()))
+                .isInstanceOfSatisfying(IdentityFailure.class, failure ->
+                        assertThat(failure.reason()).isEqualTo(IdentityFailure.Reason.ACCOUNT_NOT_FOUND));
     }
 
     @Test
@@ -304,6 +331,28 @@ class JpaPasswordlessIdentityRepositoryIntegrationTest {
                 "SELECT count(*) FROM iam_identity." + table,
                 Integer.class
         );
+    }
+
+    private Instant eventTime(String requestId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT occurred_at FROM iam_identity.security_events WHERE request_id = ?",
+                OffsetDateTime.class,
+                requestId
+        ).toInstant();
+    }
+
+    private void lockWithoutWaiting(UUID accountId) throws SQLException {
+        try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "SELECT id FROM iam_identity.accounts WHERE id = ? FOR UPDATE NOWAIT"
+            )) {
+                statement.setObject(1, accountId);
+                statement.executeQuery().close();
+            } finally {
+                connection.rollback();
+            }
+        }
     }
 
     private Statistics statistics() {

@@ -72,6 +72,7 @@ iam:
       bff-redirect-uri: ${IAM_OAUTH_BFF_REDIRECT_URI:http://localhost:3000/api/auth/callback}
       authorization-code-ttl: ${IAM_OAUTH_AUTHORIZATION_CODE_TTL:PT5M}
       access-token-ttl: ${IAM_OAUTH_ACCESS_TOKEN_TTL:PT5M}
+      refresh-token-ttl: ${IAM_OAUTH_REFRESH_TOKEN_TTL:P30D}
   email:
     provider: ${EMAIL_PROVIDER:disabled}
     from-address: ${EMAIL_FROM_ADDRESS:}

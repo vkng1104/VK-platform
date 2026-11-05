@@ -28,6 +28,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -53,6 +54,7 @@ class AuthenticationSessionTransactionIntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
+        jdbcTemplate.update("DELETE FROM iam_session.oauth_refresh_tokens");
         jdbcTemplate.update("DELETE FROM iam_session.oauth_authorizations");
         jdbcTemplate.update("DELETE FROM iam_session.sessions");
         jdbcTemplate.update("DELETE FROM iam_identity.security_events");
@@ -113,6 +115,31 @@ class AuthenticationSessionTransactionIntegrationTest {
                 @Override
                 public Optional<AuthenticationSession> findById(UUID id) {
                     return Optional.empty();
+                }
+
+                @Override
+                public Optional<AuthenticationSession> findLockedById(UUID id) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public List<AuthenticationSession> findAllLockedByAccountId(UUID accountId) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public void recordRevocation(AuthenticationSession revoked) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public void recordRefresh(AuthenticationSession refreshed) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public void recordCompromise(AuthenticationSession compromised) {
+                    throw new UnsupportedOperationException();
                 }
 
                 @Override

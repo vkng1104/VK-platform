@@ -15,6 +15,9 @@ class SessionStatusConverterTest {
         assertThat(converter.convertToEntityAttribute("active")).isEqualTo(SessionStatus.ACTIVE);
         assertThat(converter.convertToDatabaseColumn(SessionStatus.REVOKED)).isEqualTo("revoked");
         assertThat(converter.convertToEntityAttribute("revoked")).isEqualTo(SessionStatus.REVOKED);
+        assertThat(converter.convertToDatabaseColumn(SessionStatus.COMPROMISED)).isEqualTo("compromised");
+        assertThat(converter.convertToEntityAttribute("compromised"))
+                .isEqualTo(SessionStatus.COMPROMISED);
     }
 
     @Test

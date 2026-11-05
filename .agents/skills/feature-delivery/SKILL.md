@@ -19,6 +19,14 @@ Before the branch's first remote push, produce exactly two feature-specific comm
 1. Implement the feature and run relevant existing checks. Commit only the implementation files with `feat: <concise description>`.
 2. Add or update unit and integration tests according to `.agents/skills/bottom-up-testing/SKILL.md`. Commit only test code, fixtures, and test-only configuration with `test: <concise description>`.
 
+End every commit you create with one trailer naming your brand and the model you are running as, separated from the commit body by a blank line:
+
+```text
+Co-Authored-By: <brand> <model> <provider no-reply address>
+```
+
+For example, `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` or `Co-Authored-By: Codex GPT-5.6 Sol <noreply@openai.com>`.
+
 Use explicit paths when staging. If a necessary file contains unrelated user edits, stop before staging it and ask how the user wants the overlap handled.
 
 ## Preserve Published History

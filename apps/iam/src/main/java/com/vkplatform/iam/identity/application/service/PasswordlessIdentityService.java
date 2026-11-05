@@ -5,6 +5,7 @@ import com.vkplatform.iam.identity.api.command.AccountAdministrationCommand;
 import com.vkplatform.iam.identity.api.command.ConsumeSignInGrant;
 import com.vkplatform.iam.identity.api.command.StartPasswordlessSignIn;
 import com.vkplatform.iam.identity.api.command.VerifyPasswordlessSignIn;
+import com.vkplatform.iam.identity.api.AccountAuthenticationInvalidated;
 import com.vkplatform.iam.identity.api.result.AccountSummary;
 import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.identity.api.result.AuthenticationChallengeStarted;
@@ -21,10 +22,12 @@ import com.vkplatform.iam.verification.api.command.VerifyEmailCode;
 import com.vkplatform.iam.verification.api.result.EmailVerified;
 import com.vkplatform.iam.verification.api.result.VerificationChallengeStarted;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 public class PasswordlessIdentityService implements PasswordlessIdentityOperations {
@@ -35,6 +38,7 @@ public class PasswordlessIdentityService implements PasswordlessIdentityOperatio
     private final GrantTokenCodec grants;
     private final Clock clock;
     private final IdentityPolicy policy;
+    private final ApplicationEventPublisher events;
 
     public PasswordlessIdentityService(
             EmailVerificationOperations verification,
@@ -43,11 +47,31 @@ public class PasswordlessIdentityService implements PasswordlessIdentityOperatio
             Clock clock,
             IdentityPolicy policy
     ) {
+        this(verification, repository, grants, clock, policy, event -> { });
+    }
+
+    public PasswordlessIdentityService(
+            EmailVerificationOperations verification,
+            PasswordlessIdentityRepository repository,
+            GrantTokenCodec grants,
+            Clock clock,
+            IdentityPolicy policy,
+            ApplicationEventPublisher events
+    ) {
         this.verification = Objects.requireNonNull(verification);
         this.repository = Objects.requireNonNull(repository);
         this.grants = Objects.requireNonNull(grants);
         this.clock = Objects.requireNonNull(clock);
         this.policy = Objects.requireNonNull(policy);
+        this.events = Objects.requireNonNull(events);
+    }
+
+    @Override
+    @Transactional
+    public Optional<AuthenticatedAccount> findActiveAccount(UUID accountId) {
+        return repository.findAccountForTokenIssuance(Objects.requireNonNull(accountId))
+                .filter(account -> account.status() == AccountStatus.ACTIVE)
+                .map(account -> new AuthenticatedAccount(account.id(), account.tokenNotBefore()));
     }
 
     @Override
@@ -136,14 +160,21 @@ public class PasswordlessIdentityService implements PasswordlessIdentityOperatio
         if (command.accountId() == null) {
             throw IdentityFailure.invalidAdminContext();
         }
-        Account account = repository.changeAccountStatus(
-                command.accountId(),
-                status,
-                clock.instant(),
-                requireContext(command.actorId()),
-                requireContext(command.requestId())
-        );
-        return summary(account);
+        String actorId = requireContext(command.actorId());
+        String requestId = requireContext(command.requestId());
+        Account current = repository.findAccountForStatusChange(command.accountId());
+        Instant transitionAt = clock.instant();
+        Account changed = switch (status) {
+            case ACTIVE -> current.reactivate(transitionAt);
+            case SUSPENDED -> current.suspend(transitionAt);
+            case DELETED -> current.delete(transitionAt);
+            case RECOVERY_LOCKED -> throw new IllegalArgumentException("recovery lock requires a dedicated operation");
+        };
+        if (changed.status() != current.status()) {
+            repository.recordAccountStatusChange(changed, actorId, requestId, transitionAt);
+            events.publishEvent(new AccountAuthenticationInvalidated(changed.id(), transitionAt));
+        }
+        return summary(changed);
     }
 
     private static AccountSummary summary(Account account) {
