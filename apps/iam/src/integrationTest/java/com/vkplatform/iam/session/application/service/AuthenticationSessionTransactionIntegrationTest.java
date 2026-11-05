@@ -28,6 +28,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -114,6 +115,16 @@ class AuthenticationSessionTransactionIntegrationTest {
                 @Override
                 public Optional<AuthenticationSession> findById(UUID id) {
                     return Optional.empty();
+                }
+
+                @Override
+                public List<AuthenticationSession> findAllLockedByAccountId(UUID accountId) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public void recordRevocation(AuthenticationSession revoked) {
+                    throw new UnsupportedOperationException();
                 }
 
                 @Override

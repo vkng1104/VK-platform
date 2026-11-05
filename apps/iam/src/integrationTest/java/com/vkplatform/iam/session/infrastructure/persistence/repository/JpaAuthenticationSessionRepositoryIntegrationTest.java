@@ -9,15 +9,24 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 @SpringBootTest(properties = "iam.email.cleanup-enabled=false")
 class JpaAuthenticationSessionRepositoryIntegrationTest {
@@ -29,6 +38,12 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private DataSource dataSource;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @BeforeEach
     void cleanDatabase() {
@@ -172,6 +187,65 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
     }
 
     @Test
+    void findsEverySessionOfTheAccountInIdOrderAndLocksThemUntilTheTransactionEnds() throws Exception {
+        UUID otherAccountId = UUID.randomUUID();
+        insertAccount(otherAccountId);
+        UUID firstId = UUID.fromString("00000000-0000-4000-8000-000000000001");
+        UUID secondId = UUID.fromString("00000000-0000-4000-8000-000000000002");
+        repository.create(createSession(secondId, ACCOUNT_ID));
+        repository.create(createSession(firstId, ACCOUNT_ID));
+        repository.create(createSession(UUID.randomUUID(), otherAccountId));
+        repository.revokeByIdForAccount(
+                ACCOUNT_ID,
+                secondId,
+                SessionRevokeReason.LOGOUT,
+                NOW.plusSeconds(10)
+        );
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            assertThat(repository.findAllLockedByAccountId(ACCOUNT_ID))
+                    .extracting(AuthenticationSession::id, AuthenticationSession::status)
+                    .containsExactly(
+                            tuple(firstId, SessionStatus.ACTIVE),
+                            tuple(secondId, SessionStatus.REVOKED)
+                    );
+            for (UUID sessionId : List.of(firstId, secondId)) {
+                assertThatThrownBy(() -> lockWithoutWaiting(sessionId))
+                        .isInstanceOfSatisfying(SQLException.class, failure ->
+                                assertThat(failure.getSQLState()).isEqualTo("55P03"));
+            }
+        });
+
+        lockWithoutWaiting(firstId);
+        assertThat(repository.findAllLockedByAccountId(UUID.randomUUID())).isEmpty();
+    }
+
+    @Test
+    void recordsTheRevocationTheCallerApplied() {
+        UUID sessionId = UUID.randomUUID();
+        AuthenticationSession active = repository.create(createSession(sessionId, ACCOUNT_ID));
+
+        repository.recordRevocation(active.revoke(
+                SessionRevokeReason.ACCOUNT_STATE_CHANGED,
+                NOW.plusSeconds(15)
+        ));
+
+        assertThat(jdbcTemplate.queryForMap(
+                "SELECT status, revoked_at, revoke_reason FROM iam_session.sessions WHERE id = ?",
+                sessionId
+        ))
+                .containsEntry("status", SessionStatus.REVOKED.wireValue())
+                .containsEntry("revoke_reason", SessionRevokeReason.ACCOUNT_STATE_CHANGED.wireValue());
+        assertThat(repository.findById(sessionId).orElseThrow().revokedAt()).isEqualTo(NOW.plusSeconds(15));
+        assertThatThrownBy(() -> repository.recordRevocation(
+                createSession(UUID.randomUUID(), ACCOUNT_ID)
+                        .revoke(SessionRevokeReason.ACCOUNT_STATE_CHANGED, NOW.plusSeconds(15))
+        ))
+                .isInstanceOf(InvalidDataAccessApiUsageException.class)
+                .hasMessageContaining("session to revoke does not exist");
+    }
+
+    @Test
     void databaseRejectsInconsistentRevocationState() {
         assertThatThrownBy(() -> insertRawSession(
                 SessionStatus.REVOKED.wireValue(),
@@ -244,6 +318,20 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
                 timestamp(NOW),
                 timestamp(NOW)
         );
+    }
+
+    private void lockWithoutWaiting(UUID sessionId) throws SQLException {
+        try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "SELECT id FROM iam_session.sessions WHERE id = ? FOR UPDATE NOWAIT"
+            )) {
+                statement.setObject(1, sessionId);
+                statement.executeQuery().close();
+            } finally {
+                connection.rollback();
+            }
+        }
     }
 
     private static OffsetDateTime timestamp(Instant value) {

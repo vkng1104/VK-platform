@@ -35,6 +35,22 @@ public class JpaAuthenticationSessionRepository implements AuthenticationSession
 
     @Override
     @Transactional
+    public List<AuthenticationSession> findAllLockedByAccountId(UUID accountId) {
+        return sessions.findLockedByAccountIdOrderByIdAsc(accountId).stream()
+                .map(SessionEntity::toDomain)
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public void recordRevocation(AuthenticationSession revoked) {
+        sessions.findLockedById(revoked.id())
+                .orElseThrow(() -> new IllegalStateException("session to revoke does not exist"))
+                .apply(revoked);
+    }
+
+    @Override
+    @Transactional
     public boolean revokeByIdForAccount(
             UUID accountId,
             UUID sessionId,

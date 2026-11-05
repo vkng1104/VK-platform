@@ -78,7 +78,7 @@ apps/api/
       model.go                  Domain entities and value types
       dto.go                    HTTP request/response DTOs and mappings
       errors.go                 Sentinel or typed domain errors
-      repository.go             Narrow persistence port/adapter and domain mapping
+      repository.go             One narrow persistence port/adapter per table, with domain mapping
       service.go                Validation and application orchestration
       handler.go                HTTP adapter and route mounting
     platform/
@@ -111,6 +111,8 @@ Read-only endpoints still use response DTOs and explicit domain-to-transport map
 ### Services
 
 - Services own input validation, business rules, ordering, and collaborator orchestration.
+- Services make every business decision in a use case: which rows change and in what order, which timestamps, reasons, statuses, and defaults apply, and any clamp or correction of an input value. Repositories only carry those decisions out.
+- When one use case changes several tables, the service calls each table's repository in turn inside one transaction. Do not hide that orchestration in a repository adapter.
 - Validate business-facing formats such as URLs, slugs, and non-blank text in the service layer so callers receive useful domain errors before persistence.
 - Services know nothing about HTTP status codes, JSON, or concrete database clients.
 - Accept application request structs and return domain/result structs.
@@ -119,14 +121,17 @@ Read-only endpoints still use response DTOs and explicit domain-to-transport map
 
 ### Repositories and PostgreSQL
 
+- One repository owns one table. Its methods only read, lock, insert, update, or delete rows of that table (its persistence entity) and map them to and from the domain object. A repository never writes a second table and never calls another repository.
+- Repositories make no business decisions. Timestamps, reasons, and statuses come from the caller, either as arguments or as a domain-object transition the caller already applied. A repository does not choose, default, or clamp them, and does not decide which other rows must change. A filter that defines the method's scope, such as "only rows not invalidated yet" or "only sessions of this account", is fine.
+- Name a repository after the stored thing its table holds, such as `AuthenticationSessionRepository` or `OAuthAuthorizationRepository`. A repository named after an action, such as `AccountAuthenticationInvalidationRepository`, is a sign that its logic belongs in a service.
 - Repository adapters own ORM use, persistence-to-domain mapping, and database error translation.
 - Use Spring Data JPA/Hibernate for Java services and Ent-generated persistence for Go services by default.
 - Keep JPA entities, Spring Data repositories, Ent nodes, and generated mutation/query builders inside infrastructure. Never return them from application services or serialize them through HTTP/gRPC.
-- Generated infrastructure persistence should provide routine create, update-by-ID, find-by-ID, find-by-IDs, delete-by-ID, and delete-by-IDs capabilities when the entity supports those operations. Application services still call narrow methods named for domain use cases; do not expose arbitrary `save`, `update`, or table-oriented operations across the repository port.
+- Generated infrastructure persistence should provide routine create, update-by-ID, find-by-ID, find-by-IDs, delete-by-ID, and delete-by-IDs capabilities when the entity supports those operations. Application services still call narrow methods named for domain use cases; do not expose arbitrary `save` or `update` operations across the repository port.
 - Treat generated access patterns as explicit contracts. A unique lookup returns zero or one result and requires a matching database `UNIQUE` constraint; a non-unique lookup is named as a many-result operation and must be bounded or paginated. Do not change a method's return cardinality implicitly from metadata such as `unique=true`.
 - Name destructive multi-row operations explicitly, return their affected-row count, and bound their scope. Generate an upsert only for a database-enforced unique conflict target, and declare which mutable fields may be updated on conflict.
 - Map ORM not-found, constraint, locking, and driver failures to domain errors. Never expose raw database errors through HTTP.
-- Accept a transaction explicitly for atomic multi-write operations.
+- Make multi-table writes atomic through the service's transaction. Java repositories join the service's `@Transactional` boundary; Go repositories accept the transaction explicitly.
 - Keep ORM queries bounded and aligned with indexes. Review generated SQL, fetch plans, query counts, and execution plans for security-critical or hot paths.
 - Prefer generated repository methods, ORM predicates/specifications, typed criteria, eager-loading plans, and generated mutations before a lower-level query tool.
 - Use a type-safe SQL DSL or handwritten SQL/JPQL/HQL when generated ORM APIs cannot express a complex operation clearly and correctly, or when measurement proves that a lower-level query is required for acceptable performance.

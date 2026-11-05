@@ -1,17 +1,17 @@
 package com.vkplatform.iam.session.infrastructure.event;
 
 import com.vkplatform.iam.identity.api.AccountAuthenticationInvalidated;
-import com.vkplatform.iam.session.application.port.out.AccountAuthenticationInvalidationRepository;
+import com.vkplatform.iam.session.application.service.AccountAuthenticationInvalidationService;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 @Component
 public class AccountAuthenticationInvalidatedListener {
-    private final AccountAuthenticationInvalidationRepository invalidations;
+    private final AccountAuthenticationInvalidationService invalidations;
 
     public AccountAuthenticationInvalidatedListener(
-            AccountAuthenticationInvalidationRepository invalidations
+            AccountAuthenticationInvalidationService invalidations
     ) {
         this.invalidations = invalidations;
     }
