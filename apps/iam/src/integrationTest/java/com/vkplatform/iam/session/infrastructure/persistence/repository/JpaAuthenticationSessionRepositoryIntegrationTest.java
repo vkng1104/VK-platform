@@ -221,6 +221,42 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
     }
 
     @Test
+    void findsOneSessionAndLocksItUntilTheTransactionEnds() throws Exception {
+        UUID sessionId = UUID.randomUUID();
+        AuthenticationSession active = repository.create(createSession(sessionId, ACCOUNT_ID));
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            assertThat(repository.findLockedById(sessionId)).contains(active);
+            assertThatThrownBy(() -> lockWithoutWaiting(sessionId))
+                    .isInstanceOfSatisfying(SQLException.class, failure ->
+                            assertThat(failure.getSQLState()).isEqualTo("55P03"));
+        });
+
+        lockWithoutWaiting(sessionId);
+        assertThat(repository.findLockedById(UUID.randomUUID())).isEmpty();
+    }
+
+    @Test
+    void recordsTheRefreshAndCompromiseTheCallerApplied() {
+        UUID sessionId = UUID.randomUUID();
+        AuthenticationSession active = repository.create(createSession(sessionId, ACCOUNT_ID));
+
+        AuthenticationSession refreshed = active.touch(NOW.plusSeconds(30));
+        repository.recordRefresh(refreshed);
+        assertThat(repository.findById(sessionId)).contains(refreshed);
+
+        AuthenticationSession compromised = refreshed.compromise(NOW.plusSeconds(40));
+        repository.recordCompromise(compromised);
+        assertThat(repository.findById(sessionId)).contains(compromised);
+        assertThat(jdbcTemplate.queryForMap(
+                "SELECT status, revoke_reason FROM iam_session.sessions WHERE id = ?",
+                sessionId
+        ))
+                .containsEntry("status", SessionStatus.COMPROMISED.wireValue())
+                .containsEntry("revoke_reason", SessionRevokeReason.REFRESH_TOKEN_REUSED.wireValue());
+    }
+
+    @Test
     void recordsTheRevocationTheCallerApplied() {
         UUID sessionId = UUID.randomUUID();
         AuthenticationSession active = repository.create(createSession(sessionId, ACCOUNT_ID));

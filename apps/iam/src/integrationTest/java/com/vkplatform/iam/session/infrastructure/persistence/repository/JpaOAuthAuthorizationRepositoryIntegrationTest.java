@@ -102,6 +102,34 @@ class JpaOAuthAuthorizationRepositoryIntegrationTest {
     }
 
     @Test
+    void invalidatesOneAuthorizationOnceAndIgnoresMissingOnes() {
+        String target = insertAuthorization(SESSION_ID, null, null);
+        String sibling = insertAuthorization(SESSION_ID, null, null);
+
+        repository.invalidate(
+                target,
+                OAuthAuthorizationInvalidationReason.REFRESH_TOKEN_REUSED,
+                NOW.plusSeconds(60)
+        );
+        repository.invalidate(
+                target,
+                OAuthAuthorizationInvalidationReason.AUTHORIZATION_REMOVED,
+                NOW.plusSeconds(70)
+        );
+        repository.invalidate(
+                "missing-authorization",
+                OAuthAuthorizationInvalidationReason.AUTHORIZATION_REMOVED,
+                NOW.plusSeconds(70)
+        );
+
+        assertThat(invalidation(target)).containsExactly(
+                NOW.plusSeconds(60),
+                OAuthAuthorizationInvalidationReason.REFRESH_TOKEN_REUSED.wireValue()
+        );
+        assertThat(invalidation(sibling)).containsExactly(null, null);
+    }
+
+    @Test
     void invalidatesOnlyTheSessionsAuthorizationsThatAreNotInvalidatedYet() {
         UUID otherSessionId = UUID.randomUUID();
         insertSession(otherSessionId);

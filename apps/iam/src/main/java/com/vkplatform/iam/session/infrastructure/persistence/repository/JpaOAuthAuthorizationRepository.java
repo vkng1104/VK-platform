@@ -20,6 +20,17 @@ public class JpaOAuthAuthorizationRepository implements OAuthAuthorizationReposi
 
     @Override
     @Transactional
+    public void invalidate(
+            String authorizationId,
+            OAuthAuthorizationInvalidationReason reason,
+            Instant invalidatedAt
+    ) {
+        authorizations.findLockedById(authorizationId)
+                .ifPresent(authorization -> authorization.invalidate(invalidatedAt, reason));
+    }
+
+    @Override
+    @Transactional
     public int invalidateAllForSession(
             UUID sessionId,
             OAuthAuthorizationInvalidationReason reason,

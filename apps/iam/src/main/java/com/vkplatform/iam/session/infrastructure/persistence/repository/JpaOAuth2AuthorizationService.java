@@ -1,12 +1,9 @@
 package com.vkplatform.iam.session.infrastructure.persistence.repository;
 
-import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
-import com.vkplatform.iam.session.domain.AuthenticationSession;
-import com.vkplatform.iam.session.domain.OAuthAuthorizationInvalidationReason;
+import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService;
+import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService.RefreshTokenUse;
 import com.vkplatform.iam.session.infrastructure.crypto.TokenDigest;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.OAuthAuthorizationEntity;
-import com.vkplatform.iam.session.infrastructure.persistence.entity.OAuthRefreshTokenEntity;
-import com.vkplatform.iam.session.infrastructure.persistence.entity.SessionEntity;
 import com.vkplatform.iam.session.infrastructure.persistence.repository.SpringDataOAuthAuthorizationRepository.AuthorizationLockTarget;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataRetrievalFailureException;
@@ -29,7 +26,6 @@ import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 import java.security.Principal;
-import java.time.Clock;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -42,31 +38,27 @@ import java.util.function.Consumer;
         name = {"iam.oauth.enabled", "iam.session.enabled"},
         havingValue = "true"
 )
+/**
+ * Spring Authorization Server's store for {@link OAuth2Authorization}. It owns the
+ * {@code oauth_authorizations} table and the mapping to and from the framework object. Session,
+ * account, and refresh-token rules live in {@link OAuthTokenLifecycleService}.
+ */
 public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService {
     private static final String SESSION_ID_DETAIL = "session_id";
 
     private final SpringDataOAuthAuthorizationRepository authorizations;
-    private final SpringDataOAuthRefreshTokenRepository refreshTokens;
-    private final SpringDataAuthenticationSessionRepository sessions;
-    private final PasswordlessIdentityOperations identities;
+    private final OAuthTokenLifecycleService tokenLifecycle;
     private final RegisteredClientRepository clients;
-    private final Clock clock;
     private final OAuthJsonCodec json = new OAuthJsonCodec();
 
     JpaOAuth2AuthorizationService(
             SpringDataOAuthAuthorizationRepository authorizations,
-            SpringDataOAuthRefreshTokenRepository refreshTokens,
-            SpringDataAuthenticationSessionRepository sessions,
-            PasswordlessIdentityOperations identities,
-            RegisteredClientRepository clients,
-            Clock clock
+            OAuthTokenLifecycleService tokenLifecycle,
+            RegisteredClientRepository clients
     ) {
         this.authorizations = authorizations;
-        this.refreshTokens = refreshTokens;
-        this.sessions = sessions;
-        this.identities = identities;
+        this.tokenLifecycle = tokenLifecycle;
         this.clients = clients;
-        this.clock = clock;
     }
 
     @Override
@@ -77,7 +69,7 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         UUID effectiveSessionId = requestedSessionId == null
                 ? authorizations.findSessionIdById(authorization.getId()).orElse(null)
                 : requestedSessionId;
-        lockUsableSession(
+        requireUsableSession(
                 effectiveSessionId,
                 authorization.getPrincipalName(),
                 authorization.getRegisteredClientId()
@@ -90,7 +82,7 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         byte[] previousRefreshDigest = entity.refreshTokenDigest();
         mapAuthorization(authorization, effectiveSessionId, entity);
         authorizations.saveAndFlush(entity);
-        rotateRefreshHistory(entity, previousRefreshDigest);
+        recordRefreshTokenIfIssued(entity, previousRefreshDigest);
     }
 
     @Override
@@ -101,11 +93,9 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         if (target == null) {
             return;
         }
+        // Lock the session first even when it is no longer usable, to keep the lock order.
         lockUsableSession(target);
-        authorizations.findLockedById(target.getId()).ifPresent(entity -> entity.invalidate(
-                clock.instant(),
-                OAuthAuthorizationInvalidationReason.AUTHORIZATION_REMOVED
-        ));
+        tokenLifecycle.recordAuthorizationRemoved(target.getId());
     }
 
     @Override
@@ -163,23 +153,16 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
     }
 
     private OAuth2Authorization findByRefreshToken(String rawToken, byte[] digest) {
-        OAuthAuthorizationEntity authorization = refreshTokens.findAuthorizationIdByTokenDigest(digest)
+        OAuthAuthorizationEntity authorization = tokenLifecycle.findAuthorizationIdByRefreshToken(digest)
                 .flatMap(authorizations::findLockTargetById)
                 .map(this::lockAuthorization)
                 .orElse(null);
-        if (authorization == null) {
+        if (authorization == null || authorization.invalidatedAt() != null) {
             return null;
         }
-        OAuthRefreshTokenEntity refresh = refreshTokens.findLockedByTokenDigest(digest).orElse(null);
-        Instant now = clock.instant();
-        if (refresh == null || authorization.invalidatedAt() != null) {
-            return null;
-        }
-        if (refresh.consumedAt() != null) {
-            compromise(refresh, authorization, now);
-            return null;
-        }
-        if (!refresh.isActive(now) || !TokenDigest.matches(authorization.refreshTokenDigest(), digest)) {
+        RefreshTokenUse use = tokenLifecycle.useRefreshToken(digest, authorization.sessionId());
+        if (use != RefreshTokenUse.ACTIVE
+                || !TokenDigest.matches(authorization.refreshTokenDigest(), digest)) {
             return null;
         }
         return toObject(
@@ -200,14 +183,14 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
 
     private boolean lockUsableSession(AuthorizationLockTarget target) {
         try {
-            lockUsableSession(target.getSessionId(), target.getPrincipalName(), target.getRegisteredClientId());
+            requireUsableSession(target.getSessionId(), target.getPrincipalName(), target.getRegisteredClientId());
             return true;
         } catch (IllegalStateException exception) {
             return false;
         }
     }
 
-    private SessionEntity lockUsableSession(
+    private void requireUsableSession(
             UUID sessionId,
             String principalName,
             String registeredClientId
@@ -215,82 +198,39 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         if (sessionId == null) {
             throw new IllegalStateException("OAuth browser session is missing");
         }
-        UUID accountId = accountId(principalName);
-        if (identities.findActiveAccount(accountId).isEmpty()) {
-            throw new IllegalStateException("OAuth account is unavailable");
-        }
-        SessionEntity entity = sessions.findLockedById(sessionId)
-                .orElseThrow(() -> new IllegalStateException("OAuth browser session is unavailable"));
-        AuthenticationSession session = entity.toDomain();
-        if (!session.canAuthorize(accountId, clientId(registeredClientId), clock.instant())) {
+        if (!tokenLifecycle.lockUsableSession(sessionId, accountId(principalName), clientId(registeredClientId))) {
             throw new IllegalStateException("OAuth browser session is unavailable");
         }
-        return entity;
     }
 
     private boolean isUsable(OAuthAuthorizationEntity entity) {
         if (entity.invalidatedAt() != null) {
             return false;
         }
-        return sessions.findById(entity.sessionId())
-                .map(SessionEntity::toDomain)
-                .filter(session -> session.canAuthorize(
-                        accountId(entity.principalName()),
-                        clientId(entity.registeredClientId()),
-                        clock.instant()
-                ))
-                .isPresent();
+        return tokenLifecycle.isSessionUsable(
+                entity.sessionId(),
+                accountId(entity.principalName()),
+                clientId(entity.registeredClientId())
+        );
     }
 
     private OAuth2Authorization usable(OAuthAuthorizationEntity entity, PresentedToken presented) {
         return entity != null && isUsable(entity) ? toObject(entity, presented) : null;
     }
 
-    private void compromise(
-            OAuthRefreshTokenEntity refresh,
-            OAuthAuthorizationEntity authorization,
-            Instant now
-    ) {
-        refresh.detectReuse(now);
-        authorization.invalidate(now, OAuthAuthorizationInvalidationReason.REFRESH_TOKEN_REUSED);
-        sessions.findLockedById(authorization.sessionId())
-                .ifPresent(session -> session.apply(session.toDomain().compromise(now)));
-    }
-
-    private void rotateRefreshHistory(OAuthAuthorizationEntity entity, byte[] previousDigest) {
+    private void recordRefreshTokenIfIssued(OAuthAuthorizationEntity entity, byte[] previousDigest) {
         byte[] currentDigest = entity.refreshTokenDigest();
         if (currentDigest == null || TokenDigest.matches(previousDigest, currentDigest)) {
             return;
         }
-        UUID nextId = UUID.randomUUID();
-        if (previousDigest == null) {
-            refreshTokens.save(new OAuthRefreshTokenEntity(
-                    nextId,
-                    entity.getId(),
-                    nextId,
-                    null,
-                    currentDigest,
-                    entity.refreshTokenIssuedAt(),
-                    entity.refreshTokenExpiresAt()
-            ));
-            return;
-        }
-
-        OAuthRefreshTokenEntity previous = refreshTokens.findLockedByTokenDigest(previousDigest)
-                .orElseThrow(() -> new DataRetrievalFailureException("OAuth refresh lineage is missing"));
-        Instant now = clock.instant();
-        previous.consume(nextId, now);
-        refreshTokens.save(new OAuthRefreshTokenEntity(
-                nextId,
+        tokenLifecycle.recordRefreshTokenIssued(
                 entity.getId(),
-                previous.familyId(),
-                previous.getId(),
+                entity.sessionId(),
+                previousDigest,
                 currentDigest,
                 entity.refreshTokenIssuedAt(),
                 entity.refreshTokenExpiresAt()
-        ));
-        sessions.findLockedById(entity.sessionId())
-                .ifPresent(session -> session.apply(session.toDomain().touch(now)));
+        );
     }
 
     private void mapAuthorization(

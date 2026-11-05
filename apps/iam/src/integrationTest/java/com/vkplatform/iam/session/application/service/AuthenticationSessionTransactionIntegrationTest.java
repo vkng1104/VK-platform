@@ -118,12 +118,27 @@ class AuthenticationSessionTransactionIntegrationTest {
                 }
 
                 @Override
+                public Optional<AuthenticationSession> findLockedById(UUID id) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
                 public List<AuthenticationSession> findAllLockedByAccountId(UUID accountId) {
                     throw new UnsupportedOperationException();
                 }
 
                 @Override
                 public void recordRevocation(AuthenticationSession revoked) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public void recordRefresh(AuthenticationSession refreshed) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public void recordCompromise(AuthenticationSession compromised) {
                     throw new UnsupportedOperationException();
                 }
 

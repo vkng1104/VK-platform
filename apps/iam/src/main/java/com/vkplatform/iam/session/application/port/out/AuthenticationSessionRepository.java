@@ -13,6 +13,9 @@ public interface AuthenticationSessionRepository {
 
     Optional<AuthenticationSession> findById(UUID id);
 
+    /** Locks the session row until the caller's transaction ends. */
+    Optional<AuthenticationSession> findLockedById(UUID id);
+
     /**
      * Locks every session of the account, whatever its status, in ID order. The row locks last
      * until the caller's transaction ends.
@@ -24,6 +27,12 @@ public interface AuthenticationSessionRepository {
      * locked before it is written.
      */
     void recordRevocation(AuthenticationSession revoked);
+
+    /** Stores a refresh the caller applied with {@code touch}. The session row is locked first. */
+    void recordRefresh(AuthenticationSession refreshed);
+
+    /** Stores a compromise the caller applied. The session row is locked before it is written. */
+    void recordCompromise(AuthenticationSession compromised);
 
     /**
      * Revokes a session only when it belongs to the supplied account.

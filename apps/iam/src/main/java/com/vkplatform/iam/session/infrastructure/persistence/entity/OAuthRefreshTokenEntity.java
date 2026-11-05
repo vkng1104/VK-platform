@@ -1,5 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.persistence.entity;
 
+import com.vkplatform.iam.session.domain.OAuthRefreshToken;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -45,31 +46,48 @@ public class OAuthRefreshTokenEntity extends AbstractSessionUuidEntity {
     protected OAuthRefreshTokenEntity() {
     }
 
-    public OAuthRefreshTokenEntity(
-            UUID id,
-            String authorizationId,
-            UUID familyId,
-            UUID parentId,
-            byte[] tokenDigest,
-            Instant issuedAt,
-            Instant expiresAt
-    ) {
-        this.id = Objects.requireNonNull(id);
-        if (authorizationId == null || authorizationId.isBlank()) {
-            throw new IllegalArgumentException("refresh-token authorization is invalid");
-        }
-        this.authorizationId = authorizationId;
-        this.familyId = Objects.requireNonNull(familyId);
-        this.parentId = parentId;
+    public OAuthRefreshTokenEntity(OAuthRefreshToken token, byte[] tokenDigest) {
+        Objects.requireNonNull(token);
         if (tokenDigest == null || tokenDigest.length != 32) {
             throw new IllegalArgumentException("refresh-token digest is invalid");
         }
+        this.id = token.id();
+        this.authorizationId = token.authorizationId();
+        this.familyId = token.familyId();
+        this.parentId = token.parentId();
         this.tokenDigest = tokenDigest.clone();
-        this.issuedAt = Objects.requireNonNull(issuedAt);
-        this.expiresAt = Objects.requireNonNull(expiresAt);
-        if (!expiresAt.isAfter(issuedAt)) {
-            throw new IllegalArgumentException("refresh-token expiry must follow issuance");
+        this.issuedAt = token.issuedAt();
+        this.expiresAt = token.expiresAt();
+        apply(token);
+    }
+
+    public OAuthRefreshToken toDomain() {
+        return new OAuthRefreshToken(
+                id,
+                authorizationId,
+                familyId,
+                parentId,
+                issuedAt,
+                expiresAt,
+                replacementId,
+                consumedAt,
+                reuseDetectedAt
+        );
+    }
+
+    /** Copies a consumption or reuse transition; the token's identity and lineage cannot change. */
+    public void apply(OAuthRefreshToken token) {
+        if (!id.equals(token.id())
+                || !authorizationId.equals(token.authorizationId())
+                || !familyId.equals(token.familyId())
+                || !Objects.equals(parentId, token.parentId())
+                || !issuedAt.equals(token.issuedAt())
+                || !expiresAt.equals(token.expiresAt())) {
+            throw new IllegalArgumentException("refresh-token identity cannot change");
         }
+        replacementId = token.replacementId();
+        consumedAt = token.consumedAt();
+        reuseDetectedAt = token.reuseDetectedAt();
     }
 
     @Override
@@ -77,40 +95,7 @@ public class OAuthRefreshTokenEntity extends AbstractSessionUuidEntity {
         return id;
     }
 
-    public String authorizationId() { return authorizationId; }
-    public UUID familyId() { return familyId; }
-    public UUID parentId() { return parentId; }
-    public UUID replacementId() { return replacementId; }
-    public byte[] tokenDigest() { return tokenDigest.clone(); }
-    public Instant issuedAt() { return issuedAt; }
-    public Instant expiresAt() { return expiresAt; }
-    public Instant consumedAt() { return consumedAt; }
-    public Instant reuseDetectedAt() { return reuseDetectedAt; }
-
-    public boolean isActive(Instant now) {
-        return consumedAt == null && reuseDetectedAt == null && now.isBefore(expiresAt);
-    }
-
-    public void consume(UUID replacement, Instant now) {
-        Objects.requireNonNull(replacement);
-        Objects.requireNonNull(now);
-        if (consumedAt != null || replacementId != null || reuseDetectedAt != null) {
-            throw new IllegalStateException("refresh token has already transitioned");
-        }
-        if (replacement.equals(id) || now.isBefore(issuedAt)) {
-            throw new IllegalArgumentException("refresh-token consumption is invalid");
-        }
-        consumedAt = now;
-        replacementId = replacement;
-    }
-
-    public void detectReuse(Instant now) {
-        Objects.requireNonNull(now);
-        if (consumedAt == null || replacementId == null || now.isBefore(consumedAt)) {
-            throw new IllegalStateException("refresh-token reuse cannot precede consumption");
-        }
-        if (reuseDetectedAt == null) {
-            reuseDetectedAt = now;
-        }
+    public byte[] tokenDigest() {
+        return tokenDigest.clone();
     }
 }
