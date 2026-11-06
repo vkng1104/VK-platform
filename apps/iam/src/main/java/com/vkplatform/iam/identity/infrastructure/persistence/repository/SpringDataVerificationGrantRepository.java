@@ -11,4 +11,7 @@ import java.util.UUID;
 interface SpringDataVerificationGrantRepository extends JpaRepository<VerificationGrantEntity, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<VerificationGrantEntity> findByGrantDigest(byte[] grantDigest);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<VerificationGrantEntity> findLockedById(UUID id);
 }

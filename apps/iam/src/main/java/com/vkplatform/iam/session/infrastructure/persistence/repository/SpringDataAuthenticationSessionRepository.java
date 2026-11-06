@@ -1,7 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.persistence.repository;
 
 import com.vkplatform.iam.session.infrastructure.persistence.entity.SessionEntity;
-import com.vkplatform.iam.session.domain.SessionStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -14,11 +13,6 @@ interface SpringDataAuthenticationSessionRepository extends JpaRepository<Sessio
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<SessionEntity> findLockedById(UUID id);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    List<SessionEntity> findLockedByAccountIdAndStatusOrderByIdAsc(
-            UUID accountId,
-            SessionStatus status
-    );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     List<SessionEntity> findLockedByAccountIdOrderByIdAsc(UUID accountId);

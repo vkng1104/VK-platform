@@ -5,10 +5,18 @@ import com.vkplatform.iam.identity.api.command.AccountAdministrationCommand;
 import com.vkplatform.iam.identity.api.command.VerifyPasswordlessSignIn;
 import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.identity.application.port.out.GrantTokenCodec;
-import com.vkplatform.iam.identity.application.port.out.PasswordlessIdentityRepository;
+import com.vkplatform.iam.identity.application.port.out.AccountRepository;
+import com.vkplatform.iam.identity.application.port.out.IdentityOperationGuardRepository;
+import com.vkplatform.iam.identity.application.port.out.LoginIdentityRepository;
+import com.vkplatform.iam.identity.application.port.out.SecurityEventRepository;
+import com.vkplatform.iam.identity.application.port.out.VerificationGrantRepository;
+import com.vkplatform.iam.identity.domain.Account;
+import com.vkplatform.iam.identity.domain.LoginIdentity;
+import com.vkplatform.iam.identity.domain.VerificationGrant;
 import com.vkplatform.iam.identity.domain.IdentityPolicy;
 import com.vkplatform.iam.verification.api.EmailVerificationOperations;
-import com.vkplatform.iam.verification.application.port.out.EmailVerificationRepository;
+import com.vkplatform.iam.verification.application.port.out.EmailVerificationChallengeRepository;
+import com.vkplatform.iam.verification.application.port.out.EmailVerificationOperationGuardRepository;
 import com.vkplatform.iam.verification.application.port.out.VerificationCodeGenerator;
 import com.vkplatform.iam.verification.application.port.out.VerificationCodeHasher;
 import com.vkplatform.iam.verification.application.service.EmailVerificationService;
@@ -53,10 +61,16 @@ class PasswordlessIdentityTransactionIntegrationTest {
     private PasswordlessIdentityOperations operations;
 
     @Autowired
-    private PasswordlessIdentityRepository identities;
+    private AccountRepository accounts;
 
     @Autowired
-    private EmailVerificationRepository verifications;
+    private LoginIdentityRepository loginIdentities;
+
+    @Autowired
+    private VerificationGrantRepository verificationGrants;
+
+    @Autowired
+    private EmailVerificationChallengeRepository verifications;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -78,16 +92,9 @@ class PasswordlessIdentityTransactionIntegrationTest {
 
     @Test
     void failedGrantPersistenceRollsBackSuccessfulOtpConsumption() {
-        identities.issueSignInGrant(
-                bytes(22),
-                GRANT_DIGEST,
-                "vk-platform-web",
-                NOW.plusSeconds(300),
-                NOW,
-                "seed-request"
-        );
+        seedAccountWithGrant(bytes(22), GRANT_DIGEST, NOW.plusSeconds(300), NOW);
         UUID challengeId = UUID.fromString("123e4567-e89b-42d3-a456-426614174000");
-        VerificationChallenge challenge = new VerificationChallenge(
+        VerificationChallenge challenge = VerificationChallenge.pending(
                 challengeId,
                 VerificationPurpose.SIGN_IN,
                 bytes(23),
@@ -98,7 +105,7 @@ class PasswordlessIdentityTransactionIntegrationTest {
                 NOW.plusSeconds(60),
                 NOW
         );
-        verifications.createPending(challenge, VerificationPolicy.defaults());
+        verifications.create(challenge);
         verifications.markSent(challengeId, NOW);
 
         assertThatThrownBy(() -> operations.verifySignIn(new VerifyPasswordlessSignIn(
@@ -120,14 +127,7 @@ class PasswordlessIdentityTransactionIntegrationTest {
 
     @Test
     void inactiveAccountLookupLeavesTheCallersTransactionCommittable() {
-        UUID accountId = identities.issueSignInGrant(
-                bytes(41),
-                bytes(42),
-                "vk-platform-web",
-                NOW.plusSeconds(300),
-                NOW,
-                "inactive-account-seed"
-        ).accountId();
+        UUID accountId = seedAccountWithGrant(bytes(41), bytes(42), NOW.plusSeconds(300), NOW);
         jdbcTemplate.update("UPDATE iam_identity.accounts SET status = 'suspended' WHERE id = ?", accountId);
 
         Optional<AuthenticatedAccount> found = new TransactionTemplate(transactionManager).execute(status -> {
@@ -147,14 +147,7 @@ class PasswordlessIdentityTransactionIntegrationTest {
 
     @Test
     void accountSuspensionRevokesSessionsAndInvalidatesAuthorizationsBeforeCommit() {
-        UUID accountId = identities.issueSignInGrant(
-                bytes(31),
-                bytes(32),
-                "vk-platform-web",
-                NOW.plusSeconds(240),
-                NOW.minusSeconds(60),
-                "account-state-seed"
-        ).accountId();
+        UUID accountId = seedAccountWithGrant(bytes(31), bytes(32), NOW.plusSeconds(240), NOW.minusSeconds(60));
         UUID sessionId = UUID.randomUUID();
         jdbcTemplate.update("""
                 INSERT INTO iam_session.sessions (
@@ -229,7 +222,9 @@ class PasswordlessIdentityTransactionIntegrationTest {
 
         @Bean
         EmailVerificationOperations transactionTestVerificationOperations(
-                EmailVerificationRepository repository,
+                EmailVerificationChallengeRepository challenges,
+                EmailVerificationOperationGuardRepository operationGuards,
+                PlatformTransactionManager transactionManager,
                 Clock clock
         ) {
             VerificationCodeGenerator generator = () -> new VerificationCode("123456");
@@ -250,7 +245,9 @@ class PasswordlessIdentityTransactionIntegrationTest {
                 }
             };
             return new EmailVerificationService(
-                    repository,
+                    challenges,
+                    operationGuards,
+                    new TransactionTemplate(transactionManager),
                     (recipient, code, expiresAt) -> {
                     },
                     clock,
@@ -263,7 +260,11 @@ class PasswordlessIdentityTransactionIntegrationTest {
         @Bean
         PasswordlessIdentityOperations transactionTestPasswordlessIdentityOperations(
                 EmailVerificationOperations verification,
-                PasswordlessIdentityRepository repository,
+                AccountRepository accounts,
+                LoginIdentityRepository loginIdentities,
+                VerificationGrantRepository verificationGrants,
+                SecurityEventRepository securityEvents,
+                IdentityOperationGuardRepository operationGuards,
                 Clock clock,
                 IdentityPolicy policy,
                 ApplicationEventPublisher events
@@ -281,13 +282,30 @@ class PasswordlessIdentityTransactionIntegrationTest {
             };
             return new PasswordlessIdentityService(
                     verification,
-                    repository,
+                    accounts,
+                    loginIdentities,
+                    verificationGrants,
+                    securityEvents,
+                    operationGuards,
                     grants,
                     clock,
                     policy,
                     events
             );
         }
+    }
+
+    /** Seeds what an earlier sign-in leaves behind: an account, its email identity, and a grant. */
+    private UUID seedAccountWithGrant(byte[] fingerprint, byte[] grantDigest, Instant expiresAt, Instant createdAt) {
+        Account account = Account.create(UUID.randomUUID(), createdAt);
+        accounts.create(account);
+        loginIdentities.create(LoginIdentity.linkVerifiedEmail(UUID.randomUUID(), account.id(), createdAt), fingerprint);
+        verificationGrants.create(
+                VerificationGrant.issueSignIn(UUID.randomUUID(), account.id(), "vk-platform-web", expiresAt, createdAt),
+                fingerprint,
+                grantDigest
+        );
+        return account.id();
     }
 
     private static byte[] bytes(int value) {

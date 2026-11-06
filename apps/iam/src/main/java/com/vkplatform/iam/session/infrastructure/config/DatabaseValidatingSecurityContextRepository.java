@@ -1,6 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
-import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.application.service.AuthenticationSessionValidationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
@@ -11,7 +11,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.HttpRequestResponseHolder;
 import org.springframework.security.web.context.SecurityContextRepository;
 
-import java.time.Clock;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -20,20 +19,17 @@ final class DatabaseValidatingSecurityContextRepository implements SecurityConte
     private static final String SESSION_ID_DETAIL = "session_id";
 
     private final SecurityContextRepository delegate;
-    private final AuthenticationSessionRepository sessions;
+    private final AuthenticationSessionValidationService sessions;
     private final String expectedClientId;
-    private final Clock clock;
 
     DatabaseValidatingSecurityContextRepository(
             SecurityContextRepository delegate,
-            AuthenticationSessionRepository sessions,
-            String expectedClientId,
-            Clock clock
+            AuthenticationSessionValidationService sessions,
+            String expectedClientId
     ) {
         this.delegate = Objects.requireNonNull(delegate);
         this.sessions = Objects.requireNonNull(sessions);
         this.expectedClientId = Objects.requireNonNull(expectedClientId);
-        this.clock = Objects.requireNonNull(clock);
     }
 
     @Override
@@ -94,9 +90,7 @@ final class DatabaseValidatingSecurityContextRepository implements SecurityConte
         UUID sessionId = sessionId(authentication);
         if (accountId != null
                 && sessionId != null
-                && sessions.findById(sessionId)
-                .filter(session -> session.canAuthorize(accountId, expectedClientId, clock.instant()))
-                .isPresent()) {
+                && sessions.isUsable(sessionId, accountId, expectedClientId)) {
             return context;
         }
         invalidate(request);

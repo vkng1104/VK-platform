@@ -1,14 +1,17 @@
 package com.vkplatform.iam.session.application.service;
 
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
+import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
 import com.vkplatform.iam.session.application.port.out.OAuthAuthorizationRepository;
 import com.vkplatform.iam.session.application.port.out.OAuthRefreshTokenRepository;
+import com.vkplatform.iam.session.domain.AuthenticationSession;
 import com.vkplatform.iam.session.domain.OAuthAuthorizationInvalidationReason;
 import com.vkplatform.iam.session.domain.OAuthRefreshToken;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
@@ -27,19 +30,22 @@ public class OAuthTokenLifecycleService {
     private final OAuthRefreshTokenRepository refreshTokens;
     private final PasswordlessIdentityOperations identities;
     private final Clock clock;
+    private final Duration accessTokenTtl;
 
     public OAuthTokenLifecycleService(
             AuthenticationSessionRepository sessions,
             OAuthAuthorizationRepository authorizations,
             OAuthRefreshTokenRepository refreshTokens,
             PasswordlessIdentityOperations identities,
-            Clock clock
+            Clock clock,
+            Duration accessTokenTtl
     ) {
         this.sessions = Objects.requireNonNull(sessions);
         this.authorizations = Objects.requireNonNull(authorizations);
         this.refreshTokens = Objects.requireNonNull(refreshTokens);
         this.identities = Objects.requireNonNull(identities);
         this.clock = Objects.requireNonNull(clock);
+        this.accessTokenTtl = Objects.requireNonNull(accessTokenTtl);
     }
 
     /**
@@ -139,6 +145,27 @@ public class OAuthTokenLifecycleService {
                 .ifPresent(session -> sessions.recordRefresh(session.touch(now)));
     }
 
+    /**
+     * Works out when a new access token is valid: from the account's token-not-before time at the
+     * earliest, and never past the session's expiry. Fails when the account is inactive or the
+     * session can no longer authorize the client.
+     */
+    @Transactional
+    public AccessTokenWindow accessTokenWindow(UUID accountId, UUID sessionId, String clientId) {
+        AuthenticatedAccount account = identities.findActiveAccount(accountId)
+                .orElseThrow(() -> new IllegalStateException("OAuth account is unavailable"));
+        Instant now = clock.instant();
+        AuthenticationSession session = sessions.findById(sessionId)
+                .filter(candidate -> candidate.canAuthorize(accountId, clientId, now))
+                .orElseThrow(() -> new IllegalStateException("OAuth browser session is unavailable"));
+        Instant notBefore = account.tokenNotBefore().isAfter(now) ? account.tokenNotBefore() : now;
+        Instant expiresAt = now.plus(accessTokenTtl);
+        if (session.expiresAt().isBefore(expiresAt)) {
+            expiresAt = session.expiresAt();
+        }
+        return new AccessTokenWindow(notBefore, expiresAt);
+    }
+
     /** Invalidates an authorization the authorization server removed. */
     @Transactional
     public void recordAuthorizationRemoved(String authorizationId) {
@@ -147,6 +174,9 @@ public class OAuthTokenLifecycleService {
                 OAuthAuthorizationInvalidationReason.AUTHORIZATION_REMOVED,
                 clock.instant()
         );
+    }
+
+    public record AccessTokenWindow(Instant notBefore, Instant expiresAt) {
     }
 
     public enum RefreshTokenUse {

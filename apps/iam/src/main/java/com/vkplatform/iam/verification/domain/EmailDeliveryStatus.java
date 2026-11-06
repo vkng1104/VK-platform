@@ -1,4 +1,4 @@
-package com.vkplatform.iam.verification.infrastructure.persistence.entity;
+package com.vkplatform.iam.verification.domain;
 
 public enum EmailDeliveryStatus {
     PENDING("pending"),

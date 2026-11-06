@@ -24,8 +24,16 @@ public class OAuthTokenLifecycleConfiguration {
             OAuthAuthorizationRepository authorizations,
             OAuthRefreshTokenRepository refreshTokens,
             PasswordlessIdentityOperations identities,
-            Clock clock
+            Clock clock,
+            OAuthAuthorizationProperties properties
     ) {
-        return new OAuthTokenLifecycleService(sessions, authorizations, refreshTokens, identities, clock);
+        return new OAuthTokenLifecycleService(
+                sessions,
+                authorizations,
+                refreshTokens,
+                identities,
+                clock,
+                properties.accessTokenTtl()
+        );
     }
 }
