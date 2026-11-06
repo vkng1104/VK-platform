@@ -23,6 +23,7 @@ Do not make a high-level flow test prove every lower-level branch. Do not duplic
 - Do not mock services, handlers, gateways, or unrelated repositories.
 - Arrange focused database rows, call the repository method, then assert returned values and persisted state directly.
 - Cover filters, insert/update/upsert behavior, nullable values, constraints, status transitions, transaction behavior, and persistence-owned edge cases.
+- A repository owns one table, so its test asserts that table's rows. Prove a use case's cross-table outcome and its business decisions (chosen timestamps, clamps, step order) in the service test, plus at most one transaction integration test for the wiring.
 - Keep cleanup deterministic and prevent test-order dependencies.
 
 ## Service and Use-Case Tests

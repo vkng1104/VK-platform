@@ -6,6 +6,7 @@ Keep this file small. Load the relevant repository skill for detailed workflow g
 - Test design or test changes: `.agents/skills/bottom-up-testing/SKILL.md`
 - Plans created by an AI agent: `.agents/skills/write-project-plan/SKILL.md`
 - Frontend or backend application architecture: `.agents/skills/application-architecture/SKILL.md`
+- Feature or branch walkthroughs with an end-to-end example and per-table record states: `.agents/skills/change-walkthrough/SKILL.md`
 
 ## Required Rules
 
@@ -16,6 +17,7 @@ Keep this file small. Load the relevant repository skill for detailed workflow g
 - Preserve unrelated user changes. Stage only files that belong to the current feature or its tests.
 - Apply the repository's bottom-up testing strategy. Put branch coverage at the layer that owns the behavior instead of duplicating it through high-level tests.
 - Follow `DESIGN.md` for frontend Atomic Design boundaries and backend modular-monolith request flow.
+- Scope each repository to one table and keep business logic in services. A repository only reads or writes its own table with values the caller passes in; a use case that changes several tables is a service calling one repository per table. See "Repositories and PostgreSQL" in `DESIGN.md`.
 - After adding or changing a database migration, run `make dbdiagram` and commit the regenerated `apps/<service>/dbdiagram/*.dbml` files. CI fails when they no longer match the migrations.
 - When the branch is complete and verified, prepare a concise PR title and a bullet-based PR body that follows `.github/pull_request_template.md`, then push the branch to `origin`.
 - Never open or merge a pull request unless the user explicitly asks. The user owns PR creation by default.

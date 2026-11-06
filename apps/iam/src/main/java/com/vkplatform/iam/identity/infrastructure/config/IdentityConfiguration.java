@@ -1,8 +1,12 @@
 package com.vkplatform.iam.identity.infrastructure.config;
 
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
+import com.vkplatform.iam.identity.application.port.out.AccountRepository;
 import com.vkplatform.iam.identity.application.port.out.GrantTokenCodec;
-import com.vkplatform.iam.identity.application.port.out.PasswordlessIdentityRepository;
+import com.vkplatform.iam.identity.application.port.out.IdentityOperationGuardRepository;
+import com.vkplatform.iam.identity.application.port.out.LoginIdentityRepository;
+import com.vkplatform.iam.identity.application.port.out.SecurityEventRepository;
+import com.vkplatform.iam.identity.application.port.out.VerificationGrantRepository;
 import com.vkplatform.iam.identity.application.service.PasswordlessIdentityService;
 import com.vkplatform.iam.identity.domain.IdentityPolicy;
 import com.vkplatform.iam.identity.infrastructure.crypto.SecureGrantTokenCodec;
@@ -31,12 +35,27 @@ public class IdentityConfiguration {
     @ConditionalOnProperty(name = "iam.email.provider", havingValue = "gmail")
     PasswordlessIdentityOperations passwordlessIdentityOperations(
             EmailVerificationOperations verification,
-            PasswordlessIdentityRepository repository,
+            AccountRepository accounts,
+            LoginIdentityRepository loginIdentities,
+            VerificationGrantRepository verificationGrants,
+            SecurityEventRepository securityEvents,
+            IdentityOperationGuardRepository operationGuards,
             GrantTokenCodec grants,
             Clock clock,
             IdentityPolicy policy,
             ApplicationEventPublisher events
     ) {
-        return new PasswordlessIdentityService(verification, repository, grants, clock, policy, events);
+        return new PasswordlessIdentityService(
+                verification,
+                accounts,
+                loginIdentities,
+                verificationGrants,
+                securityEvents,
+                operationGuards,
+                grants,
+                clock,
+                policy,
+                events
+        );
     }
 }

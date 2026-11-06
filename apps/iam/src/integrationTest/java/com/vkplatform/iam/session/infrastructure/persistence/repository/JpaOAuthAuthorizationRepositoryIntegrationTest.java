@@ -1,5 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.persistence.repository;
 
+import com.vkplatform.iam.session.domain.OAuthAuthorizationInvalidationReason;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.OAuthAuthorizationEntity_;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -21,6 +24,9 @@ class JpaOAuthAuthorizationRepositoryIntegrationTest {
     private static final UUID ACCOUNT_ID = UUID.fromString("c5421488-69d8-41c7-af62-17826861e1c3");
     private static final UUID SESSION_ID = UUID.fromString("35b8a1b6-7df8-4ce1-ab5b-17093e6114f1");
     private static final Instant NOW = Instant.parse("2026-10-24T09:00:00Z");
+
+    @Autowired
+    private JpaOAuthAuthorizationRepository repository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -96,6 +102,68 @@ class JpaOAuthAuthorizationRepositoryIntegrationTest {
     }
 
     @Test
+    void invalidatesOneAuthorizationOnceAndIgnoresMissingOnes() {
+        String target = insertAuthorization(SESSION_ID, null, null);
+        String sibling = insertAuthorization(SESSION_ID, null, null);
+
+        repository.invalidate(
+                target,
+                OAuthAuthorizationInvalidationReason.REFRESH_TOKEN_REUSED,
+                NOW.plusSeconds(60)
+        );
+        repository.invalidate(
+                target,
+                OAuthAuthorizationInvalidationReason.AUTHORIZATION_REMOVED,
+                NOW.plusSeconds(70)
+        );
+        repository.invalidate(
+                "missing-authorization",
+                OAuthAuthorizationInvalidationReason.AUTHORIZATION_REMOVED,
+                NOW.plusSeconds(70)
+        );
+
+        assertThat(invalidation(target)).containsExactly(
+                NOW.plusSeconds(60),
+                OAuthAuthorizationInvalidationReason.REFRESH_TOKEN_REUSED.wireValue()
+        );
+        assertThat(invalidation(sibling)).containsExactly(null, null);
+    }
+
+    @Test
+    void invalidatesOnlyTheSessionsAuthorizationsThatAreNotInvalidatedYet() {
+        UUID otherSessionId = UUID.randomUUID();
+        insertSession(otherSessionId);
+        String pending = insertAuthorization(SESSION_ID, null, null);
+        String alreadyInvalidated = insertAuthorization(
+                SESSION_ID,
+                NOW.plusSeconds(5),
+                OAuthAuthorizationInvalidationReason.REFRESH_TOKEN_REUSED
+        );
+        String otherSession = insertAuthorization(otherSessionId, null, null);
+
+        assertThat(repository.invalidateAllForSession(
+                SESSION_ID,
+                OAuthAuthorizationInvalidationReason.ACCOUNT_STATE_CHANGED,
+                NOW.plusSeconds(60)
+        )).isEqualTo(1);
+        assertThat(repository.invalidateAllForSession(
+                SESSION_ID,
+                OAuthAuthorizationInvalidationReason.ACCOUNT_STATE_CHANGED,
+                NOW.plusSeconds(70)
+        )).isZero();
+
+        assertThat(invalidation(pending)).containsExactly(
+                NOW.plusSeconds(60),
+                OAuthAuthorizationInvalidationReason.ACCOUNT_STATE_CHANGED.wireValue()
+        );
+        assertThat(invalidation(alreadyInvalidated)).containsExactly(
+                NOW.plusSeconds(5),
+                OAuthAuthorizationInvalidationReason.REFRESH_TOKEN_REUSED.wireValue()
+        );
+        assertThat(invalidation(otherSession)).containsExactly(null, null);
+    }
+
+    @Test
     void databaseRejectsUnsupportedGrantsAndMalformedCodeDigests() {
         assertThatThrownBy(() -> insertAuthorization("refresh_token", new byte[32]))
                 .isInstanceOf(DataIntegrityViolationException.class);
@@ -128,6 +196,56 @@ class JpaOAuthAuthorizationRepositoryIntegrationTest {
                 codeDigest,
                 timestamp(NOW),
                 timestamp(NOW.plusSeconds(300))
+        );
+    }
+
+    private void insertSession(UUID sessionId) {
+        jdbcTemplate.update("""
+                INSERT INTO iam_session.sessions (
+                    id, account_id, client_id, status, created_at, last_refreshed_at, expires_at
+                ) VALUES (?, ?, 'vk-platform-bff', 'active', ?, ?, ?)
+                """,
+                sessionId,
+                ACCOUNT_ID,
+                timestamp(NOW),
+                timestamp(NOW),
+                timestamp(NOW.plusSeconds(3600))
+        );
+    }
+
+    private String insertAuthorization(
+            UUID sessionId,
+            Instant invalidatedAt,
+            OAuthAuthorizationInvalidationReason reason
+    ) {
+        String id = UUID.randomUUID().toString();
+        jdbcTemplate.update("""
+                INSERT INTO iam_session.oauth_authorizations (
+                    id, registered_client_id, principal_name, session_id,
+                    authorization_grant_type, authorized_scopes, attributes_json,
+                    invalidated_at, invalidation_reason
+                ) VALUES (?, 'bff:vk-platform-bff', ?, ?, 'authorization_code', 'api.access', '{}', ?, ?)
+                """,
+                id,
+                ACCOUNT_ID.toString(),
+                sessionId,
+                invalidatedAt == null ? null : timestamp(invalidatedAt),
+                reason == null ? null : reason.wireValue()
+        );
+        return id;
+    }
+
+    private List<Object> invalidation(String authorizationId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT invalidated_at, invalidation_reason FROM iam_session.oauth_authorizations WHERE id = ?",
+                (row, rowNumber) -> {
+                    OffsetDateTime invalidatedAt = row.getObject("invalidated_at", OffsetDateTime.class);
+                    return Arrays.asList(
+                            invalidatedAt == null ? null : invalidatedAt.toInstant(),
+                            row.getString("invalidation_reason")
+                    );
+                },
+                authorizationId
         );
     }
 

@@ -2,33 +2,25 @@ package com.vkplatform.iam.session.infrastructure.persistence.repository;
 
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
-import com.vkplatform.iam.session.domain.OAuthAuthorizationInvalidationReason;
-import com.vkplatform.iam.session.domain.SessionRevokeReason;
 import com.vkplatform.iam.session.domain.SessionStatus;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.SessionEntity;
-import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public class JpaAuthenticationSessionRepository implements AuthenticationSessionRepository {
     private final SpringDataAuthenticationSessionRepository sessions;
-    private final SpringDataOAuthAuthorizationRepository authorizations;
 
-    JpaAuthenticationSessionRepository(
-            SpringDataAuthenticationSessionRepository sessions,
-            SpringDataOAuthAuthorizationRepository authorizations
-    ) {
+    JpaAuthenticationSessionRepository(SpringDataAuthenticationSessionRepository sessions) {
         this.sessions = sessions;
-        this.authorizations = authorizations;
     }
 
     @Override
@@ -77,140 +69,39 @@ public class JpaAuthenticationSessionRepository implements AuthenticationSession
 
     @Override
     @Transactional
-    public boolean revokeByIdForAccount(
-            UUID accountId,
-            UUID sessionId,
-            SessionRevokeReason reason,
-            Instant revokedAt
-    ) {
-        SessionEntity entity = sessions.findLockedById(sessionId).orElse(null);
-        if (entity == null || !entity.toDomain().accountId().equals(accountId)) {
-            return false;
-        }
-        entity.apply(entity.toDomain().revoke(reason, revokedAt));
-        return true;
-    }
-
-    @Override
-    @Transactional
-    public int revokeAll(
-            UUID accountId,
-            SessionRevokeReason reason,
-            Instant revokedAt
-    ) {
-        List<SessionEntity> active = sessions.findLockedByAccountIdAndStatusOrderByIdAsc(
-                accountId,
-                SessionStatus.ACTIVE
-        );
-        active.forEach(entity -> entity.apply(entity.toDomain().revoke(reason, revokedAt)));
-        return active.size();
-    }
-
-    @Override
-    @Transactional
-    public boolean revokeOwnedAndInvalidate(
-            UUID accountId,
-            UUID sessionId,
-            SessionRevokeReason reason,
-            Instant revokedAt
-    ) {
-        SessionEntity entity = sessions.findLockedById(sessionId).orElse(null);
-        if (entity == null || !entity.accountId().equals(accountId)) {
-            return false;
-        }
-        AuthenticationSession revoked = entity.toDomain().revoke(reason, revokedAt);
-        entity.apply(revoked);
-        invalidateAuthorizations(
-                sessionId,
-                revokedAt,
-                OAuthAuthorizationInvalidationReason.fromSessionReason(revoked.revokeReason())
-        );
-        return true;
-    }
-
-    @Override
-    @Transactional
-    public RevokeResult revokeOwnedFromCurrent(
-            UUID accountId,
-            UUID currentSessionId,
-            UUID targetSessionId,
-            String expectedClientId,
-            SessionRevokeReason reason,
-            Instant revokedAt
-    ) {
-        List<SessionEntity> locked = sessions.findLockedByAccountIdAndIdInOrderByIdAsc(
-                accountId,
-                Set.copyOf(List.of(currentSessionId, targetSessionId))
-        );
-        SessionEntity current = locked.stream()
-                .filter(session -> session.id().equals(currentSessionId))
-                .findFirst()
-                .orElse(null);
-        if (current == null || !current.toDomain().canAuthorize(
-                accountId,
-                expectedClientId,
-                revokedAt
-        )) {
-            return RevokeResult.CURRENT_UNAVAILABLE;
-        }
-        SessionEntity target = locked.stream()
-                .filter(session -> session.id().equals(targetSessionId))
-                .findFirst()
-                .orElse(null);
-        if (target == null) {
-            return RevokeResult.TARGET_NOT_FOUND;
-        }
-        AuthenticationSession revoked = target.toDomain().revoke(reason, revokedAt);
-        target.apply(revoked);
-        invalidateAuthorizations(
-                targetSessionId,
-                revokedAt,
-                OAuthAuthorizationInvalidationReason.fromSessionReason(revoked.revokeReason())
-        );
-        return RevokeResult.REVOKED;
-    }
-
-    @Override
-    @Transactional
-    public RevokeAllResult revokeAllFromCurrent(
-            UUID accountId,
-            UUID currentSessionId,
-            String expectedClientId,
-            SessionRevokeReason reason,
-            Instant revokedAt
-    ) {
-        List<SessionEntity> owned = sessions.findLockedByAccountIdOrderByIdAsc(accountId);
-        SessionEntity current = owned.stream()
-                .filter(session -> session.id().equals(currentSessionId))
-                .findFirst()
-                .orElse(null);
-        if (current == null || !current.toDomain().canAuthorize(
-                accountId,
-                expectedClientId,
-                revokedAt
-        )) {
-            return new RevokeAllResult(false, 0);
-        }
-        List<SessionEntity> active = owned.stream()
-                .filter(session -> session.toDomain().status() == SessionStatus.ACTIVE)
+    public List<AuthenticationSession> findAllLockedByAccountId(UUID accountId) {
+        return sessions.findLockedByAccountIdOrderByIdAsc(accountId).stream()
+                .map(SessionEntity::toDomain)
                 .toList();
-        for (SessionEntity entity : active) {
-            entity.apply(entity.toDomain().revoke(reason, revokedAt));
-            invalidateAuthorizations(
-                    entity.id(),
-                    revokedAt,
-                    OAuthAuthorizationInvalidationReason.fromSessionReason(reason)
-            );
-        }
-        return new RevokeAllResult(true, active.size());
     }
 
-    private void invalidateAuthorizations(
-            UUID sessionId,
-            Instant invalidatedAt,
-            OAuthAuthorizationInvalidationReason reason
-    ) {
-        authorizations.findLockedBySessionIdAndInvalidatedAtIsNull(sessionId)
-                .forEach(authorization -> authorization.invalidate(invalidatedAt, reason));
+    @Override
+    @Transactional
+    public Optional<AuthenticationSession> findLockedById(UUID id) {
+        return sessions.findLockedById(id).map(SessionEntity::toDomain);
+    }
+
+    @Override
+    @Transactional
+    public void recordRevocation(AuthenticationSession revoked) {
+        applyLocked(revoked, "session to revoke does not exist");
+    }
+
+    @Override
+    @Transactional
+    public void recordRefresh(AuthenticationSession refreshed) {
+        applyLocked(refreshed, "session to refresh does not exist");
+    }
+
+    @Override
+    @Transactional
+    public void recordCompromise(AuthenticationSession compromised) {
+        applyLocked(compromised, "session to compromise does not exist");
+    }
+
+    private void applyLocked(AuthenticationSession session, String missingMessage) {
+        sessions.findLockedById(session.id())
+                .orElseThrow(() -> new IllegalStateException(missingMessage))
+                .apply(session);
     }
 }

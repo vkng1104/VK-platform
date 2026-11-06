@@ -10,9 +10,11 @@ import com.vkplatform.iam.session.api.command.RevokeAuthenticationSession;
 import com.vkplatform.iam.session.api.result.AuthenticationSessionPage;
 import com.vkplatform.iam.session.api.result.EstablishedAuthenticationSession;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.application.port.out.OAuthAuthorizationRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
-import com.vkplatform.iam.session.domain.SessionPolicy;
+import com.vkplatform.iam.session.domain.OAuthAuthorizationInvalidationReason;
 import com.vkplatform.iam.session.domain.SessionFailure;
+import com.vkplatform.iam.session.domain.SessionPolicy;
 import com.vkplatform.iam.session.domain.SessionRevokeReason;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,9 +24,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.UUID;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -32,7 +34,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 class AuthenticationSessionServiceTest {
@@ -42,15 +43,18 @@ class AuthenticationSessionServiceTest {
 
     private PasswordlessIdentityOperations identities;
     private AuthenticationSessionRepository sessions;
+    private OAuthAuthorizationRepository authorizations;
     private AuthenticationSessionService service;
 
     @BeforeEach
     void setUp() {
         identities = mock(PasswordlessIdentityOperations.class);
         sessions = mock(AuthenticationSessionRepository.class);
+        authorizations = mock(OAuthAuthorizationRepository.class);
         service = new AuthenticationSessionService(
                 identities,
                 sessions,
+                authorizations,
                 new SessionPolicy("vk-platform-bff", Duration.ofDays(30)),
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
@@ -137,71 +141,88 @@ class AuthenticationSessionServiceTest {
     }
 
     @Test
-    void mapsAtomicSingleRevocationOutcomesWithoutLeakingOwnership() {
+    void revokesAnOwnedTargetAndInvalidatesItsAuthorizations() {
+        UUID currentId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        AuthenticationSession current = session(currentId, NOW.minusSeconds(60));
+        AuthenticationSession target = session(targetId, NOW.minusSeconds(30));
+        RevokeAuthenticationSession command = new RevokeAuthenticationSession(
+                ACCOUNT_ID, currentId, targetId, "request-revoke"
+        );
+        when(sessions.findAllLockedByAccountId(ACCOUNT_ID))
+                .thenReturn(List.of(current, target));
+
+        service.revoke(command);
+
+        verify(sessions).recordRevocation(target.revoke(
+                SessionRevokeReason.USER_REQUEST,
+                NOW
+        ));
+        verify(authorizations).invalidateAllForSession(
+                targetId,
+                OAuthAuthorizationInvalidationReason.USER_REQUEST,
+                NOW
+        );
+    }
+
+    @Test
+    void hidesMissingTargetsAndRejectsAnUnavailableCurrentSession() {
         UUID currentId = UUID.randomUUID();
         UUID targetId = UUID.randomUUID();
         RevokeAuthenticationSession command = new RevokeAuthenticationSession(
                 ACCOUNT_ID, currentId, targetId, "request-revoke"
         );
-        when(sessions.revokeOwnedFromCurrent(
-                ACCOUNT_ID,
-                currentId,
-                targetId,
-                "vk-platform-bff",
-                SessionRevokeReason.USER_REQUEST,
-                NOW
-        )).thenReturn(AuthenticationSessionRepository.RevokeResult.REVOKED);
+        AuthenticationSession current = session(currentId, NOW.minusSeconds(60));
+        when(sessions.findAllLockedByAccountId(ACCOUNT_ID)).thenReturn(List.of(current));
 
-        service.revoke(command);
-
-        when(sessions.revokeOwnedFromCurrent(
-                ACCOUNT_ID,
-                currentId,
-                targetId,
-                "vk-platform-bff",
-                SessionRevokeReason.USER_REQUEST,
-                NOW
-        )).thenReturn(AuthenticationSessionRepository.RevokeResult.TARGET_NOT_FOUND);
         assertThatThrownBy(() -> service.revoke(command))
                 .isInstanceOfSatisfying(SessionFailure.class, failure ->
                         assertThat(failure.reason()).isEqualTo(SessionFailure.Reason.SESSION_NOT_FOUND));
 
-        when(sessions.revokeOwnedFromCurrent(
-                ACCOUNT_ID,
-                currentId,
-                targetId,
-                "vk-platform-bff",
-                SessionRevokeReason.USER_REQUEST,
-                NOW
-        )).thenReturn(AuthenticationSessionRepository.RevokeResult.CURRENT_UNAVAILABLE);
+        when(sessions.findAllLockedByAccountId(ACCOUNT_ID)).thenReturn(List.of(
+                current.revoke(SessionRevokeReason.LOGOUT, NOW.minusSeconds(1))
+        ));
         assertThatThrownBy(() -> service.revoke(command))
                 .isInstanceOfSatisfying(SessionFailure.class, failure ->
                         assertThat(failure.reason()).isEqualTo(SessionFailure.Reason.SESSION_UNAVAILABLE));
+
+        verifyNoInteractions(authorizations);
     }
 
     @Test
     void revokesAllOnlyWhenTheCurrentSessionRemainsUsable() {
         UUID currentId = UUID.randomUUID();
+        AuthenticationSession current = session(currentId, NOW.minusSeconds(60));
+        AuthenticationSession second = session(UUID.randomUUID(), NOW.minusSeconds(30));
+        AuthenticationSession alreadyRevoked = session(UUID.randomUUID(), NOW.minusSeconds(90))
+                .revoke(SessionRevokeReason.USER_REQUEST, NOW.minusSeconds(1));
         RevokeAllAuthenticationSessions command = new RevokeAllAuthenticationSessions(
                 ACCOUNT_ID, currentId, "request-all"
         );
-        when(sessions.revokeAllFromCurrent(
-                ACCOUNT_ID,
-                currentId,
-                "vk-platform-bff",
+        when(sessions.findAllLockedByAccountId(ACCOUNT_ID))
+                .thenReturn(List.of(current, second, alreadyRevoked));
+
+        assertThat(service.revokeAll(command)).isEqualTo(2);
+        verify(sessions).recordRevocation(current.revoke(
                 SessionRevokeReason.ALL_SESSIONS_REVOKED,
                 NOW
-        )).thenReturn(new AuthenticationSessionRepository.RevokeAllResult(true, 3));
-
-        assertThat(service.revokeAll(command)).isEqualTo(3);
-
-        when(sessions.revokeAllFromCurrent(
-                ACCOUNT_ID,
-                currentId,
-                "vk-platform-bff",
+        ));
+        verify(sessions).recordRevocation(second.revoke(
                 SessionRevokeReason.ALL_SESSIONS_REVOKED,
                 NOW
-        )).thenReturn(new AuthenticationSessionRepository.RevokeAllResult(false, 0));
+        ));
+        verify(authorizations).invalidateAllForSession(
+                currentId,
+                OAuthAuthorizationInvalidationReason.ALL_SESSIONS_REVOKED,
+                NOW
+        );
+        verify(authorizations).invalidateAllForSession(
+                second.id(),
+                OAuthAuthorizationInvalidationReason.ALL_SESSIONS_REVOKED,
+                NOW
+        );
+
+        when(sessions.findAllLockedByAccountId(ACCOUNT_ID)).thenReturn(List.of());
         assertThatThrownBy(() -> service.revokeAll(command))
                 .isInstanceOf(SessionFailure.class);
     }
@@ -212,13 +233,18 @@ class AuthenticationSessionServiceTest {
         RevokeAuthenticationSession command = new RevokeAuthenticationSession(
                 ACCOUNT_ID, currentId, currentId, "request-logout"
         );
+        AuthenticationSession current = session(currentId, NOW.minusSeconds(60));
+        when(sessions.findLockedById(currentId)).thenReturn(Optional.of(current));
 
         service.logout(command);
 
-        verify(sessions).revokeOwnedAndInvalidate(
-                ACCOUNT_ID,
-                currentId,
+        verify(sessions).recordRevocation(current.revoke(
                 SessionRevokeReason.LOGOUT,
+                NOW
+        ));
+        verify(authorizations).invalidateAllForSession(
+                currentId,
+                OAuthAuthorizationInvalidationReason.LOGOUT,
                 NOW
         );
         assertThatThrownBy(() -> service.logout(new RevokeAuthenticationSession(
@@ -239,7 +265,7 @@ class AuthenticationSessionServiceTest {
                 " "
         ))).isInstanceOf(SessionFailure.class);
 
-        verify(sessions, never()).revokeOwnedFromCurrent(any(), any(), any(), any(), any(), any());
+        verifyNoInteractions(sessions, authorizations);
     }
 
     private static AuthenticationSession session(UUID id, Instant createdAt) {

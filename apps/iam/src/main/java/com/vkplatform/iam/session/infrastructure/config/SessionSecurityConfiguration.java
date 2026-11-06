@@ -1,6 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
-import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.application.service.AuthenticationSessionValidationService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,22 +15,18 @@ import org.springframework.security.web.authentication.session.SessionAuthentica
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 
-import java.time.Clock;
-
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = "iam.session.enabled", havingValue = "true")
 public class SessionSecurityConfiguration {
     @Bean
     SecurityContextRepository browserSecurityContextRepository(
-            AuthenticationSessionRepository sessions,
-            SessionProperties properties,
-            Clock clock
+            AuthenticationSessionValidationService sessions,
+            SessionProperties properties
     ) {
         return new DatabaseValidatingSecurityContextRepository(
                 new HttpSessionSecurityContextRepository(),
                 sessions,
-                properties.bffClientId(),
-                clock
+                properties.bffClientId()
         );
     }
 
