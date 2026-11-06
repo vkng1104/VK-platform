@@ -4,6 +4,12 @@ import org.springframework.modulith.NamedInterface;
 
 import java.time.Instant;
 
+/**
+ * Verification domain failure reasons.
+ *
+ * <p>Exposed as part of the module's public API so callers (such as identity services and HTTP
+ * exception handlers) can handle and configure transaction rollback behavior for verification failures.
+ */
 @NamedInterface("api")
 public final class VerificationFailure extends RuntimeException {
     public enum Reason {

@@ -157,6 +157,52 @@ class PasswordlessIdentityTransactionIntegrationTest {
     }
 
     @Test
+    void maxFailedAttemptsLocksOutSignInEvenWhenSubsequentCodeIsCorrect() {
+        UUID challengeId = UUID.fromString("123e4567-e89b-42d3-a456-426614174000");
+        int maxAttempts = 3;
+        VerificationChallenge challenge = VerificationChallenge.pending(
+                challengeId,
+                VerificationPurpose.SIGN_IN,
+                bytes(23),
+                bytes(24),
+                bytes(25),
+                maxAttempts,
+                NOW.plusSeconds(300),
+                NOW.plusSeconds(60),
+                NOW
+        );
+        verifications.create(challenge);
+        verifications.markSent(challengeId, NOW);
+
+        for (int i = 1; i <= maxAttempts; i++) {
+            final int attempt = i;
+            assertThatThrownBy(() -> operations.verifySignIn(new VerifyPasswordlessSignIn(
+                    challengeId.toString(),
+                    "654321",
+                    "request-wrong-" + attempt
+            ))).isInstanceOf(VerificationFailure.class);
+
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT attempt_count FROM iam_identity.email_verification_challenges WHERE id = ?",
+                    Integer.class,
+                    challengeId
+            )).isEqualTo(attempt);
+        }
+
+        // Submitting the correct code ("123456") after lockout is rejected without issuing a grant
+        assertThatThrownBy(() -> operations.verifySignIn(new VerifyPasswordlessSignIn(
+                challengeId.toString(),
+                "123456",
+                "request-correct-after-lockout"
+        ))).isInstanceOf(VerificationFailure.class);
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM iam_identity.verification_grants",
+                Integer.class
+        )).isZero();
+    }
+
+    @Test
     void inactiveAccountLookupLeavesTheCallersTransactionCommittable() {
         UUID accountId = seedAccountWithGrant(bytes(41), bytes(42), NOW.plusSeconds(300), NOW);
         jdbcTemplate.update("UPDATE iam_identity.accounts SET status = 'suspended' WHERE id = ?", accountId);
