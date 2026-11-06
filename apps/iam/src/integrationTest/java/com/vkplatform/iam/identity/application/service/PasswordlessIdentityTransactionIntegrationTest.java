@@ -15,6 +15,7 @@ import com.vkplatform.iam.identity.domain.LoginIdentity;
 import com.vkplatform.iam.identity.domain.VerificationGrant;
 import com.vkplatform.iam.identity.domain.IdentityPolicy;
 import com.vkplatform.iam.verification.api.EmailVerificationOperations;
+import com.vkplatform.iam.verification.domain.VerificationFailure;
 import com.vkplatform.iam.verification.application.port.out.EmailVerificationChallengeRepository;
 import com.vkplatform.iam.verification.application.port.out.EmailVerificationOperationGuardRepository;
 import com.vkplatform.iam.verification.application.port.out.VerificationCodeGenerator;
@@ -122,6 +123,36 @@ class PasswordlessIdentityTransactionIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM iam_identity.verification_grants",
                 Integer.class
+        )).isEqualTo(1);
+    }
+
+    @Test
+    void wrongSignInCodeIncrementsFailedAttemptCountAndCommitsDespiteVerificationFailure() {
+        UUID challengeId = UUID.fromString("123e4567-e89b-42d3-a456-426614174000");
+        VerificationChallenge challenge = VerificationChallenge.pending(
+                challengeId,
+                VerificationPurpose.SIGN_IN,
+                bytes(23),
+                bytes(24),
+                bytes(25),
+                5,
+                NOW.plusSeconds(300),
+                NOW.plusSeconds(60),
+                NOW
+        );
+        verifications.create(challenge);
+        verifications.markSent(challengeId, NOW);
+
+        assertThatThrownBy(() -> operations.verifySignIn(new VerifyPasswordlessSignIn(
+                challengeId.toString(),
+                "654321",
+                "transaction-request"
+        ))).isInstanceOf(VerificationFailure.class);
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT attempt_count FROM iam_identity.email_verification_challenges WHERE id = ?",
+                Integer.class,
+                challengeId
         )).isEqualTo(1);
     }
 
@@ -241,7 +272,7 @@ class PasswordlessIdentityTransactionIntegrationTest {
 
                 @Override
                 public byte[] codeDigest(UUID id, VerificationPurpose purpose, VerificationCode code) {
-                    return bytes(25);
+                    return "123456".equals(code.value()) ? bytes(25) : bytes(26);
                 }
             };
             return new EmailVerificationService(
