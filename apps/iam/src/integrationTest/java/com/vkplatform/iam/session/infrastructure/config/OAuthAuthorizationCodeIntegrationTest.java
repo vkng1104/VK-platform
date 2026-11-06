@@ -37,12 +37,22 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.interfaces.RSAPublicKey;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -125,6 +135,9 @@ class OAuthAuthorizationCodeIntegrationTest {
     @Autowired
     private OAuthClientOperations clientCredentials;
 
+    @Autowired
+    private DataSource dataSource;
+
     @BeforeEach
     void resetDatabaseAndIdentity() {
         jdbcTemplate.update("DELETE FROM iam_session.oauth_refresh_tokens");
@@ -152,7 +165,8 @@ class OAuthAuthorizationCodeIntegrationTest {
         );
         reset(identities);
         when(identities.consumeSignInGrant(any())).thenReturn(new AuthenticatedAccount(ACCOUNT_ID, now));
-        when(identities.activeAccount(ACCOUNT_ID)).thenReturn(new AuthenticatedAccount(ACCOUNT_ID, now));
+        when(identities.findActiveAccount(ACCOUNT_ID))
+                .thenReturn(Optional.of(new AuthenticatedAccount(ACCOUNT_ID, now)));
         signingKeys.bootstrap(new OperatorContext(
                 "oauth-integration-test",
                 "bootstrap-oauth-integration"
@@ -367,6 +381,91 @@ class OAuthAuthorizationCodeIntegrationTest {
         refresh(rotatedRefresh)
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("invalid_grant"));
+    }
+
+    @Test
+    void rejectsARefreshForAnInactiveAccountWithInvalidGrant() throws Exception {
+        MockHttpSession browser = exchangeGrant();
+        String code = authorizationCode(browser, BFF_REDIRECT, true);
+        String refreshToken = objectMapper.readTree(
+                exchangeCode(code).getResponse().getContentAsString()
+        ).get("refresh_token").asText();
+        when(identities.findActiveAccount(ACCOUNT_ID)).thenReturn(Optional.empty());
+
+        refresh(refreshToken)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_grant"));
+
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM iam_session.oauth_refresh_tokens
+                WHERE consumed_at IS NOT NULL OR reuse_detected_at IS NOT NULL
+                """, Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM iam_session.sessions WHERE account_id = ?",
+                String.class,
+                ACCOUNT_ID
+        )).isEqualTo("active");
+    }
+
+    @Test
+    void handlesOverlappingRefreshesOfOneTokenAsReuseWithoutAServerError() throws Exception {
+        MockHttpSession browser = exchangeGrant();
+        String code = authorizationCode(browser, BFF_REDIRECT, true);
+        String firstRefresh = objectMapper.readTree(
+                exchangeCode(code).getResponse().getContentAsString()
+        ).get("refresh_token").asText();
+
+        List<MvcResult> results = whileTheSessionRowIsLocked(
+                () -> refresh(firstRefresh).andReturn(),
+                () -> refresh(firstRefresh).andReturn()
+        );
+
+        assertThat(results)
+                .extracting(result -> result.getResponse().getStatus())
+                .containsExactlyInAnyOrder(200, 400);
+        assertThat(errorOf(withStatus(results, 400))).isEqualTo("invalid_grant");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM iam_session.oauth_refresh_tokens",
+                Integer.class
+        )).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM iam_session.oauth_refresh_tokens
+                WHERE consumed_at IS NOT NULL AND replacement_id IS NOT NULL
+                """, Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM iam_session.sessions WHERE account_id = ?",
+                String.class,
+                ACCOUNT_ID
+        )).isEqualTo("compromised");
+    }
+
+    @Test
+    void handlesOverlappingCodeExchangesAsReplayWithoutAServerError() throws Exception {
+        MockHttpSession browser = exchangeGrant();
+        String code = authorizationCode(browser, BFF_REDIRECT, true);
+
+        List<MvcResult> results = whileTheSessionRowIsLocked(
+                () -> codeExchange(code).andReturn(),
+                () -> codeExchange(code).andReturn()
+        );
+
+        assertThat(results)
+                .extracting(result -> result.getResponse().getStatus())
+                .containsExactlyInAnyOrder(200, 400);
+        assertThat(errorOf(withStatus(results, 400))).isEqualTo("invalid_grant");
+        String issuedRefresh = objectMapper.readTree(
+                withStatus(results, 200).getResponse().getContentAsString()
+        ).get("refresh_token").asText();
+        refresh(issuedRefresh)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_grant"));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM iam_session.sessions WHERE account_id = ?",
+                String.class,
+                ACCOUNT_ID
+        )).isEqualTo("active");
     }
 
     @Test
@@ -617,15 +716,20 @@ class OAuthAuthorizationCodeIntegrationTest {
     }
 
     private MvcResult exchangeCode(String code) throws Exception {
-        return mockMvc.perform(post("/oauth2/token")
-                        .with(httpBasic(BFF_CLIENT_ID, BFF_SECRET))
-                        .contentType("application/x-www-form-urlencoded")
-                        .param("grant_type", "authorization_code")
-                        .param("code", code)
-                        .param("redirect_uri", BFF_REDIRECT)
-                        .param("code_verifier", VERIFIER))
+        return codeExchange(code)
                 .andExpect(status().isOk())
                 .andReturn();
+    }
+
+    private org.springframework.test.web.servlet.ResultActions codeExchange(String code)
+            throws Exception {
+        return mockMvc.perform(post("/oauth2/token")
+                .with(httpBasic(BFF_CLIENT_ID, BFF_SECRET))
+                .contentType("application/x-www-form-urlencoded")
+                .param("grant_type", "authorization_code")
+                .param("code", code)
+                .param("redirect_uri", BFF_REDIRECT)
+                .param("code_verifier", VERIFIER));
     }
 
     private org.springframework.test.web.servlet.ResultActions refresh(String refreshToken)
@@ -650,6 +754,63 @@ class OAuthAuthorizationCodeIntegrationTest {
 
     private static String serviceScopes() {
         return "iam.authorization.check iam.relationship.write";
+    }
+
+    /**
+     * Holds the session row lock until both requests are waiting for it, so each request has
+     * already performed its unlocked lookups before either one can proceed.
+     */
+    private List<MvcResult> whileTheSessionRowIsLocked(
+            Callable<MvcResult> first,
+            Callable<MvcResult> second
+    ) throws Exception {
+        UUID sessionId = jdbcTemplate.queryForObject(
+                "SELECT id FROM iam_session.sessions WHERE account_id = ?",
+                UUID.class,
+                ACCOUNT_ID
+        );
+        try (ExecutorService executor = Executors.newFixedThreadPool(2);
+             Connection blocker = dataSource.getConnection()) {
+            blocker.setAutoCommit(false);
+            try (PreparedStatement lock = blocker.prepareStatement(
+                    "SELECT id FROM iam_session.sessions WHERE id = ? FOR UPDATE"
+            )) {
+                lock.setObject(1, sessionId);
+                lock.executeQuery().close();
+            }
+            Future<MvcResult> firstResult = executor.submit(first);
+            Future<MvcResult> secondResult = executor.submit(second);
+            awaitWaitingLockRequests(2);
+            blocker.commit();
+            return List.of(
+                    firstResult.get(30, TimeUnit.SECONDS),
+                    secondResult.get(30, TimeUnit.SECONDS)
+            );
+        }
+    }
+
+    private void awaitWaitingLockRequests(int expected) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM pg_locks WHERE NOT granted",
+                Integer.class
+        ) < expected) {
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("token requests did not wait for the session row lock");
+            }
+            Thread.sleep(20);
+        }
+    }
+
+    private static MvcResult withStatus(List<MvcResult> results, int status) {
+        return results.stream()
+                .filter(result -> result.getResponse().getStatus() == status)
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private String errorOf(MvcResult result) throws Exception {
+        return objectMapper.readTree(result.getResponse().getContentAsString()).get("error").asText();
     }
 
     private static MockHttpServletRequestBuilder authorizationRequest(

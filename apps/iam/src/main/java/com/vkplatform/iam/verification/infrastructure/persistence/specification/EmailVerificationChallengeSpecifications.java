@@ -1,6 +1,6 @@
 package com.vkplatform.iam.verification.infrastructure.persistence.specification;
 
-import com.vkplatform.iam.verification.infrastructure.persistence.entity.EmailDeliveryStatus;
+import com.vkplatform.iam.verification.domain.EmailDeliveryStatus;
 import com.vkplatform.iam.verification.infrastructure.persistence.entity.EmailVerificationChallengeEntity;
 import com.vkplatform.iam.verification.infrastructure.persistence.entity.EmailVerificationChallengeEntity_;
 import org.springframework.data.jpa.domain.Specification;
