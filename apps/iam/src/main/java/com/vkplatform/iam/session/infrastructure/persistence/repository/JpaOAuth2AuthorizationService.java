@@ -1,5 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.persistence.repository;
 
+import com.vkplatform.iam.session.application.port.out.IamSecurityTelemetry;
 import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService;
 import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService.RefreshTokenUse;
 import com.vkplatform.iam.session.infrastructure.crypto.TokenDigest;
@@ -49,16 +50,19 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
     private final SpringDataOAuthAuthorizationRepository authorizations;
     private final OAuthTokenLifecycleService tokenLifecycle;
     private final RegisteredClientRepository clients;
+    private final IamSecurityTelemetry telemetry;
     private final OAuthJsonCodec json = new OAuthJsonCodec();
 
     JpaOAuth2AuthorizationService(
             SpringDataOAuthAuthorizationRepository authorizations,
             OAuthTokenLifecycleService tokenLifecycle,
-            RegisteredClientRepository clients
+            RegisteredClientRepository clients,
+            IamSecurityTelemetry telemetry
     ) {
         this.authorizations = authorizations;
         this.tokenLifecycle = tokenLifecycle;
         this.clients = clients;
+        this.telemetry = telemetry;
     }
 
     @Override
@@ -87,9 +91,18 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
             throw new IllegalStateException("invalidated OAuth authorization cannot be changed");
         }
         byte[] previousRefreshDigest = entity.refreshTokenDigest();
+        byte[] previousAccessDigest = entity.accessTokenDigest();
         mapAuthorization(authorization, effectiveSessionId, entity);
         authorizations.saveAndFlush(entity);
         recordRefreshTokenIfIssued(entity, previousRefreshDigest);
+        if (entity.accessTokenDigest() != null
+                && !TokenDigest.matches(previousAccessDigest, entity.accessTokenDigest())) {
+            telemetry.recordAfterCommit(
+                    IamSecurityTelemetry.Operation.TOKEN_ISSUE,
+                    IamSecurityTelemetry.Outcome.SUCCESS,
+                    telemetry.start()
+            );
+        }
     }
 
     @Override
@@ -145,10 +158,19 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
                     .orElse(null);
         }
         if (OAuth2ParameterNames.CODE.equals(type)) {
-            return authorizations.findLockTargetByAuthorizationCodeDigest(digest)
+            long startedAt = telemetry.start();
+            OAuth2Authorization result = authorizations.findLockTargetByAuthorizationCodeDigest(digest)
                     .map(this::lockAuthorization)
                     .map(entity -> usable(entity, new PresentedToken(type, token, digest)))
                     .orElse(null);
+            telemetry.record(
+                    IamSecurityTelemetry.Operation.AUTHORIZATION_CODE_LOOKUP,
+                    result == null
+                            ? IamSecurityTelemetry.Outcome.NOT_FOUND
+                            : IamSecurityTelemetry.Outcome.SUCCESS,
+                    startedAt
+            );
+            return result;
         }
         if (OAuth2ParameterNames.ACCESS_TOKEN.equals(type)) {
             return authorizations.findByAccessTokenDigest(digest)
@@ -169,7 +191,12 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         if (authorization == null || authorization.invalidatedAt() != null) {
             return null;
         }
-        RefreshTokenUse use = tokenLifecycle.useRefreshToken(digest, authorization.sessionId());
+        RefreshTokenUse use = tokenLifecycle.useRefreshToken(
+                digest,
+                authorization.sessionId(),
+                accountId(authorization.principalName()),
+                authorization.registeredClientId()
+        );
         if (use != RefreshTokenUse.ACTIVE
                 || !TokenDigest.matches(authorization.refreshTokenDigest(), digest)) {
             return null;
@@ -241,6 +268,8 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         tokenLifecycle.recordRefreshTokenIssued(
                 entity.getId(),
                 entity.sessionId(),
+                accountId(entity.principalName()),
+                entity.registeredClientId(),
                 previousDigest,
                 currentDigest,
                 entity.refreshTokenIssuedAt(),

@@ -1,7 +1,9 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
+import com.vkplatform.iam.identity.api.SecurityAuditOperations;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.application.port.out.IamSecurityTelemetry;
 import com.vkplatform.iam.session.application.port.out.OAuthAuthorizationRepository;
 import com.vkplatform.iam.session.application.port.out.OAuthRefreshTokenRepository;
 import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService;
@@ -24,6 +26,8 @@ public class OAuthTokenLifecycleConfiguration {
             OAuthAuthorizationRepository authorizations,
             OAuthRefreshTokenRepository refreshTokens,
             PasswordlessIdentityOperations identities,
+            SecurityAuditOperations audit,
+            IamSecurityTelemetry telemetry,
             Clock clock,
             OAuthAuthorizationProperties properties
     ) {
@@ -32,6 +36,8 @@ public class OAuthTokenLifecycleConfiguration {
                 authorizations,
                 refreshTokens,
                 identities,
+                audit,
+                telemetry,
                 clock,
                 properties.accessTokenTtl()
         );

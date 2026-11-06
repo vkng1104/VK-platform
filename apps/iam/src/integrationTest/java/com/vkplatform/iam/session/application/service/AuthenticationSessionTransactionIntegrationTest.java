@@ -1,6 +1,7 @@
 package com.vkplatform.iam.session.application.service;
 
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
+import com.vkplatform.iam.identity.api.SecurityAuditOperations;
 import com.vkplatform.iam.identity.application.port.out.GrantTokenCodec;
 import com.vkplatform.iam.identity.application.port.out.AccountRepository;
 import com.vkplatform.iam.identity.application.port.out.IdentityOperationGuardRepository;
@@ -14,6 +15,7 @@ import com.vkplatform.iam.identity.domain.IdentityPolicy;
 import com.vkplatform.iam.session.api.AuthenticationSessionOperations;
 import com.vkplatform.iam.session.api.command.ExchangeAuthenticationGrant;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.application.port.out.IamSecurityTelemetry;
 import com.vkplatform.iam.session.application.port.out.OAuthAuthorizationRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
 import com.vkplatform.iam.session.domain.SessionPolicy;
@@ -213,12 +215,16 @@ class AuthenticationSessionTransactionIntegrationTest {
                 PasswordlessIdentityOperations identities,
                 AuthenticationSessionRepository sessions,
                 OAuthAuthorizationRepository authorizations,
+                SecurityAuditOperations audit,
+                IamSecurityTelemetry telemetry,
                 Clock clock
         ) {
             return new AuthenticationSessionService(
                     identities,
                     sessions,
                     authorizations,
+                    audit,
+                    telemetry,
                     new SessionPolicy("vk-platform-bff", Duration.ofDays(30)),
                     clock
             );

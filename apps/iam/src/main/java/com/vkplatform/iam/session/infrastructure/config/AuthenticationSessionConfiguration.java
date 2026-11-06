@@ -1,8 +1,10 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
+import com.vkplatform.iam.identity.api.SecurityAuditOperations;
 import com.vkplatform.iam.session.api.AuthenticationSessionOperations;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.application.port.out.IamSecurityTelemetry;
 import com.vkplatform.iam.session.application.port.out.OAuthAuthorizationRepository;
 import com.vkplatform.iam.session.application.service.AuthenticationSessionService;
 import com.vkplatform.iam.session.application.service.AuthenticationSessionValidationService;
@@ -26,6 +28,8 @@ public class AuthenticationSessionConfiguration {
             PasswordlessIdentityOperations identities,
             AuthenticationSessionRepository sessions,
             OAuthAuthorizationRepository authorizations,
+            SecurityAuditOperations audit,
+            IamSecurityTelemetry telemetry,
             SessionPolicy policy,
             Clock clock
     ) {
@@ -33,6 +37,8 @@ public class AuthenticationSessionConfiguration {
                 identities,
                 sessions,
                 authorizations,
+                audit,
+                telemetry,
                 policy,
                 clock
         );

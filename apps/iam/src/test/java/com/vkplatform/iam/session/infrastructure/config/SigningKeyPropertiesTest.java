@@ -9,36 +9,27 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SigningKeyPropertiesTest {
     @Test
-    void acceptsBoundedOperationalConfiguration() {
-        SigningKeyProperties properties = properties(Duration.ofMinutes(1), 100);
+    void acceptsPositiveLifecycleDurations() {
+        SigningKeyProperties properties = properties(Duration.ofMinutes(1));
 
         assertThat(properties.publicationSafetyOverlap()).isEqualTo(Duration.ofMinutes(1));
-        assertThat(properties.operatorBatchSize()).isEqualTo(100);
     }
 
     @Test
-    void rejectsInvalidDurationsAndBatchSizes() {
-        assertThatThrownBy(() -> properties(Duration.ZERO, 100))
+    void rejectsInvalidDurations() {
+        assertThatThrownBy(() -> properties(Duration.ZERO))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("PUBLICATION_SAFETY_OVERLAP");
-        assertThatThrownBy(() -> properties(Duration.ofMinutes(1), 1_001))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("OPERATOR_BATCH_SIZE");
     }
 
-    private static SigningKeyProperties properties(Duration overlap, int batchSize) {
+    private static SigningKeyProperties properties(Duration overlap) {
         return new SigningKeyProperties(
                 "",
                 "",
                 overlap,
                 true,
                 Duration.ofMinutes(1),
-                Duration.ofMinutes(5),
-                "",
-                "",
-                "",
-                "",
-                batchSize
+                Duration.ofMinutes(5)
         );
     }
 }
