@@ -30,6 +30,7 @@ import com.vkplatform.iam.verification.api.command.StartSignInEmailVerification;
 import com.vkplatform.iam.verification.api.command.VerifyEmailCode;
 import com.vkplatform.iam.verification.api.result.EmailVerified;
 import com.vkplatform.iam.verification.api.result.VerificationChallengeStarted;
+import com.vkplatform.iam.verification.domain.VerificationFailure;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -198,6 +199,17 @@ class PasswordlessIdentityServiceTest {
                         assertThat(failure.reason()).isEqualTo(IdentityFailure.Reason.ACCOUNT_NOT_FOUND));
 
         verifyNoInteractions(verificationGrants, securityEvents);
+    }
+
+    @Test
+    void propagatesVerificationFailureWithoutInteractingWithIdentityStorage() {
+        verification.failSignInWith(VerificationFailure.invalidOrExpiredCode());
+
+        assertThatThrownBy(() -> service.verifySignIn(verifyCommand("request-fail")))
+                .isInstanceOfSatisfying(VerificationFailure.class, failure ->
+                        assertThat(failure.reason()).isEqualTo(VerificationFailure.Reason.INVALID_OR_EXPIRED_CODE));
+
+        verifyNoInteractions(accounts, loginIdentities, verificationGrants, securityEvents, operationGuards);
     }
 
     @Test
@@ -410,7 +422,12 @@ class PasswordlessIdentityServiceTest {
         private static final UUID CHALLENGE_ID = UUID.fromString("123e4567-e89b-42d3-a456-426614174000");
         private StartSignInEmailVerification signInStart;
         private VerifyEmailCode signInVerify;
+        private VerificationFailure signInFailure;
         private boolean compatibilityStartCalled;
+
+        void failSignInWith(VerificationFailure failure) {
+            this.signInFailure = failure;
+        }
 
         @Override
         public VerificationChallengeStarted start(StartEmailVerification command) {
@@ -437,6 +454,9 @@ class PasswordlessIdentityServiceTest {
         @Override
         public EmailVerified verifySignIn(VerifyEmailCode command) {
             signInVerify = command;
+            if (signInFailure != null) {
+                throw signInFailure;
+            }
             return new EmailVerified(CHALLENGE_ID, "sign_in", NOW, bytes(7));
         }
     }

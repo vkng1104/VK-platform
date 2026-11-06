@@ -221,6 +221,9 @@ public final class EmailVerificationService implements EmailVerificationOperatio
         Optional<VerificationChallenge> verified = transactions.execute(
                 status -> attempt(id, candidateDigest, now)
         );
+        // Rejecting only after the transaction callback ends ensures a joined transaction (such as
+        // in PasswordlessIdentityService.verifySignIn) is not marked rollback-only by the template,
+        // allowing the recorded failed attempt to be committed.
         if (verified == null || verified.isEmpty()) {
             throw VerificationFailure.invalidOrExpiredCode();
         }

@@ -15,6 +15,7 @@ import com.vkplatform.iam.identity.domain.LoginIdentity;
 import com.vkplatform.iam.identity.domain.VerificationGrant;
 import com.vkplatform.iam.identity.domain.IdentityPolicy;
 import com.vkplatform.iam.verification.api.EmailVerificationOperations;
+import com.vkplatform.iam.verification.domain.VerificationFailure;
 import com.vkplatform.iam.verification.application.port.out.EmailVerificationChallengeRepository;
 import com.vkplatform.iam.verification.application.port.out.EmailVerificationOperationGuardRepository;
 import com.vkplatform.iam.verification.application.port.out.VerificationCodeGenerator;
@@ -93,20 +94,7 @@ class PasswordlessIdentityTransactionIntegrationTest {
     @Test
     void failedGrantPersistenceRollsBackSuccessfulOtpConsumption() {
         seedAccountWithGrant(bytes(22), GRANT_DIGEST, NOW.plusSeconds(300), NOW);
-        UUID challengeId = UUID.fromString("123e4567-e89b-42d3-a456-426614174000");
-        VerificationChallenge challenge = VerificationChallenge.pending(
-                challengeId,
-                VerificationPurpose.SIGN_IN,
-                bytes(23),
-                bytes(24),
-                bytes(25),
-                5,
-                NOW.plusSeconds(300),
-                NOW.plusSeconds(60),
-                NOW
-        );
-        verifications.create(challenge);
-        verifications.markSent(challengeId, NOW);
+        UUID challengeId = sentSignInChallenge(5);
 
         assertThatThrownBy(() -> operations.verifySignIn(new VerifyPasswordlessSignIn(
                 challengeId.toString(),
@@ -123,6 +111,66 @@ class PasswordlessIdentityTransactionIntegrationTest {
                 "SELECT count(*) FROM iam_identity.verification_grants",
                 Integer.class
         )).isEqualTo(1);
+    }
+
+    @Test
+    void wrongSignInCodeIncrementsFailedAttemptCountAndCommitsDespiteVerificationFailure() {
+        UUID challengeId = sentSignInChallenge(5);
+
+        assertThatThrownBy(() -> operations.verifySignIn(new VerifyPasswordlessSignIn(
+                challengeId.toString(),
+                "654321",
+                "transaction-request"
+        ))).isInstanceOf(VerificationFailure.class);
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT attempt_count FROM iam_identity.email_verification_challenges WHERE id = ?",
+                Integer.class,
+                challengeId
+        )).isEqualTo(1);
+    }
+
+    @Test
+    void maxFailedAttemptsLocksOutSignInEvenWhenSubsequentCodeIsCorrect() {
+        int maxAttempts = 3;
+        UUID challengeId = sentSignInChallenge(maxAttempts);
+
+        for (int i = 1; i <= maxAttempts; i++) {
+            final int attempt = i;
+            assertThatThrownBy(() -> operations.verifySignIn(new VerifyPasswordlessSignIn(
+                    challengeId.toString(),
+                    "654321",
+                    "request-wrong-" + attempt
+            ))).isInstanceOf(VerificationFailure.class);
+
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT attempt_count FROM iam_identity.email_verification_challenges WHERE id = ?",
+                    Integer.class,
+                    challengeId
+            )).isEqualTo(attempt);
+        }
+
+        // Submitting the correct code ("123456") after lockout is rejected without issuing a grant
+        assertThatThrownBy(() -> operations.verifySignIn(new VerifyPasswordlessSignIn(
+                challengeId.toString(),
+                "123456",
+                "request-correct-after-lockout"
+        ))).isInstanceOf(VerificationFailure.class);
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT attempt_count FROM iam_identity.email_verification_challenges WHERE id = ?",
+                Integer.class,
+                challengeId
+        )).isEqualTo(maxAttempts);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT verified_at FROM iam_identity.email_verification_challenges WHERE id = ?",
+                Instant.class,
+                challengeId
+        )).isNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM iam_identity.verification_grants",
+                Integer.class
+        )).isZero();
     }
 
     @Test
@@ -241,7 +289,7 @@ class PasswordlessIdentityTransactionIntegrationTest {
 
                 @Override
                 public byte[] codeDigest(UUID id, VerificationPurpose purpose, VerificationCode code) {
-                    return bytes(25);
+                    return "123456".equals(code.value()) ? bytes(25) : bytes(26);
                 }
             };
             return new EmailVerificationService(
@@ -306,6 +354,24 @@ class PasswordlessIdentityTransactionIntegrationTest {
                 grantDigest
         );
         return account.id();
+    }
+
+    private UUID sentSignInChallenge(int maxAttempts) {
+        UUID challengeId = UUID.fromString("123e4567-e89b-42d3-a456-426614174000");
+        VerificationChallenge challenge = VerificationChallenge.pending(
+                challengeId,
+                VerificationPurpose.SIGN_IN,
+                bytes(23),
+                bytes(24),
+                bytes(25),
+                maxAttempts,
+                NOW.plusSeconds(300),
+                NOW.plusSeconds(60),
+                NOW
+        );
+        verifications.create(challenge);
+        verifications.markSent(challengeId, NOW);
+        return challengeId;
     }
 
     private static byte[] bytes(int value) {
