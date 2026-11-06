@@ -30,6 +30,7 @@ import com.vkplatform.iam.verification.api.command.StartSignInEmailVerification;
 import com.vkplatform.iam.verification.api.command.VerifyEmailCode;
 import com.vkplatform.iam.verification.api.result.EmailVerified;
 import com.vkplatform.iam.verification.api.result.VerificationChallengeStarted;
+import com.vkplatform.iam.verification.domain.VerificationFailure;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -103,9 +104,12 @@ public class PasswordlessIdentityService implements PasswordlessIdentityOperatio
      * Verifies the email code, then resolves or creates the account for that email and issues a
      * one-time sign-in grant. The identifier's guard row is locked first, so two sign-ins for the
      * same email cannot both create an account.
+     *
+     * <p>Verification failures do not roll back the transaction so the email challenge's failed
+     * attempt counter stays committed rather than discarded with the unissued grant.
      */
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = VerificationFailure.class)
     public AuthenticationGrantIssued verifySignIn(VerifyPasswordlessSignIn command) {
         Objects.requireNonNull(command);
         String requestId = requireContext(command.requestId());

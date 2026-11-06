@@ -1,7 +1,10 @@
 package com.vkplatform.iam.verification.domain;
 
+import org.springframework.modulith.NamedInterface;
+
 import java.time.Instant;
 
+@NamedInterface("api")
 public final class VerificationFailure extends RuntimeException {
     public enum Reason {
         INVALID_EMAIL,
