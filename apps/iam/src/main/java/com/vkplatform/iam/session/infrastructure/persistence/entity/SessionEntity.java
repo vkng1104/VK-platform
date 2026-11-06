@@ -1,5 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.persistence.entity;
 
+import com.vkplatform.iam.platform.persistence.AbstractAssignedIdEntity;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
 import com.vkplatform.iam.session.domain.SessionRevokeReason;
 import com.vkplatform.iam.session.domain.SessionStatus;
@@ -17,7 +18,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "sessions", schema = "iam_session")
-public class SessionEntity {
+public class SessionEntity extends AbstractAssignedIdEntity<UUID> {
     @Id
     private UUID id;
 
@@ -98,6 +99,11 @@ public class SessionEntity {
         revokedAt = session.revokedAt();
         compromisedAt = session.compromisedAt();
         revokeReason = session.revokeReason();
+    }
+
+    @Override
+    public UUID getId() {
+        return id;
     }
 
     public UUID id() {

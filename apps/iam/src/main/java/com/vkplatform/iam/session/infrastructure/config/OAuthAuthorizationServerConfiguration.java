@@ -1,7 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
-import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
-import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService;
 import com.vkplatform.iam.session.infrastructure.crypto.SigningKeyRuntime;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -28,7 +27,6 @@ import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.transaction.PlatformTransactionManager;
 
-import java.time.Clock;
 
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(
@@ -128,13 +126,11 @@ public class OAuthAuthorizationServerConfiguration {
 
     @Bean
     OAuth2TokenCustomizer<JwtEncodingContext> oauthTokenClaimsCustomizer(
-            PasswordlessIdentityOperations identities,
-            AuthenticationSessionRepository sessions,
+            OAuthTokenLifecycleService tokenLifecycle,
             OAuthAuthorizationProperties properties,
-            SigningKeyRuntime signingKeys,
-            Clock clock
+            SigningKeyRuntime signingKeys
     ) {
-        return new OAuthTokenClaimsCustomizer(identities, sessions, properties, signingKeys, clock);
+        return new OAuthTokenClaimsCustomizer(tokenLifecycle, properties, signingKeys);
     }
 
 }

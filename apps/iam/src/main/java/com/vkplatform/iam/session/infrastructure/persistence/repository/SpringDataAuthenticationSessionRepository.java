@@ -1,16 +1,15 @@
 package com.vkplatform.iam.session.infrastructure.persistence.repository;
 
-import com.vkplatform.iam.session.infrastructure.persistence.entity.SessionEntity;
 import com.vkplatform.iam.session.domain.SessionStatus;
+import com.vkplatform.iam.session.infrastructure.persistence.entity.SessionEntity;
 import jakarta.persistence.LockModeType;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -28,17 +27,5 @@ interface SpringDataAuthenticationSessionRepository extends JpaRepository<Sessio
     );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    List<SessionEntity> findLockedByAccountIdAndStatusOrderByIdAsc(
-            UUID accountId,
-            SessionStatus status
-    );
-
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
     List<SessionEntity> findLockedByAccountIdOrderByIdAsc(UUID accountId);
-
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    List<SessionEntity> findLockedByAccountIdAndIdInOrderByIdAsc(
-            UUID accountId,
-            Collection<UUID> ids
-    );
 }

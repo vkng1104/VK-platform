@@ -1,5 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.persistence.entity;
 
+import com.vkplatform.iam.platform.persistence.AbstractAssignedIdEntity;
 import com.vkplatform.iam.session.domain.SigningKeyEventType;
 import com.vkplatform.iam.session.infrastructure.persistence.converter.SigningKeyEventTypeConverter;
 import jakarta.persistence.Column;
@@ -13,7 +14,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "signing_key_events", schema = "iam_session")
-public class SigningKeyEventEntity extends AbstractSessionUuidEntity {
+public class SigningKeyEventEntity extends AbstractAssignedIdEntity<UUID> {
     @Id
     private UUID id;
 

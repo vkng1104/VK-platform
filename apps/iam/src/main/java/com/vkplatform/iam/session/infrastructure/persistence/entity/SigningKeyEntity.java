@@ -1,5 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.persistence.entity;
 
+import com.vkplatform.iam.platform.persistence.AbstractAssignedIdEntity;
 import com.vkplatform.iam.session.domain.SigningKeyStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -14,7 +15,7 @@ import java.util.Objects;
 
 @Entity
 @Table(name = "signing_keys", schema = "iam_session")
-public class SigningKeyEntity {
+public class SigningKeyEntity extends AbstractAssignedIdEntity<String> {
     @Id
     @Column(length = 128)
     private String id;
@@ -84,6 +85,11 @@ public class SigningKeyEntity {
     }
 
     public String id() {
+        return id;
+    }
+
+    @Override
+    public String getId() {
         return id;
     }
 

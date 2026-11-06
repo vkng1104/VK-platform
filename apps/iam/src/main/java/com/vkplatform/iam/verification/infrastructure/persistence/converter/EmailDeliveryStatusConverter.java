@@ -1,6 +1,6 @@
 package com.vkplatform.iam.verification.infrastructure.persistence.converter;
 
-import com.vkplatform.iam.verification.infrastructure.persistence.entity.EmailDeliveryStatus;
+import com.vkplatform.iam.verification.domain.EmailDeliveryStatus;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
 

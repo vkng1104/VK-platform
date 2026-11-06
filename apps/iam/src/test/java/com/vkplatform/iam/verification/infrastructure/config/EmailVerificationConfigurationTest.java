@@ -1,17 +1,18 @@
 package com.vkplatform.iam.verification.infrastructure.config;
 
-import com.vkplatform.iam.verification.application.port.out.EmailVerificationRepository;
-import com.vkplatform.iam.verification.domain.VerificationChallenge;
+import com.vkplatform.iam.verification.application.port.out.EmailVerificationChallengeRepository;
+import com.vkplatform.iam.verification.application.port.out.EmailVerificationOperationGuardRepository;
 import com.vkplatform.iam.verification.domain.VerificationPolicy;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 class EmailVerificationConfigurationTest {
     private final EmailVerificationConfiguration configuration = new EmailVerificationConfiguration();
@@ -63,11 +64,15 @@ class EmailVerificationConfigurationTest {
     @Test
     void cleanupRetentionCannotUndercutTheGlobalThrottleWindow() {
         VerificationPolicy policy = VerificationPolicy.defaults();
-        EmailVerificationRepository repository = new NoOpRepository();
+        EmailVerificationChallengeRepository challenges = mock(EmailVerificationChallengeRepository.class);
+        EmailVerificationOperationGuardRepository operationGuards = mock(EmailVerificationOperationGuardRepository.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
         Clock clock = Clock.fixed(Instant.parse("2026-10-09T03:00:00Z"), ZoneOffset.UTC);
 
         assertThatThrownBy(() -> configuration.emailVerificationCleanupService(
-                repository,
+                challenges,
+                operationGuards,
+                transactionManager,
                 clock,
                 properties(
                         "sender@example.com",
@@ -82,7 +87,9 @@ class EmailVerificationConfigurationTest {
                 policy
         )).hasMessageContaining("EMAIL_VERIFICATION_RETENTION");
         assertThatThrownBy(() -> configuration.emailVerificationCleanupService(
-                repository,
+                challenges,
+                operationGuards,
+                transactionManager,
                 clock,
                 properties(
                         "sender@example.com",
@@ -123,29 +130,5 @@ class EmailVerificationConfigurationTest {
 
     private static String secret() {
         return "a-secret-value-with-at-least-32-bytes";
-    }
-
-    private static final class NoOpRepository implements EmailVerificationRepository {
-        @Override
-        public void createPending(VerificationChallenge challenge, VerificationPolicy policy) {
-        }
-
-        @Override
-        public void markSent(UUID id, Instant sentAt) {
-        }
-
-        @Override
-        public void markFailed(UUID id) {
-        }
-
-        @Override
-        public VerificationAttempt verify(UUID id, byte[] candidateDigest, Instant now) {
-            return VerificationAttempt.rejected();
-        }
-
-        @Override
-        public int deleteTerminalBefore(Instant cutoff, int batchSize) {
-            return 0;
-        }
     }
 }

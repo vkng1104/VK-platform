@@ -1,5 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.persistence.entity;
 
+import com.vkplatform.iam.platform.persistence.AbstractAssignedIdEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -9,7 +10,7 @@ import java.time.Instant;
 
 @Entity
 @Table(name = "operator_operations", schema = "iam_session")
-public class OperatorOperationEntity {
+public class OperatorOperationEntity extends AbstractAssignedIdEntity<String> {
     @Id
     @Column(name = "operation_id", length = 128)
     private String operationId;
@@ -55,6 +56,11 @@ public class OperatorOperationEntity {
 
     public String operationType() {
         return operationType;
+    }
+
+    @Override
+    public String getId() {
+        return operationId;
     }
 
     public String actorId() {

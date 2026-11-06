@@ -16,4 +16,7 @@ interface SpringDataOAuthRefreshTokenRepository extends JpaRepository<OAuthRefre
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<OAuthRefreshTokenEntity> findLockedByTokenDigest(byte[] tokenDigest);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<OAuthRefreshTokenEntity> findLockedById(UUID id);
 }

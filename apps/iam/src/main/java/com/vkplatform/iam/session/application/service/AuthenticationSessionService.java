@@ -11,14 +11,18 @@ import com.vkplatform.iam.session.api.result.AuthenticationSessionPage;
 import com.vkplatform.iam.session.api.result.AuthenticationSessionSummary;
 import com.vkplatform.iam.session.api.result.EstablishedAuthenticationSession;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.application.port.out.OAuthAuthorizationRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
-import com.vkplatform.iam.session.domain.SessionPolicy;
+import com.vkplatform.iam.session.domain.OAuthAuthorizationInvalidationReason;
 import com.vkplatform.iam.session.domain.SessionFailure;
+import com.vkplatform.iam.session.domain.SessionPolicy;
 import com.vkplatform.iam.session.domain.SessionRevokeReason;
+import com.vkplatform.iam.session.domain.SessionStatus;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -26,17 +30,20 @@ public class AuthenticationSessionService implements AuthenticationSessionOperat
     private static final int MAX_CONTEXT_LENGTH = 128;
     private final PasswordlessIdentityOperations identities;
     private final AuthenticationSessionRepository sessions;
+    private final OAuthAuthorizationRepository authorizations;
     private final SessionPolicy policy;
     private final Clock clock;
 
     public AuthenticationSessionService(
             PasswordlessIdentityOperations identities,
             AuthenticationSessionRepository sessions,
+            OAuthAuthorizationRepository authorizations,
             SessionPolicy policy,
             Clock clock
     ) {
         this.identities = Objects.requireNonNull(identities);
         this.sessions = Objects.requireNonNull(sessions);
+        this.authorizations = Objects.requireNonNull(authorizations);
         this.policy = Objects.requireNonNull(policy);
         this.clock = Objects.requireNonNull(clock);
     }
@@ -107,20 +114,16 @@ public class AuthenticationSessionService implements AuthenticationSessionOperat
     public void revoke(RevokeAuthenticationSession command) {
         Objects.requireNonNull(command);
         requireContext(command.requestId());
-        AuthenticationSessionRepository.RevokeResult result = sessions.revokeOwnedFromCurrent(
-                command.accountId(),
-                command.currentSessionId(),
-                Objects.requireNonNull(command.targetSessionId()),
-                policy.bffClientId(),
-                SessionRevokeReason.USER_REQUEST,
-                clock.instant()
-        );
-        if (result == AuthenticationSessionRepository.RevokeResult.CURRENT_UNAVAILABLE) {
-            throw SessionFailure.sessionUnavailable();
-        }
-        if (result == AuthenticationSessionRepository.RevokeResult.TARGET_NOT_FOUND) {
+        UUID accountId = Objects.requireNonNull(command.accountId());
+        UUID targetSessionId = Objects.requireNonNull(command.targetSessionId());
+        Instant now = clock.instant();
+        List<AuthenticationSession> owned = sessions.findAllLockedByAccountId(accountId);
+        requireUsableCurrent(owned, accountId, command.currentSessionId(), now);
+        AuthenticationSession target = findSession(owned, targetSessionId);
+        if (target == null) {
             throw SessionFailure.sessionNotFound();
         }
+        revokeAndInvalidate(target, SessionRevokeReason.USER_REQUEST, now);
     }
 
     @Override
@@ -131,12 +134,14 @@ public class AuthenticationSessionService implements AuthenticationSessionOperat
         if (!Objects.equals(command.currentSessionId(), command.targetSessionId())) {
             throw SessionFailure.invalidRequest();
         }
-        sessions.revokeOwnedAndInvalidate(
-                Objects.requireNonNull(command.accountId()),
-                Objects.requireNonNull(command.targetSessionId()),
-                SessionRevokeReason.LOGOUT,
-                clock.instant()
-        );
+        UUID accountId = Objects.requireNonNull(command.accountId());
+        sessions.findLockedById(Objects.requireNonNull(command.targetSessionId()))
+                .filter(session -> session.accountId().equals(accountId))
+                .ifPresent(session -> revokeAndInvalidate(
+                        session,
+                        SessionRevokeReason.LOGOUT,
+                        clock.instant()
+                ));
     }
 
     @Override
@@ -144,17 +149,63 @@ public class AuthenticationSessionService implements AuthenticationSessionOperat
     public int revokeAll(RevokeAllAuthenticationSessions command) {
         Objects.requireNonNull(command);
         requireContext(command.requestId());
-        AuthenticationSessionRepository.RevokeAllResult result = sessions.revokeAllFromCurrent(
-                command.accountId(),
-                command.currentSessionId(),
-                policy.bffClientId(),
-                SessionRevokeReason.ALL_SESSIONS_REVOKED,
-                clock.instant()
+        UUID accountId = Objects.requireNonNull(command.accountId());
+        Instant now = clock.instant();
+        List<AuthenticationSession> owned = sessions.findAllLockedByAccountId(accountId);
+        requireUsableCurrent(owned, accountId, command.currentSessionId(), now);
+        int revoked = 0;
+        for (AuthenticationSession session : owned) {
+            if (session.status() == SessionStatus.ACTIVE) {
+                revokeAndInvalidate(
+                        session,
+                        SessionRevokeReason.ALL_SESSIONS_REVOKED,
+                        now
+                );
+                revoked++;
+            }
+        }
+        return revoked;
+    }
+
+    private void requireUsableCurrent(
+            List<AuthenticationSession> owned,
+            UUID accountId,
+            UUID currentSessionId,
+            Instant now
+    ) {
+        AuthenticationSession current = findSession(
+                owned,
+                Objects.requireNonNull(currentSessionId)
         );
-        if (!result.currentAvailable()) {
+        if (current == null || !current.canAuthorize(accountId, policy.bffClientId(), now)) {
             throw SessionFailure.sessionUnavailable();
         }
-        return result.revokedCount();
+    }
+
+    private void revokeAndInvalidate(
+            AuthenticationSession session,
+            SessionRevokeReason reason,
+            Instant now
+    ) {
+        AuthenticationSession revoked = session.revoke(reason, now);
+        if (!revoked.equals(session)) {
+            sessions.recordRevocation(revoked);
+        }
+        authorizations.invalidateAllForSession(
+                session.id(),
+                OAuthAuthorizationInvalidationReason.fromSessionReason(revoked.revokeReason()),
+                now
+        );
+    }
+
+    private static AuthenticationSession findSession(
+            List<AuthenticationSession> sessions,
+            UUID sessionId
+    ) {
+        return sessions.stream()
+                .filter(session -> session.id().equals(sessionId))
+                .findFirst()
+                .orElse(null);
     }
 
     private static AuthenticationSessionSummary summary(AuthenticationSession session) {

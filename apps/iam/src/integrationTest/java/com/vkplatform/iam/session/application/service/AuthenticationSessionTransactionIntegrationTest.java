@@ -2,15 +2,21 @@ package com.vkplatform.iam.session.application.service;
 
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
 import com.vkplatform.iam.identity.application.port.out.GrantTokenCodec;
-import com.vkplatform.iam.identity.application.port.out.PasswordlessIdentityRepository;
+import com.vkplatform.iam.identity.application.port.out.AccountRepository;
+import com.vkplatform.iam.identity.application.port.out.IdentityOperationGuardRepository;
+import com.vkplatform.iam.identity.application.port.out.LoginIdentityRepository;
+import com.vkplatform.iam.identity.application.port.out.SecurityEventRepository;
+import com.vkplatform.iam.identity.application.port.out.VerificationGrantRepository;
+import com.vkplatform.iam.identity.domain.Account;
+import com.vkplatform.iam.identity.domain.VerificationGrant;
 import com.vkplatform.iam.identity.application.service.PasswordlessIdentityService;
 import com.vkplatform.iam.identity.domain.IdentityPolicy;
 import com.vkplatform.iam.session.api.AuthenticationSessionOperations;
 import com.vkplatform.iam.session.api.command.ExchangeAuthenticationGrant;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.application.port.out.OAuthAuthorizationRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
 import com.vkplatform.iam.session.domain.SessionPolicy;
-import com.vkplatform.iam.session.domain.SessionRevokeReason;
 import com.vkplatform.iam.verification.api.EmailVerificationOperations;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,6 +34,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -46,7 +53,10 @@ class AuthenticationSessionTransactionIntegrationTest {
     private AuthenticationSessionOperations operations;
 
     @Autowired
-    private PasswordlessIdentityRepository identities;
+    private AccountRepository accounts;
+
+    @Autowired
+    private VerificationGrantRepository verificationGrants;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -64,13 +74,18 @@ class AuthenticationSessionTransactionIntegrationTest {
 
     @Test
     void failedSessionCreationRollsBackGrantConsumptionAndItsAuditEvent() {
-        identities.issueSignInGrant(
+        Account account = Account.create(UUID.randomUUID(), NOW);
+        accounts.create(account);
+        verificationGrants.create(
+                VerificationGrant.issueSignIn(
+                        UUID.randomUUID(),
+                        account.id(),
+                        "vk-platform-web",
+                        NOW.plusSeconds(300),
+                        NOW
+                ),
                 bytes(32),
-                GRANT_DIGEST,
-                "vk-platform-web",
-                NOW.plusSeconds(300),
-                NOW,
-                "seed-request"
+                GRANT_DIGEST
         );
 
         assertThatThrownBy(() -> operations.exchange(new ExchangeAuthenticationGrant(
@@ -132,54 +147,27 @@ class AuthenticationSessionTransactionIntegrationTest {
                 }
 
                 @Override
-                public boolean revokeByIdForAccount(
-                        UUID accountId,
-                        UUID sessionId,
-                        SessionRevokeReason reason,
-                        Instant revokedAt
-                ) {
+                public Optional<AuthenticationSession> findLockedById(UUID id) {
                     throw new UnsupportedOperationException();
                 }
 
                 @Override
-                public int revokeAll(
-                        UUID accountId,
-                        SessionRevokeReason reason,
-                        Instant revokedAt
-                ) {
+                public List<AuthenticationSession> findAllLockedByAccountId(UUID accountId) {
                     throw new UnsupportedOperationException();
                 }
 
                 @Override
-                public boolean revokeOwnedAndInvalidate(
-                        UUID accountId,
-                        UUID sessionId,
-                        SessionRevokeReason reason,
-                        Instant revokedAt
-                ) {
+                public void recordRevocation(AuthenticationSession revoked) {
                     throw new UnsupportedOperationException();
                 }
 
                 @Override
-                public RevokeResult revokeOwnedFromCurrent(
-                        UUID accountId,
-                        UUID currentSessionId,
-                        UUID targetSessionId,
-                        String expectedClientId,
-                        SessionRevokeReason reason,
-                        Instant revokedAt
-                ) {
+                public void recordRefresh(AuthenticationSession refreshed) {
                     throw new UnsupportedOperationException();
                 }
 
                 @Override
-                public RevokeAllResult revokeAllFromCurrent(
-                        UUID accountId,
-                        UUID currentSessionId,
-                        String expectedClientId,
-                        SessionRevokeReason reason,
-                        Instant revokedAt
-                ) {
+                public void recordCompromise(AuthenticationSession compromised) {
                     throw new UnsupportedOperationException();
                 }
             };
@@ -187,7 +175,11 @@ class AuthenticationSessionTransactionIntegrationTest {
 
         @Bean
         PasswordlessIdentityOperations transactionTestPasswordlessIdentityOperations(
-                PasswordlessIdentityRepository repository,
+                AccountRepository accounts,
+                LoginIdentityRepository loginIdentities,
+                VerificationGrantRepository verificationGrants,
+                SecurityEventRepository securityEvents,
+                IdentityOperationGuardRepository operationGuards,
                 Clock clock,
                 IdentityPolicy policy
         ) {
@@ -204,10 +196,15 @@ class AuthenticationSessionTransactionIntegrationTest {
             };
             return new PasswordlessIdentityService(
                     mock(EmailVerificationOperations.class),
-                    repository,
+                    accounts,
+                    loginIdentities,
+                    verificationGrants,
+                    securityEvents,
+                    operationGuards,
                     grants,
                     clock,
-                    policy
+                    policy,
+                    event -> { }
             );
         }
 
@@ -215,11 +212,13 @@ class AuthenticationSessionTransactionIntegrationTest {
         AuthenticationSessionOperations transactionTestAuthenticationSessionOperations(
                 PasswordlessIdentityOperations identities,
                 AuthenticationSessionRepository sessions,
+                OAuthAuthorizationRepository authorizations,
                 Clock clock
         ) {
             return new AuthenticationSessionService(
                     identities,
                     sessions,
+                    authorizations,
                     new SessionPolicy("vk-platform-bff", Duration.ofDays(30)),
                     clock
             );

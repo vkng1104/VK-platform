@@ -1,9 +1,7 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
-import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
-import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
-import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
-import com.vkplatform.iam.session.domain.AuthenticationSession;
+import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService;
+import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService.AccessTokenWindow;
 import com.vkplatform.iam.session.infrastructure.crypto.SigningKeyRuntime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,21 +16,18 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 
 import java.net.URI;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class OAuthTokenClaimsCustomizerTest {
@@ -40,24 +35,17 @@ class OAuthTokenClaimsCustomizerTest {
     private static final UUID ACCOUNT_ID = UUID.fromString("88b73dc4-c657-49e8-8f37-7f874d9582ec");
     private static final UUID SESSION_ID = UUID.fromString("68612245-a543-4b06-9406-3fdc2d62d878");
 
-    private AuthenticationSessionRepository sessions;
-    private PasswordlessIdentityOperations identities;
+    private OAuthTokenLifecycleService tokenLifecycle;
     private SigningKeyRuntime signingKeys;
     private OAuthTokenClaimsCustomizer customizer;
 
     @BeforeEach
     void setUp() {
-        sessions = mock(AuthenticationSessionRepository.class);
-        identities = mock(PasswordlessIdentityOperations.class);
-        when(identities.activeAccount(ACCOUNT_ID)).thenReturn(new AuthenticatedAccount(
-                ACCOUNT_ID,
-                NOW.minusSeconds(30)
-        ));
+        tokenLifecycle = mock(OAuthTokenLifecycleService.class);
         signingKeys = mock(SigningKeyRuntime.class);
         when(signingKeys.activeSigningKeyId()).thenReturn("oauth-signing-2026");
         customizer = new OAuthTokenClaimsCustomizer(
-                identities,
-                sessions,
+                tokenLifecycle,
                 new OAuthAuthorizationProperties(
                         URI.create("https://iam.example.test"),
                         "vk-platform-api",
@@ -67,23 +55,15 @@ class OAuthTokenClaimsCustomizerTest {
                         Duration.ofMinutes(5),
                         Duration.ofDays(30)
                 ),
-                signingKeys,
-                Clock.fixed(NOW, ZoneOffset.UTC)
+                signingKeys
         );
     }
 
     @Test
-    void emitsOnlyAllowListedAccountAndSessionClaims() {
-        RegisteredClient client = client();
-        UsernamePasswordAuthenticationToken principal = principal();
-        when(sessions.findById(SESSION_ID)).thenReturn(Optional.of(AuthenticationSession.create(
-                SESSION_ID,
-                ACCOUNT_ID,
-                "vk-platform-bff",
-                NOW.minusSeconds(60),
-                NOW.plusSeconds(180)
-        )));
-        JwtEncodingContext context = context(client, principal);
+    void emitsOnlyAllowListedAccountAndSessionClaimsInsideTheServicesWindow() {
+        when(tokenLifecycle.accessTokenWindow(ACCOUNT_ID, SESSION_ID, "vk-platform-bff"))
+                .thenReturn(new AccessTokenWindow(NOW.plusSeconds(5), NOW.plusSeconds(180)));
+        JwtEncodingContext context = context(OAuth2TokenType.ACCESS_TOKEN);
 
         customizer.customize(context);
         JwtClaimsSet claims = context.getClaims().build();
@@ -94,30 +74,35 @@ class OAuthTokenClaimsCustomizerTest {
         assertThat(claims.getClaimAsString("client_id")).isEqualTo("vk-platform-bff");
         assertThat(claims.getClaimAsString("sid")).isEqualTo(SESSION_ID.toString());
         assertThat(claims.getClaimAsStringList("amr")).containsExactly("email_otp");
+        assertThat(claims.getNotBefore()).isEqualTo(NOW.plusSeconds(5));
         assertThat(claims.getExpiresAt()).isEqualTo(NOW.plusSeconds(180));
         assertThat(claims.getClaims()).doesNotContainKeys("email", "role", "permissions");
-        verify(identities).activeAccount(ACCOUNT_ID);
     }
 
     @Test
-    void refusesToIssueForAnUnavailableBrowserSession() {
-        when(sessions.findById(SESSION_ID)).thenReturn(Optional.empty());
+    void refusesToIssueWhenTheServiceRefuses() {
+        when(tokenLifecycle.accessTokenWindow(ACCOUNT_ID, SESSION_ID, "vk-platform-bff"))
+                .thenThrow(new IllegalStateException("OAuth browser session is unavailable"));
 
-        assertThatThrownBy(() -> customizer.customize(context(client(), principal())))
+        assertThatThrownBy(() -> customizer.customize(context(OAuth2TokenType.ACCESS_TOKEN)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("session is unavailable");
     }
 
-    private static RegisteredClient client() {
-        return RegisteredClient.withId("bff:vk-platform-bff")
+    @Test
+    void leavesOtherTokenTypesAlone() {
+        customizer.customize(context(OAuth2TokenType.REFRESH_TOKEN));
+
+        verifyNoInteractions(tokenLifecycle);
+    }
+
+    private static JwtEncodingContext context(OAuth2TokenType tokenType) {
+        RegisteredClient client = RegisteredClient.withId("bff:vk-platform-bff")
                 .clientId("vk-platform-bff")
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .redirectUri("https://web.example.test/api/auth/callback")
                 .scope("api.access")
                 .build();
-    }
-
-    private static UsernamePasswordAuthenticationToken principal() {
         UsernamePasswordAuthenticationToken principal = UsernamePasswordAuthenticationToken.authenticated(
                 ACCOUNT_ID.toString(),
                 null,
@@ -127,13 +112,6 @@ class OAuthTokenClaimsCustomizerTest {
         details.put("session_id", SESSION_ID.toString());
         details.put("amr", "email_otp");
         principal.setDetails(details);
-        return principal;
-    }
-
-    private static JwtEncodingContext context(
-            RegisteredClient client,
-            UsernamePasswordAuthenticationToken principal
-    ) {
         return JwtEncodingContext.with(
                         JwsHeader.with(SignatureAlgorithm.RS256),
                         JwtClaimsSet.builder().issuedAt(NOW).expiresAt(NOW.plusSeconds(300))
@@ -141,7 +119,7 @@ class OAuthTokenClaimsCustomizerTest {
                 .registeredClient(client)
                 .principal(principal)
                 .authorizedScopes(Set.copyOf(client.getScopes()))
-                .tokenType(OAuth2TokenType.ACCESS_TOKEN)
+                .tokenType(tokenType)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .build();
     }

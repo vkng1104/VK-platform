@@ -1,7 +1,9 @@
 package com.vkplatform.iam.identity.infrastructure.persistence.entity;
 
 import com.vkplatform.iam.identity.domain.GrantPurpose;
+import com.vkplatform.iam.identity.domain.VerificationGrant;
 import com.vkplatform.iam.identity.infrastructure.persistence.converter.GrantPurposeConverter;
+import com.vkplatform.iam.platform.persistence.AbstractAssignedIdEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
@@ -13,7 +15,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "verification_grants", schema = "iam_identity")
-public class VerificationGrantEntity extends AbstractUuidEntity {
+public class VerificationGrantEntity extends AbstractAssignedIdEntity<UUID> {
     @Id
     private UUID id;
 
@@ -45,42 +47,33 @@ public class VerificationGrantEntity extends AbstractUuidEntity {
     protected VerificationGrantEntity() {
     }
 
-    public VerificationGrantEntity(
-            UUID id,
-            UUID accountId,
-            byte[] identityFingerprint,
-            byte[] grantDigest,
-            String audience,
-            Instant expiresAt,
-            Instant createdAt
-    ) {
-        this.id = id;
-        this.purpose = GrantPurpose.SIGN_IN;
-        this.accountId = accountId;
+    public VerificationGrantEntity(VerificationGrant grant, byte[] identityFingerprint, byte[] grantDigest) {
+        this.id = grant.id();
+        this.purpose = grant.purpose();
+        this.accountId = grant.accountId();
         this.identityFingerprint = identityFingerprint.clone();
         this.grantDigest = grantDigest.clone();
-        this.audience = audience;
-        this.expiresAt = expiresAt;
-        this.createdAt = createdAt;
+        this.audience = grant.audience();
+        this.expiresAt = grant.expiresAt();
+        this.consumedAt = grant.consumedAt();
+        this.createdAt = grant.createdAt();
     }
 
-    public boolean canConsume(String expectedAudience, Instant now) {
-        return purpose == GrantPurpose.SIGN_IN
-                && audience.equals(expectedAudience)
-                && consumedAt == null
-                && now.isBefore(expiresAt);
+    public VerificationGrant toDomain() {
+        return new VerificationGrant(id, purpose, accountId, audience, expiresAt, consumedAt, createdAt);
     }
 
-    public void consume(Instant now) {
-        this.consumedAt = now;
-    }
-
-    public UUID id() {
-        return id;
-    }
-
-    public UUID accountId() {
-        return accountId;
+    /** Copies a consumption; everything else about a grant is fixed when it is issued. */
+    public void apply(VerificationGrant grant) {
+        if (!id.equals(grant.id())
+                || purpose != grant.purpose()
+                || !accountId.equals(grant.accountId())
+                || !audience.equals(grant.audience())
+                || !expiresAt.equals(grant.expiresAt())
+                || !createdAt.equals(grant.createdAt())) {
+            throw new IllegalArgumentException("verification grant identity cannot change");
+        }
+        consumedAt = grant.consumedAt();
     }
 
     @Override
