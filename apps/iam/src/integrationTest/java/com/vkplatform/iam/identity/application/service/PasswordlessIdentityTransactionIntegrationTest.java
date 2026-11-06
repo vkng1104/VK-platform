@@ -94,20 +94,7 @@ class PasswordlessIdentityTransactionIntegrationTest {
     @Test
     void failedGrantPersistenceRollsBackSuccessfulOtpConsumption() {
         seedAccountWithGrant(bytes(22), GRANT_DIGEST, NOW.plusSeconds(300), NOW);
-        UUID challengeId = UUID.fromString("123e4567-e89b-42d3-a456-426614174000");
-        VerificationChallenge challenge = VerificationChallenge.pending(
-                challengeId,
-                VerificationPurpose.SIGN_IN,
-                bytes(23),
-                bytes(24),
-                bytes(25),
-                5,
-                NOW.plusSeconds(300),
-                NOW.plusSeconds(60),
-                NOW
-        );
-        verifications.create(challenge);
-        verifications.markSent(challengeId, NOW);
+        UUID challengeId = sentSignInChallenge(5);
 
         assertThatThrownBy(() -> operations.verifySignIn(new VerifyPasswordlessSignIn(
                 challengeId.toString(),
@@ -128,20 +115,7 @@ class PasswordlessIdentityTransactionIntegrationTest {
 
     @Test
     void wrongSignInCodeIncrementsFailedAttemptCountAndCommitsDespiteVerificationFailure() {
-        UUID challengeId = UUID.fromString("123e4567-e89b-42d3-a456-426614174000");
-        VerificationChallenge challenge = VerificationChallenge.pending(
-                challengeId,
-                VerificationPurpose.SIGN_IN,
-                bytes(23),
-                bytes(24),
-                bytes(25),
-                5,
-                NOW.plusSeconds(300),
-                NOW.plusSeconds(60),
-                NOW
-        );
-        verifications.create(challenge);
-        verifications.markSent(challengeId, NOW);
+        UUID challengeId = sentSignInChallenge(5);
 
         assertThatThrownBy(() -> operations.verifySignIn(new VerifyPasswordlessSignIn(
                 challengeId.toString(),
@@ -158,21 +132,8 @@ class PasswordlessIdentityTransactionIntegrationTest {
 
     @Test
     void maxFailedAttemptsLocksOutSignInEvenWhenSubsequentCodeIsCorrect() {
-        UUID challengeId = UUID.fromString("123e4567-e89b-42d3-a456-426614174000");
         int maxAttempts = 3;
-        VerificationChallenge challenge = VerificationChallenge.pending(
-                challengeId,
-                VerificationPurpose.SIGN_IN,
-                bytes(23),
-                bytes(24),
-                bytes(25),
-                maxAttempts,
-                NOW.plusSeconds(300),
-                NOW.plusSeconds(60),
-                NOW
-        );
-        verifications.create(challenge);
-        verifications.markSent(challengeId, NOW);
+        UUID challengeId = sentSignInChallenge(maxAttempts);
 
         for (int i = 1; i <= maxAttempts; i++) {
             final int attempt = i;
@@ -196,6 +157,16 @@ class PasswordlessIdentityTransactionIntegrationTest {
                 "request-correct-after-lockout"
         ))).isInstanceOf(VerificationFailure.class);
 
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT attempt_count FROM iam_identity.email_verification_challenges WHERE id = ?",
+                Integer.class,
+                challengeId
+        )).isEqualTo(maxAttempts);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT verified_at FROM iam_identity.email_verification_challenges WHERE id = ?",
+                Instant.class,
+                challengeId
+        )).isNull();
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM iam_identity.verification_grants",
                 Integer.class
@@ -383,6 +354,24 @@ class PasswordlessIdentityTransactionIntegrationTest {
                 grantDigest
         );
         return account.id();
+    }
+
+    private UUID sentSignInChallenge(int maxAttempts) {
+        UUID challengeId = UUID.fromString("123e4567-e89b-42d3-a456-426614174000");
+        VerificationChallenge challenge = VerificationChallenge.pending(
+                challengeId,
+                VerificationPurpose.SIGN_IN,
+                bytes(23),
+                bytes(24),
+                bytes(25),
+                maxAttempts,
+                NOW.plusSeconds(300),
+                NOW.plusSeconds(60),
+                NOW
+        );
+        verifications.create(challenge);
+        verifications.markSent(challengeId, NOW);
+        return challengeId;
     }
 
     private static byte[] bytes(int value) {

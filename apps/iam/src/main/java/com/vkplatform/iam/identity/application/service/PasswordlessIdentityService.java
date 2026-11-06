@@ -108,7 +108,7 @@ public class PasswordlessIdentityService implements PasswordlessIdentityOperatio
      * <p>Verification failures do not roll back the transaction so the email challenge's failed
      * attempt counter stays committed rather than discarded with the unissued grant. This relies
      * on verification throwing after its internal transaction step completes; throwing inside
-     * {@code transactions.execute(...)} would mark the joined transaction rollback-only.
+     * its own transaction step would mark the joined transaction rollback-only.
      */
     @Override
     @Transactional(noRollbackFor = VerificationFailure.class)
