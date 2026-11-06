@@ -12,7 +12,9 @@ public record SessionProperties(
         String bffClientId,
         String bffClientSecret,
         URI bffOrigin,
-        Duration absoluteTtl
+        Duration absoluteTtl,
+        String browserCookieName,
+        boolean browserCookieSecure
 ) {
     public SessionProperties {
         if (enabled) {
@@ -24,6 +26,11 @@ public record SessionProperties(
                     || bffOrigin.getQuery() != null || bffOrigin.getFragment() != null
                     || !(bffOrigin.getPath().isEmpty() || "/".equals(bffOrigin.getPath()))) {
                 throw new IllegalStateException("IAM_BFF_ORIGIN must be an absolute origin");
+            }
+            if (browserCookieName == null || browserCookieName.isBlank()
+                    || browserCookieName.length() > 128
+                    || !browserCookieName.equals(browserCookieName.strip())) {
+                throw new IllegalStateException("IAM_SESSION_COOKIE_NAME is invalid");
             }
         }
     }

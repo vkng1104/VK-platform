@@ -382,11 +382,139 @@ paths:
           $ref: "#/components/responses/AuthenticationFailed"
         "500":
           $ref: "#/components/responses/EmailVerificationInternalError"
+  /api/v1/authentication/session:
+    get:
+      operationId: getCurrentAuthenticationSession
+      tags:
+        - Authentication
+      summary: Read the current durable authentication session
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current usable session details.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationSessionResponse"
+        "401":
+          $ref: "#/components/responses/SessionAuthenticationRequired"
+  /api/v1/authentication/sessions:
+    get:
+      operationId: listAuthenticationSessions
+      tags:
+        - Authentication
+      summary: List active sessions for the current account
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Active unexpired sessions ordered by creation time and ID descending.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationSessionsResponse"
+        "400":
+          $ref: "#/components/responses/SessionBadRequest"
+        "401":
+          $ref: "#/components/responses/SessionAuthenticationRequired"
+    delete:
+      operationId: revokeAllAuthenticationSessions
+      tags:
+        - Authentication
+      summary: Revoke all sessions for the current account
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Every active session and authorization was revoked.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+        "401":
+          $ref: "#/components/responses/SessionAuthenticationRequired"
+  /api/v1/authentication/sessions/{session_id}:
+    delete:
+      operationId: revokeAuthenticationSession
+      tags:
+        - Authentication
+      summary: Revoke one session owned by the current account
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: The owned session and authorization were revoked.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+        "401":
+          $ref: "#/components/responses/SessionAuthenticationRequired"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+  /api/v1/authentication/logout:
+    post:
+      operationId: logoutAuthenticationSession
+      tags:
+        - Authentication
+      summary: Revoke the current session and clear browser state
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: >-
+            The current durable session and authorization were revoked, any framework session was
+            invalidated, and the configured IAM browser cookie was expired.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+        "401":
+          $ref: "#/components/responses/SessionAuthenticationRequired"
 components:
   securitySchemes:
     bffClientAuth:
       type: http
       scheme: basic
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   headers:
     RequestID:
       description: Server-generated identifier for correlating a request with API logs.
@@ -410,6 +538,39 @@ components:
         minimum: 1
       example: 60
   responses:
+    SessionBadRequest:
+      description: Pagination or session request input is invalid.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+        Cache-Control:
+          $ref: "#/components/headers/NoStore"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicError"
+    SessionAuthenticationRequired:
+      description: The bearer token or current durable session is unavailable.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+        Cache-Control:
+          $ref: "#/components/headers/NoStore"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicError"
+    SessionNotFound:
+      description: The target session was not found for the authenticated account.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+        Cache-Control:
+          $ref: "#/components/headers/NoStore"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicError"
     ExchangeAuthenticationGrantBadRequest:
       description: The JSON body or authentication audience is invalid.
       headers:
@@ -843,23 +1004,42 @@ components:
       additionalProperties: false
       required:
         - id
+        - client_id
         - status
         - created_at
+        - last_refreshed_at
         - expires_at
       properties:
         id:
           type: string
           format: uuid
+        client_id:
+          type: string
+          minLength: 1
+          maxLength: 128
         status:
           type: string
           enum:
             - active
+            - revoked
+            - compromised
         created_at:
+          type: string
+          format: date-time
+        last_refreshed_at:
           type: string
           format: date-time
         expires_at:
           type: string
           format: date-time
+        revoked_at:
+          type: [string, "null"]
+          format: date-time
+        compromised_at:
+          type: [string, "null"]
+          format: date-time
+        revoke_reason:
+          type: [string, "null"]
     AuthenticationSessionResponse:
       type: object
       additionalProperties: false
@@ -868,6 +1048,41 @@ components:
       properties:
         session:
           $ref: "#/components/schemas/AuthenticationSession"
+    AuthenticationSessionPage:
+      type: object
+      additionalProperties: false
+      required:
+        - number
+        - size
+        - total_elements
+        - total_pages
+      properties:
+        number:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total_elements:
+          type: integer
+          minimum: 0
+        total_pages:
+          type: integer
+          minimum: 0
+    AuthenticationSessionsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - sessions
+        - page
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthenticationSession"
+        page:
+          $ref: "#/components/schemas/AuthenticationSessionPage"
     PublicError:
       type: object
       additionalProperties: false

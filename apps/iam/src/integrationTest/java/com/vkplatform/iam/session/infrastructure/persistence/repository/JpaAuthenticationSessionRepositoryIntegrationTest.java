@@ -1,5 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.persistence.repository;
 
+import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
 import com.vkplatform.iam.session.domain.SessionRevokeReason;
 import com.vkplatform.iam.session.domain.SessionStatus;
@@ -84,6 +85,12 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
                 "revoke_reason",
                 "version"
         );
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT indexname
+                FROM pg_indexes
+                WHERE schemaname = 'iam_session'
+                  AND tablename = 'sessions'
+                """, String.class)).contains("sessions_account_status_created_id_idx");
     }
 
     @Test
@@ -220,6 +227,43 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
     }
 
     @Test
+    void pagesOnlyActiveUnexpiredOwnedSessionsInDeterministicOrder() {
+        UUID otherAccountId = UUID.randomUUID();
+        insertAccount(otherAccountId);
+        AuthenticationSession oldest = repository.create(createSessionAt(
+                UUID.randomUUID(), ACCOUNT_ID, NOW.minusSeconds(30), NOW.plusSeconds(300)
+        ));
+        AuthenticationSession middle = repository.create(createSessionAt(
+                UUID.randomUUID(), ACCOUNT_ID, NOW.minusSeconds(20), NOW.plusSeconds(300)
+        ));
+        AuthenticationSession newest = repository.create(createSessionAt(
+                UUID.randomUUID(), ACCOUNT_ID, NOW.minusSeconds(10), NOW.plusSeconds(300)
+        ));
+        repository.create(createSessionAt(
+                UUID.randomUUID(), ACCOUNT_ID, NOW.minusSeconds(300), NOW.minusSeconds(1)
+        ));
+        repository.create(createSessionAt(
+                UUID.randomUUID(), otherAccountId, NOW.minusSeconds(5), NOW.plusSeconds(300)
+        ));
+
+        AuthenticationSessionRepository.SessionPage first = repository.findActiveByAccount(
+                ACCOUNT_ID, NOW, 0, 2
+        );
+        AuthenticationSessionRepository.SessionPage second = repository.findActiveByAccount(
+                ACCOUNT_ID, NOW, 1, 2
+        );
+
+        assertThat(first.sessions()).extracting(AuthenticationSession::id)
+                .containsExactly(newest.id(), middle.id());
+        assertThat(first.totalElements()).isEqualTo(3);
+        assertThat(first.totalPages()).isEqualTo(2);
+        assertThat(second.sessions()).extracting(AuthenticationSession::id)
+                .containsExactly(oldest.id());
+        assertThat(repository.findOwned(ACCOUNT_ID, newest.id())).contains(newest);
+        assertThat(repository.findOwned(otherAccountId, newest.id())).isEmpty();
+    }
+
+    @Test
     void databaseRejectsInconsistentRevocationState() {
         assertThatThrownBy(() -> insertRawSession(
                 SessionStatus.REVOKED.wireValue(),
@@ -278,6 +322,21 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
                 "vk-platform-bff",
                 NOW,
                 NOW.plusSeconds(3600)
+        );
+    }
+
+    private AuthenticationSession createSessionAt(
+            UUID sessionId,
+            UUID accountId,
+            Instant createdAt,
+            Instant expiresAt
+    ) {
+        return AuthenticationSession.create(
+                sessionId,
+                accountId,
+                "vk-platform-bff",
+                createdAt,
+                expiresAt
         );
     }
 

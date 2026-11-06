@@ -3,6 +3,7 @@ package com.vkplatform.iam.session.infrastructure.config;
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
 import com.vkplatform.iam.session.api.AuthenticationSessionOperations;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.application.port.out.OAuthAuthorizationRepository;
 import com.vkplatform.iam.session.application.service.AuthenticationSessionService;
 import com.vkplatform.iam.session.application.service.AuthenticationSessionValidationService;
 import com.vkplatform.iam.session.domain.SessionPolicy;
@@ -24,10 +25,17 @@ public class AuthenticationSessionConfiguration {
     AuthenticationSessionOperations authenticationSessionOperations(
             PasswordlessIdentityOperations identities,
             AuthenticationSessionRepository sessions,
+            OAuthAuthorizationRepository authorizations,
             SessionPolicy policy,
             Clock clock
     ) {
-        return new AuthenticationSessionService(identities, sessions, policy, clock);
+        return new AuthenticationSessionService(
+                identities,
+                sessions,
+                authorizations,
+                policy,
+                clock
+        );
     }
 
     @Bean
