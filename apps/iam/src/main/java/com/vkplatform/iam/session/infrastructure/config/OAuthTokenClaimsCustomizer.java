@@ -1,8 +1,8 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
-import com.nimbusds.jose.jwk.RSAKey;
 import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService;
 import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService.AccessTokenWindow;
+import com.vkplatform.iam.session.infrastructure.crypto.SigningKeyRuntime;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
@@ -15,16 +15,16 @@ import java.util.UUID;
 final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncodingContext> {
     private final OAuthTokenLifecycleService tokenLifecycle;
     private final OAuthAuthorizationProperties properties;
-    private final RSAKey signingKey;
+    private final SigningKeyRuntime signingKeys;
 
     OAuthTokenClaimsCustomizer(
             OAuthTokenLifecycleService tokenLifecycle,
             OAuthAuthorizationProperties properties,
-            RSAKey signingKey
+            SigningKeyRuntime signingKeys
     ) {
         this.tokenLifecycle = tokenLifecycle;
         this.properties = properties;
-        this.signingKey = signingKey;
+        this.signingKeys = signingKeys;
     }
 
     @Override
@@ -43,7 +43,7 @@ final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncod
                 context.getRegisteredClient().getClientId()
         );
 
-        context.getJwsHeader().keyId(signingKey.getKeyID());
+        context.getJwsHeader().keyId(signingKeys.activeSigningKeyId());
         context.getClaims()
                 .subject(accountId.toString())
                 .audience(List.of(properties.audience()))

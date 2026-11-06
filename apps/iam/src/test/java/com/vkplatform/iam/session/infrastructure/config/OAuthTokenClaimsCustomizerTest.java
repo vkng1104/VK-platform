@@ -1,8 +1,8 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
-import com.nimbusds.jose.jwk.RSAKey;
 import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService;
 import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService.AccessTokenWindow;
+import com.vkplatform.iam.session.infrastructure.crypto.SigningKeyRuntime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -36,13 +36,14 @@ class OAuthTokenClaimsCustomizerTest {
     private static final UUID SESSION_ID = UUID.fromString("68612245-a543-4b06-9406-3fdc2d62d878");
 
     private OAuthTokenLifecycleService tokenLifecycle;
+    private SigningKeyRuntime signingKeys;
     private OAuthTokenClaimsCustomizer customizer;
 
     @BeforeEach
     void setUp() {
         tokenLifecycle = mock(OAuthTokenLifecycleService.class);
-        RSAKey signingKey = mock(RSAKey.class);
-        when(signingKey.getKeyID()).thenReturn("oauth-signing-2026");
+        signingKeys = mock(SigningKeyRuntime.class);
+        when(signingKeys.activeSigningKeyId()).thenReturn("oauth-signing-2026");
         customizer = new OAuthTokenClaimsCustomizer(
                 tokenLifecycle,
                 new OAuthAuthorizationProperties(
@@ -54,7 +55,7 @@ class OAuthTokenClaimsCustomizerTest {
                         Duration.ofMinutes(5),
                         Duration.ofDays(30)
                 ),
-                signingKey
+                signingKeys
         );
     }
 

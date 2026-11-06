@@ -18,21 +18,26 @@ class OAuthPropertiesTest {
     }
 
     @Test
-    void rejectsInvalidEnabledSigningConfiguration() {
+    void rejectsInvalidEnabledOAuthConfiguration() {
         assertThatThrownBy(() -> properties("invalid key id", Duration.ofMinutes(5)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("IAM_OAUTH_SIGNING_KEY_ID");
-        assertThatThrownBy(() -> new OAuthProperties(
-                true,
-                "oauth-signing-2026",
-                "",
-                "public-key",
-                Duration.ofMinutes(5)
-        )).isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("IAM_OAUTH_SIGNING_PRIVATE_KEY_PKCS8_BASE64");
         assertThatThrownBy(() -> properties("oauth-signing-2026", Duration.ZERO))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("IAM_OAUTH_JWKS_CACHE_TTL");
+    }
+
+    @Test
+    void permitsAbsentStaticMaterialUntilAnExplicitBootstrap() {
+        OAuthProperties properties = new OAuthProperties(
+                true,
+                null,
+                null,
+                null,
+                Duration.ofMinutes(5)
+        );
+
+        assertThat(properties.signingKeyId()).isNull();
     }
 
     @Test

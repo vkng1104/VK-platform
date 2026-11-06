@@ -1,7 +1,7 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
-import com.nimbusds.jose.jwk.RSAKey;
 import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService;
+import com.vkplatform.iam.session.infrastructure.crypto.SigningKeyRuntime;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -128,9 +128,9 @@ public class OAuthAuthorizationServerConfiguration {
     OAuth2TokenCustomizer<JwtEncodingContext> oauthTokenClaimsCustomizer(
             OAuthTokenLifecycleService tokenLifecycle,
             OAuthAuthorizationProperties properties,
-            RSAKey signingKey
+            SigningKeyRuntime signingKeys
     ) {
-        return new OAuthTokenClaimsCustomizer(tokenLifecycle, properties, signingKey);
+        return new OAuthTokenClaimsCustomizer(tokenLifecycle, properties, signingKeys);
     }
 
 }

@@ -2,6 +2,8 @@ package com.vkplatform.iam.session.infrastructure.config;
 
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
 import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
+import com.vkplatform.iam.session.api.SigningKeyOperations;
+import com.vkplatform.iam.session.api.command.OperatorContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +40,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Base64;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -85,6 +88,7 @@ class OAuthAuthorizationCodeIntegrationTest {
     private static final String GRANT = "A".repeat(43);
     private static final UUID ACCOUNT_ID = UUID.fromString("8c359d35-f8d7-4e2f-a3f5-a14242fe621f");
     private static final KeyPair SIGNING_PAIR = signingPair();
+    private static final byte[] PROTECTION_KEY = protectionKey();
 
     @DynamicPropertySource
     static void signingProperties(DynamicPropertyRegistry properties) {
@@ -95,6 +99,10 @@ class OAuthAuthorizationCodeIntegrationTest {
         properties.add("iam.oauth.signing-public-key-x509-base64", () -> encoded(
                 SIGNING_PAIR.getPublic().getEncoded()
         ));
+        properties.add("iam.signing-keys.protection-version", () -> "integration-v1");
+        properties.add("iam.signing-keys.protection-keys", () ->
+                "integration-v1=" + encoded(PROTECTION_KEY));
+        properties.add("iam.signing-keys.retirement-enabled", () -> "false");
     }
 
     @Autowired
@@ -110,6 +118,9 @@ class OAuthAuthorizationCodeIntegrationTest {
     private ObjectMapper objectMapper;
 
     @Autowired
+    private SigningKeyOperations signingKeys;
+
+    @Autowired
     private DataSource dataSource;
 
     @BeforeEach
@@ -117,6 +128,9 @@ class OAuthAuthorizationCodeIntegrationTest {
         jdbcTemplate.update("DELETE FROM iam_session.oauth_refresh_tokens");
         jdbcTemplate.update("DELETE FROM iam_session.oauth_authorizations");
         jdbcTemplate.update("DELETE FROM iam_session.sessions");
+        jdbcTemplate.update("DELETE FROM iam_session.signing_key_events");
+        jdbcTemplate.update("DELETE FROM iam_session.operator_operations");
+        jdbcTemplate.update("DELETE FROM iam_session.signing_keys");
         jdbcTemplate.update("DELETE FROM iam_identity.security_events");
         jdbcTemplate.update("DELETE FROM iam_identity.verification_grants");
         jdbcTemplate.update("DELETE FROM iam_identity.login_identities");
@@ -136,6 +150,10 @@ class OAuthAuthorizationCodeIntegrationTest {
         when(identities.consumeSignInGrant(any())).thenReturn(new AuthenticatedAccount(ACCOUNT_ID, now));
         when(identities.findActiveAccount(ACCOUNT_ID))
                 .thenReturn(Optional.of(new AuthenticatedAccount(ACCOUNT_ID, now)));
+        signingKeys.bootstrap(new OperatorContext(
+                "oauth-integration-test",
+                "bootstrap-oauth-integration"
+        ));
     }
 
     @Test
@@ -364,6 +382,34 @@ class OAuthAuthorizationCodeIntegrationTest {
                 .andExpect(header().doesNotExist("Expires"))
                 .andExpect(jsonPath("$.keys[0].kid").value("oauth-integration-key"))
                 .andExpect(jsonPath("$.keys[0].d").doesNotExist());
+    }
+
+    @Test
+    void publishesRetiringKeysForOverlapAndRemovesCompromisedKeysImmediately() throws Exception {
+        IssuedSession issued = issueSession();
+
+        signingKeys.rotate(new OperatorContext("oauth-integration-test", "rotate-overlap"));
+
+        mockMvc.perform(get("/oauth2/jwks"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", containsString("max-age=300")))
+                .andExpect(jsonPath("$.keys.length()").value(2));
+        mockMvc.perform(get("/api/v1/authentication/session")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(issued.accessToken())))
+                .andExpect(status().isOk());
+
+        signingKeys.compromise(
+                "oauth-integration-key",
+                new OperatorContext("oauth-integration-test", "compromise-retiring")
+        );
+
+        mockMvc.perform(get("/oauth2/jwks"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.keys.length()").value(1))
+                .andExpect(jsonPath("$.keys[?(@.kid == 'oauth-integration-key')]").isEmpty());
+        mockMvc.perform(get("/api/v1/authentication/session")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(issued.accessToken())))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -686,6 +732,12 @@ class OAuthAuthorizationCodeIntegrationTest {
 
     private static String encoded(byte[] value) {
         return Base64.getEncoder().encodeToString(value);
+    }
+
+    private static byte[] protectionKey() {
+        byte[] key = new byte[32];
+        Arrays.fill(key, (byte) 7);
+        return key;
     }
 
     private static OffsetDateTime timestamp(Instant value) {
