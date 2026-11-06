@@ -8,6 +8,7 @@ import com.vkplatform.iam.session.api.AuthenticationSessionOperations;
 import com.vkplatform.iam.session.api.command.ExchangeAuthenticationGrant;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
 import com.vkplatform.iam.session.application.port.out.IamSecurityTelemetry;
+import com.vkplatform.iam.session.application.port.out.OAuthAuthorizationRepository;
 import com.vkplatform.iam.session.domain.SessionPolicy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -128,6 +129,7 @@ class AuthenticationSessionAuditTransactionIntegrationTest {
         AuthenticationSessionOperations operations(
                 PasswordlessIdentityOperations identities,
                 AuthenticationSessionRepository sessions,
+                OAuthAuthorizationRepository authorizations,
                 SecurityAuditOperations audit,
                 IamSecurityTelemetry telemetry,
                 Clock clock
@@ -135,6 +137,7 @@ class AuthenticationSessionAuditTransactionIntegrationTest {
             return new AuthenticationSessionService(
                     identities,
                     sessions,
+                    authorizations,
                     audit,
                     telemetry,
                     new SessionPolicy("vk-platform-bff", Duration.ofDays(30)),

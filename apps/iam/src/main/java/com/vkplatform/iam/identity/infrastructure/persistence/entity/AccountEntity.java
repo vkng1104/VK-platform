@@ -3,6 +3,7 @@ package com.vkplatform.iam.identity.infrastructure.persistence.entity;
 import com.vkplatform.iam.identity.domain.Account;
 import com.vkplatform.iam.identity.domain.AccountStatus;
 import com.vkplatform.iam.identity.infrastructure.persistence.converter.AccountStatusConverter;
+import com.vkplatform.iam.platform.persistence.AbstractAssignedIdEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
@@ -15,7 +16,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "accounts", schema = "iam_identity")
-public class AccountEntity extends AbstractUuidEntity {
+public class AccountEntity extends AbstractAssignedIdEntity<UUID> {
     @Id
     private UUID id;
 

@@ -1,20 +1,17 @@
 package com.vkplatform.iam.session.infrastructure.persistence.entity;
 
+import com.vkplatform.iam.platform.persistence.AbstractAssignedIdEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.PostLoad;
-import jakarta.persistence.PostPersist;
 import jakarta.persistence.Table;
-import jakarta.persistence.Transient;
 import jakarta.persistence.Version;
-import org.springframework.data.domain.Persistable;
 
 import java.time.Instant;
 
 @Entity
 @Table(name = "oauth_clients", schema = "iam_session")
-public class OAuthClientEntity implements Persistable<String> {
+public class OAuthClientEntity extends AbstractAssignedIdEntity<String> {
     @Id
     @Column(length = 100)
     private String id;
@@ -59,26 +56,12 @@ public class OAuthClientEntity implements Persistable<String> {
     @Column(nullable = false)
     private long version;
 
-    @Transient
-    private boolean newEntity = true;
-
     public OAuthClientEntity() {
     }
 
     @Override
     public String getId() {
         return id;
-    }
-
-    @Override
-    public boolean isNew() {
-        return newEntity;
-    }
-
-    @PostLoad
-    @PostPersist
-    void markPersisted() {
-        newEntity = false;
     }
 
     public String clientId() {

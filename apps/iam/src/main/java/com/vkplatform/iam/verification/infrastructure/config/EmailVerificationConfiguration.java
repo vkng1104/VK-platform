@@ -1,7 +1,8 @@
 package com.vkplatform.iam.verification.infrastructure.config;
 
 import com.vkplatform.iam.verification.api.EmailVerificationOperations;
-import com.vkplatform.iam.verification.application.port.out.EmailVerificationRepository;
+import com.vkplatform.iam.verification.application.port.out.EmailVerificationChallengeRepository;
+import com.vkplatform.iam.verification.application.port.out.EmailVerificationOperationGuardRepository;
 import com.vkplatform.iam.verification.application.port.out.VerificationCodeGenerator;
 import com.vkplatform.iam.verification.application.port.out.VerificationCodeHasher;
 import com.vkplatform.iam.verification.application.port.out.VerificationEmailSender;
@@ -15,6 +16,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
@@ -76,7 +79,9 @@ public class EmailVerificationConfiguration {
 
     @Bean
     EmailVerificationCleanupService emailVerificationCleanupService(
-            EmailVerificationRepository repository,
+            EmailVerificationChallengeRepository challenges,
+            EmailVerificationOperationGuardRepository operationGuards,
+            PlatformTransactionManager transactionManager,
             Clock clock,
             EmailVerificationProperties properties,
             VerificationPolicy policy
@@ -91,7 +96,9 @@ public class EmailVerificationConfiguration {
             throw new IllegalStateException("EMAIL_VERIFICATION_CLEANUP_BATCH_SIZE must be positive");
         }
         return new EmailVerificationCleanupService(
-                repository,
+                challenges,
+                operationGuards,
+                new TransactionTemplate(transactionManager),
                 clock,
                 retention,
                 properties.cleanupBatchSize()
@@ -101,7 +108,9 @@ public class EmailVerificationConfiguration {
     @Bean
     @ConditionalOnProperty(name = "iam.email.provider", havingValue = "gmail")
     EmailVerificationOperations emailVerificationOperations(
-            EmailVerificationRepository repository,
+            EmailVerificationChallengeRepository challenges,
+            EmailVerificationOperationGuardRepository operationGuards,
+            PlatformTransactionManager transactionManager,
             VerificationEmailSender sender,
             Clock clock,
             VerificationCodeGenerator codeGenerator,
@@ -109,7 +118,9 @@ public class EmailVerificationConfiguration {
             VerificationPolicy policy
     ) {
         return new EmailVerificationService(
-                repository,
+                challenges,
+                operationGuards,
+                new TransactionTemplate(transactionManager),
                 sender,
                 clock,
                 codeGenerator,

@@ -1,5 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.persistence.entity;
 
+import com.vkplatform.iam.platform.persistence.AbstractAssignedIdEntity;
 import com.vkplatform.iam.session.domain.OAuthClientEventType;
 import com.vkplatform.iam.session.infrastructure.persistence.converter.OAuthClientEventTypeConverter;
 import jakarta.persistence.Column;
@@ -13,7 +14,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "oauth_client_events", schema = "iam_session")
-public class OAuthClientEventEntity extends AbstractSessionUuidEntity {
+public class OAuthClientEventEntity extends AbstractAssignedIdEntity<UUID> {
     @Id
     private UUID id;
 

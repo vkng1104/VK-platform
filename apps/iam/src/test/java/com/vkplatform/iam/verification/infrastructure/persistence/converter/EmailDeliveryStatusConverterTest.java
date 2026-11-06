@@ -1,6 +1,6 @@
 package com.vkplatform.iam.verification.infrastructure.persistence.converter;
 
-import com.vkplatform.iam.verification.infrastructure.persistence.entity.EmailDeliveryStatus;
+import com.vkplatform.iam.verification.domain.EmailDeliveryStatus;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;

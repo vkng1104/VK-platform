@@ -31,6 +31,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -195,7 +196,7 @@ class AuthenticationControllerTest {
         }
 
         @Override
-        public AuthenticatedAccount activeAccount(UUID accountId) {
+        public Optional<AuthenticatedAccount> findActiveAccount(UUID accountId) {
             throw new UnsupportedOperationException();
         }
 

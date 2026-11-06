@@ -17,13 +17,28 @@ interface SpringDataOAuthAuthorizationRepository extends JpaRepository<OAuthAuth
 
     Optional<OAuthAuthorizationEntity> findByStateDigest(byte[] digest);
 
-    Optional<OAuthAuthorizationEntity> findByAuthorizationCodeDigest(byte[] digest);
-
     Optional<OAuthAuthorizationEntity> findByAccessTokenDigest(byte[] digest);
+
+    Optional<AuthorizationLockTarget> findLockTargetById(String id);
+
+    Optional<AuthorizationLockTarget> findLockTargetByAuthorizationCodeDigest(byte[] digest);
 
     @Query("select authorization.sessionId from OAuthAuthorizationEntity authorization where authorization.id = :id")
     Optional<UUID> findSessionIdById(@Param("id") String id);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     List<OAuthAuthorizationEntity> findLockedBySessionIdAndInvalidatedAtIsNull(UUID sessionId);
+
+    /** Columns needed to lock the owning session without loading the authorization entity. */
+    interface AuthorizationLockTarget {
+        String getId();
+
+        UUID getSessionId();
+
+        String getPrincipalName();
+
+        String getRegisteredClientId();
+
+        String getAuthorizationGrantType();
+    }
 }

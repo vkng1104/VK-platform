@@ -1,11 +1,10 @@
 package com.vkplatform.iam.session.application.port.out;
 
 import com.vkplatform.iam.session.domain.AuthenticationSession;
-import com.vkplatform.iam.session.domain.SessionRevokeReason;
 
 import java.time.Instant;
-import java.util.Optional;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface AuthenticationSessionRepository {
@@ -22,64 +21,26 @@ public interface AuthenticationSessionRepository {
             int size
     );
 
-    /**
-     * Revokes a session only when it belongs to the supplied account.
-     *
-     * @return {@code true} when the session exists and belongs to the account, including when an
-     * idempotent terminal state means no new transition occurs; {@code false} for both a missing
-     * session and a session owned by another account
-     */
-    boolean revokeByIdForAccount(
-            UUID accountId,
-            UUID sessionId,
-            SessionRevokeReason reason,
-            Instant revokedAt
-    );
+    /** Locks the session row until the caller's transaction ends. */
+    Optional<AuthenticationSession> findLockedById(UUID id);
 
     /**
-     * Revokes every active session belonging to the supplied account.
-     *
-     * @return the number of active sessions transitioned by this invocation
+     * Locks every session of the account, whatever its status, in ID order. The row locks last
+     * until the caller's transaction ends.
      */
-    int revokeAll(
-            UUID accountId,
-            SessionRevokeReason reason,
-            Instant revokedAt
-    );
+    List<AuthenticationSession> findAllLockedByAccountId(UUID accountId);
 
-    boolean revokeOwnedAndInvalidate(
-            UUID accountId,
-            UUID sessionId,
-            SessionRevokeReason reason,
-            Instant revokedAt
-    );
+    /**
+     * Stores a revocation the caller has already applied to the session. The session row is
+     * locked before it is written.
+     */
+    void recordRevocation(AuthenticationSession revoked);
 
-    RevokeResult revokeOwnedFromCurrent(
-            UUID accountId,
-            UUID currentSessionId,
-            UUID targetSessionId,
-            String expectedClientId,
-            SessionRevokeReason reason,
-            Instant revokedAt
-    );
+    /** Stores a refresh the caller applied with {@code touch}. The session row is locked first. */
+    void recordRefresh(AuthenticationSession refreshed);
 
-    RevokeAllResult revokeAllFromCurrent(
-            UUID accountId,
-            UUID currentSessionId,
-            String expectedClientId,
-            SessionRevokeReason reason,
-            Instant revokedAt
-    );
-
-    enum RevokeResult {
-        REVOKED,
-        UNCHANGED,
-        TARGET_NOT_FOUND,
-        CURRENT_UNAVAILABLE
-    }
-
-    record RevokeAllResult(boolean currentAvailable, int revokedCount) {
-    }
+    /** Stores a compromise the caller applied. The session row is locked before it is written. */
+    void recordCompromise(AuthenticationSession compromised);
 
     record SessionPage(
             List<AuthenticationSession> sessions,
