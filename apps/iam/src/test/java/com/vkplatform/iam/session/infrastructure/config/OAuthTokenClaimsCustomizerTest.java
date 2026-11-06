@@ -55,6 +55,7 @@ class OAuthTokenClaimsCustomizerTest {
                         Duration.ofMinutes(5),
                         Duration.ofDays(30)
                 ),
+                clientProperties(),
                 signingKeys
         );
     }
@@ -90,6 +91,39 @@ class OAuthTokenClaimsCustomizerTest {
     }
 
     @Test
+    void emitsServiceClaimsWithoutUserSessionClaimsForClientCredentials() {
+        RegisteredClient service = RegisteredClient.withId("service:vk-platform-service")
+                .clientId("vk-platform-service")
+                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                .scope("iam.authorization.check")
+                .scope("iam.relationship.write")
+                .build();
+        JwtEncodingContext context = JwtEncodingContext.with(
+                        JwsHeader.with(SignatureAlgorithm.RS256),
+                        JwtClaimsSet.builder().issuedAt(NOW).expiresAt(NOW.plusSeconds(300))
+                )
+                .registeredClient(service)
+                .principal(UsernamePasswordAuthenticationToken.authenticated(
+                        "vk-platform-service",
+                        null,
+                        List.of()
+                ))
+                .authorizedScopes(Set.copyOf(service.getScopes()))
+                .tokenType(OAuth2TokenType.ACCESS_TOKEN)
+                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                .build();
+
+        customizer.customize(context);
+        JwtClaimsSet claims = context.getClaims().build();
+
+        assertThat(claims.getSubject()).isEqualTo("vk-platform-service");
+        assertThat(claims.getAudience()).containsExactly("vk-platform-services");
+        assertThat(claims.getClaimAsString("client_id")).isEqualTo("vk-platform-service");
+        assertThat(claims.getClaims()).doesNotContainKeys("sid", "amr");
+        verifyNoInteractions(tokenLifecycle);
+    }
+
+    @Test
     void leavesOtherTokenTypesAlone() {
         customizer.customize(context(OAuth2TokenType.REFRESH_TOKEN));
 
@@ -122,5 +156,20 @@ class OAuthTokenClaimsCustomizerTest {
                 .tokenType(tokenType)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .build();
+    }
+
+    private static OAuthClientProperties clientProperties() {
+        return new OAuthClientProperties(
+                "vk-platform-service",
+                "s".repeat(32),
+                "vk-platform-services",
+                "iam.authorization.check,iam.relationship.write",
+                "",
+                "",
+                "",
+                "",
+                "",
+                null
+        );
     }
 }

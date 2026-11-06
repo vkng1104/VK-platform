@@ -69,11 +69,18 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         UUID effectiveSessionId = requestedSessionId == null
                 ? authorizations.findSessionIdById(authorization.getId()).orElse(null)
                 : requestedSessionId;
-        requireUsableSession(
-                effectiveSessionId,
-                authorization.getPrincipalName(),
-                authorization.getRegisteredClientId()
-        );
+        if (AuthorizationGrantType.CLIENT_CREDENTIALS.equals(
+                authorization.getAuthorizationGrantType()
+        )) {
+            validateClientCredentialsAuthorization(authorization, effectiveSessionId);
+            effectiveSessionId = null;
+        } else {
+            requireUsableSession(
+                    effectiveSessionId,
+                    authorization.getPrincipalName(),
+                    authorization.getRegisteredClientId()
+            );
+        }
         OAuthAuthorizationEntity entity = authorizations.findLockedById(authorization.getId())
                 .orElseGet(OAuthAuthorizationEntity::new);
         if (entity.invalidatedAt() != null) {
@@ -93,8 +100,10 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         if (target == null) {
             return;
         }
-        // Lock the session first even when it is no longer usable, to keep the lock order.
-        lockUsableSession(target);
+        if (!isClientCredentials(target)) {
+            // Lock the session first even when it is no longer usable, to keep the lock order.
+            lockUsableSession(target);
+        }
         tokenLifecycle.recordAuthorizationRemoved(target.getId());
     }
 
@@ -175,7 +184,7 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
     // an instance already in the persistence context fails Hibernate's version check when a
     // concurrent token request has committed in between.
     private OAuthAuthorizationEntity lockAuthorization(AuthorizationLockTarget target) {
-        if (!lockUsableSession(target)) {
+        if (!isClientCredentials(target) && !lockUsableSession(target)) {
             return null;
         }
         return authorizations.findLockedById(target.getId()).orElse(null);
@@ -207,6 +216,12 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
         if (entity.invalidatedAt() != null) {
             return false;
         }
+        if (isClientCredentials(entity)) {
+            RegisteredClient client = clients.findById(entity.registeredClientId());
+            return client != null
+                    && client.getAuthorizationGrantTypes().contains(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                    && client.getClientId().equals(entity.principalName());
+        }
         return tokenLifecycle.isSessionUsable(
                 entity.sessionId(),
                 accountId(entity.principalName()),
@@ -231,6 +246,31 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
                 entity.refreshTokenIssuedAt(),
                 entity.refreshTokenExpiresAt()
         );
+    }
+
+    private void validateClientCredentialsAuthorization(
+            OAuth2Authorization authorization,
+            UUID sessionId
+    ) {
+        if (sessionId != null) {
+            throw new IllegalStateException("service OAuth authorization cannot reference a user session");
+        }
+        RegisteredClient client = clients.findById(authorization.getRegisteredClientId());
+        if (client == null
+                || !client.getAuthorizationGrantTypes().contains(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                || !client.getClientId().equals(authorization.getPrincipalName())) {
+            throw new IllegalStateException("service OAuth authorization is invalid");
+        }
+    }
+
+    private static boolean isClientCredentials(OAuthAuthorizationEntity authorization) {
+        return AuthorizationGrantType.CLIENT_CREDENTIALS.getValue()
+                .equals(authorization.authorizationGrantType());
+    }
+
+    private static boolean isClientCredentials(AuthorizationLockTarget authorization) {
+        return AuthorizationGrantType.CLIENT_CREDENTIALS.getValue()
+                .equals(authorization.getAuthorizationGrantType());
     }
 
     private void mapAuthorization(

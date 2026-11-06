@@ -1,11 +1,6 @@
 package com.vkplatform.iam.session.infrastructure.config;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.security.crypto.factory.PasswordEncoderFactories;
-import org.springframework.security.oauth2.core.AuthorizationGrantType;
-import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
-import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
-
 import java.net.URI;
 import java.time.Duration;
 
@@ -17,33 +12,34 @@ class OAuthAuthorizationServerConfigurationTest {
             new OAuthAuthorizationServerConfiguration();
 
     @Test
-    void registersTheBffForOneTimeRefreshRotation() {
-        RegisteredClientRepository repository = configuration.oauthRegisteredClients(
+    void createsTheClientPasswordEncoderAfterValidatingTokenAndAudienceBoundaries() {
+        var passwords = configuration.oauthClientPasswordEncoder(
                 sessionProperties(Duration.ofDays(30)),
                 authorizationProperties(Duration.ofDays(30)),
-                PasswordEncoderFactories.createDelegatingPasswordEncoder()
+                clientProperties("vk-platform-services")
         );
 
-        RegisteredClient client = repository.findByClientId("vk-platform-bff");
-
-        assertThat(client).isNotNull();
-        assertThat(client.getAuthorizationGrantTypes()).containsExactlyInAnyOrder(
-                AuthorizationGrantType.AUTHORIZATION_CODE,
-                AuthorizationGrantType.REFRESH_TOKEN
-        );
-        assertThat(client.getTokenSettings().isReuseRefreshTokens()).isFalse();
-        assertThat(client.getTokenSettings().getRefreshTokenTimeToLive())
-                .isEqualTo(Duration.ofDays(30));
+        assertThat(passwords.matches("b".repeat(32), passwords.encode("b".repeat(32)))).isTrue();
     }
 
     @Test
     void rejectsARefreshLifetimeBeyondTheAbsoluteSessionLifetime() {
-        assertThatThrownBy(() -> configuration.oauthRegisteredClients(
+        assertThatThrownBy(() -> configuration.oauthClientPasswordEncoder(
                 sessionProperties(Duration.ofDays(7)),
                 authorizationProperties(Duration.ofDays(30)),
-                PasswordEncoderFactories.createDelegatingPasswordEncoder()
+                clientProperties("vk-platform-services")
         )).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("IAM_OAUTH_REFRESH_TOKEN_TTL");
+    }
+
+    @Test
+    void rejectsAServiceAudienceThatCouldBeConfusedWithUserTokens() {
+        assertThatThrownBy(() -> configuration.oauthClientPasswordEncoder(
+                sessionProperties(Duration.ofDays(30)),
+                authorizationProperties(Duration.ofDays(30)),
+                clientProperties("vk-platform-api")
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("IAM_OAUTH_SERVICE_AUDIENCE");
     }
 
     private static SessionProperties sessionProperties(Duration absoluteTtl) {
@@ -67,6 +63,21 @@ class OAuthAuthorizationServerConfigurationTest {
                 Duration.ofMinutes(5),
                 Duration.ofMinutes(5),
                 refreshTtl
+        );
+    }
+
+    private static OAuthClientProperties clientProperties(String audience) {
+        return new OAuthClientProperties(
+                "vk-platform-service",
+                "s".repeat(32),
+                audience,
+                "iam.authorization.check,iam.relationship.write",
+                "",
+                "",
+                "",
+                "",
+                "",
+                null
         );
     }
 }

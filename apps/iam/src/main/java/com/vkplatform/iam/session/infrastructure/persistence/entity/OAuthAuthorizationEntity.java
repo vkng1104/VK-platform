@@ -25,7 +25,7 @@ public class OAuthAuthorizationEntity extends AbstractAssignedIdEntity<String> {
     @Column(name = "principal_name", nullable = false, length = 200)
     private String principalName;
 
-    @Column(name = "session_id", nullable = false)
+    @Column(name = "session_id")
     private UUID sessionId;
 
     @Column(name = "authorization_grant_type", nullable = false, length = 64)

@@ -55,6 +55,7 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
         jdbcTemplate.update("DELETE FROM iam_identity.verification_grants");
         jdbcTemplate.update("DELETE FROM iam_identity.login_identities");
         jdbcTemplate.update("DELETE FROM iam_identity.accounts");
+        insertBffClient();
         insertAccount(ACCOUNT_ID);
     }
 
@@ -351,6 +352,21 @@ class JpaAuthenticationSessionRepositoryIntegrationTest {
                 timestamp(NOW),
                 timestamp(NOW)
         );
+    }
+
+    private void insertBffClient() {
+        jdbcTemplate.update("""
+                INSERT INTO iam_session.oauth_clients (
+                    id, client_id, client_id_issued_at, client_secret, client_name,
+                    client_authentication_methods, authorization_grant_types,
+                    redirect_uris, post_logout_redirect_uris, scopes,
+                    client_settings, token_settings, version
+                ) VALUES (
+                    'bff:vk-platform-bff', 'vk-platform-bff', ?, '{noop}test-secret',
+                    'Test BFF', 'client_secret_basic', 'authorization_code,refresh_token',
+                    'https://web.example.test/callback', '', 'api.access', '{}', '{}', 0
+                ) ON CONFLICT (id) DO NOTHING
+                """, timestamp(NOW));
     }
 
     private void lockWithoutWaiting(UUID sessionId) throws SQLException {

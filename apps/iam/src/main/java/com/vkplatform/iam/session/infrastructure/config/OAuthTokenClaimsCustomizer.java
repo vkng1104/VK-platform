@@ -15,21 +15,34 @@ import java.util.UUID;
 final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncodingContext> {
     private final OAuthTokenLifecycleService tokenLifecycle;
     private final OAuthAuthorizationProperties properties;
+    private final OAuthClientProperties clients;
     private final SigningKeyRuntime signingKeys;
 
     OAuthTokenClaimsCustomizer(
             OAuthTokenLifecycleService tokenLifecycle,
             OAuthAuthorizationProperties properties,
+            OAuthClientProperties clients,
             SigningKeyRuntime signingKeys
     ) {
         this.tokenLifecycle = tokenLifecycle;
         this.properties = properties;
+        this.clients = clients;
         this.signingKeys = signingKeys;
     }
 
     @Override
     public void customize(JwtEncodingContext context) {
         if (!OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
+            return;
+        }
+        context.getJwsHeader().keyId(signingKeys.activeSigningKeyId());
+        if (org.springframework.security.oauth2.core.AuthorizationGrantType.CLIENT_CREDENTIALS
+                .equals(context.getAuthorizationGrantType())) {
+            String clientId = context.getRegisteredClient().getClientId();
+            context.getClaims()
+                    .subject(clientId)
+                    .audience(List.of(clients.serviceAudience()))
+                    .claim("client_id", clientId);
             return;
         }
         Authentication principal = context.getPrincipal();
@@ -43,7 +56,6 @@ final class OAuthTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncod
                 context.getRegisteredClient().getClientId()
         );
 
-        context.getJwsHeader().keyId(signingKeys.activeSigningKeyId());
         context.getClaims()
                 .subject(accountId.toString())
                 .audience(List.of(properties.audience()))
