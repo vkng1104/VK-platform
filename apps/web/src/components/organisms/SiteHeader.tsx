@@ -4,6 +4,7 @@ const navigation = [
   { href: "/", label: "Home" },
   { href: "/experience", label: "Experience" },
   { href: "/projects", label: "Projects" },
+  { href: "/labs/vector-search", label: "AI Lab" },
   { href: "/cv", label: "CV" },
   { href: "/status", label: "System status" },
 ];

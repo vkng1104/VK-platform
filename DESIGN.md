@@ -208,3 +208,27 @@ Next.js Server Component
 ```
 
 The public API exposes only published projects. Administrative writes, authentication, and a CMS are separate future features. PostgreSQL is the single runtime source of truth; do not keep a second Markdown project catalog after migration.
+
+## 7. AI Retrieval Runtime
+
+The first AI use case is semantic retrieval over the published project catalog:
+
+```text
+Next.js vector-search route
+  -> server action and vector-search feature API
+  -> POST /api/v1/ai/retrievals              public Go API
+  -> AI retrieval application service
+  -> private runtime HTTP client
+  -> POST /internal/v1/retrievals             private Python/FastAPI adapter
+  -> retrieval service
+  -> embedding-provider port                  Ollama adapter
+  -> immutable in-memory vector index
+```
+
+The Go API remains the only public backend boundary. It owns transport validation, bounded query and `top_k` policy, request IDs, concurrency, the overall deadline, and safe public error mapping. The `airetrieval` domain has no repository because it owns no table.
+
+The Python runtime owns corpus synchronization through versioned HTTP, deterministic Markdown chunking, embedding-provider communication, vector validation, exact cosine scoring, thresholding, ordering, and atomic index replacement. FastAPI is only its private HTTP adapter; corpus and retrieval behavior remain plain Python objects that can be tested without the framework.
+
+The runtime never connects directly to the resource or IAM databases and is never published to the browser or host network. It indexes only published project responses from the resource API. Model weights are external runtime dependencies and are not downloaded by ordinary development, builds, tests, or CI.
+
+The API starts and serves non-AI routes when AI is disabled or unavailable. The AI runtime becomes ready only after a complete corpus load and index build; requests never observe a partial index. Generated answers, chat history, IAM integration, private CV data, tool calling, and streaming are separate follow-on capabilities.

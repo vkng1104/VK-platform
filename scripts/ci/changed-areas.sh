@@ -10,6 +10,7 @@ set -eu
 web=false
 api=false
 iam=false
+ai=false
 persistence=false
 setup=false
 dbdiagram=false
@@ -19,6 +20,7 @@ enable_all() {
   web=true
   api=true
   iam=true
+  ai=true
   persistence=true
   setup=true
   dbdiagram=true
@@ -61,6 +63,9 @@ while IFS= read -r path || [ -n "$path" ]; do
       iam=true
       persistence=true
       ;;
+    apps/ai/*)
+      ai=true
+      ;;
     config/persistence/*|scripts/*persistence*)
       persistence=true
       setup=true
@@ -82,5 +87,5 @@ done
 
 [ "$changed" = true ] || enable_all
 
-printf 'web=%s\napi=%s\niam=%s\npersistence=%s\nsetup=%s\ndbdiagram=%s\n' \
-  "$web" "$api" "$iam" "$persistence" "$setup" "$dbdiagram"
+printf 'web=%s\napi=%s\niam=%s\nai=%s\npersistence=%s\nsetup=%s\ndbdiagram=%s\n' \
+  "$web" "$api" "$iam" "$ai" "$persistence" "$setup" "$dbdiagram"

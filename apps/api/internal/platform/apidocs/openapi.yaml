@@ -11,6 +11,8 @@ tags:
     description: Service-level operations.
   - name: Projects
     description: Published portfolio project operations.
+  - name: AI
+    description: Bounded AI retrieval operations over published portfolio content.
 paths:
   /healthz:
     get:
@@ -89,6 +91,41 @@ paths:
           $ref: "#/components/responses/ProjectNotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/v1/ai/retrievals:
+    post:
+      operationId: retrievePublishedContent
+      tags:
+        - AI
+      summary: Find published project chunks related to a question
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIRetrievalRequest"
+            example:
+              query: What backend systems are implemented in VK Platform?
+              top_k: 5
+      responses:
+        "200":
+          description: Ranked published-project chunks. An empty list means no evidence met the configured threshold.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIRetrievalEnvelope"
+        "400":
+          $ref: "#/components/responses/InvalidAIQuery"
+        "429":
+          $ref: "#/components/responses/AIBusy"
+        "503":
+          $ref: "#/components/responses/AIUnavailable"
+        "504":
+          $ref: "#/components/responses/AITimeout"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   headers:
     RequestID:
@@ -99,6 +136,62 @@ components:
         pattern: ^[0-9a-f]{32}$
       example: 0a1b2c3d4e5f67890123456789abcdef
   responses:
+    InvalidAIQuery:
+      description: The retrieval request or query bounds were invalid.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicError"
+          example:
+            code: INVALID_AI_QUERY
+            message: Use a query from 1 to 500 characters and top_k from 1 to 10.
+            request_id: 0a1b2c3d4e5f67890123456789abcdef
+            retryable: false
+    AIBusy:
+      description: All bounded AI request slots are in use.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicError"
+          example:
+            code: AI_BUSY
+            message: AI search is busy. Try again shortly.
+            request_id: 0a1b2c3d4e5f67890123456789abcdef
+            retryable: true
+    AIUnavailable:
+      description: AI is disabled, not ready, or its embedding provider is unavailable.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicError"
+          example:
+            code: AI_UNAVAILABLE
+            message: AI search is not available right now.
+            request_id: 0a1b2c3d4e5f67890123456789abcdef
+            retryable: true
+    AITimeout:
+      description: AI retrieval exceeded the public API deadline.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicError"
+          example:
+            code: AI_TIMEOUT
+            message: AI search took too long. Try again.
+            request_id: 0a1b2c3d4e5f67890123456789abcdef
+            retryable: true
     InvalidFeaturedFilter:
       description: The featured filter was malformed, duplicated, or accompanied by another query parameter.
       headers:
@@ -159,6 +252,69 @@ components:
             request_id: 0a1b2c3d4e5f67890123456789abcdef
             retryable: true
   schemas:
+    AIRetrievalRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 500
+        top_k:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 5
+    AIRetrievalMatch:
+      type: object
+      additionalProperties: false
+      required:
+        - chunk_id
+        - title
+        - heading
+        - excerpt
+        - source_url
+        - score
+      properties:
+        chunk_id:
+          type: string
+        title:
+          type: string
+        heading:
+          type: string
+        excerpt:
+          type: string
+        source_url:
+          type: string
+          pattern: ^/projects/[a-z0-9]+(?:-[a-z0-9]+)*$
+        score:
+          type: number
+          minimum: -1
+          maximum: 1
+    AIRetrieval:
+      type: object
+      additionalProperties: false
+      required:
+        - query
+        - matches
+      properties:
+        query:
+          type: string
+        matches:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/AIRetrievalMatch"
+    AIRetrievalEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - retrieval
+      properties:
+        retrieval:
+          $ref: "#/components/schemas/AIRetrieval"
     HealthResponse:
       type: object
       additionalProperties: false

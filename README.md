@@ -7,6 +7,7 @@ VK Platform is a systems-focused engineering portfolio. The monorepo contains a 
 - `apps/web` — Next.js portfolio with project, public experience, gated CV, and service status pages.
 - `apps/api` — Go resource API with health and project-catalog domains.
 - `apps/iam` — Java 25/Spring Boot IAM service with health and reusable email-verification domains.
+- `apps/ai` — private Python/FastAPI semantic-retrieval runtime with an Ollama embedding adapter.
 
 ## Requirements
 
@@ -38,6 +39,28 @@ make dev
 The frontend is available at `http://localhost:3000`, public experience at `http://localhost:3000/experience`, verified CV access at `http://localhost:3000/cv`, the resource API at `http://localhost:8080`, and IAM Service at `http://localhost:8081`. Their PostgreSQL databases are exposed at `localhost:5434` and `localhost:5436` by default. In a second terminal, use `make dev-monitor` to follow both backend services, `make logs` to follow every container, or `make down` to stop the stack.
 
 Neither service runs migrations automatically. Compose runs each service's migration command as a separate one-shot process before application startup.
+
+## Vector search AI lab
+
+`/labs/vector-search` is the first AI milestone. It embeds a visitor question and returns ranked passages from published project content with their cosine-similarity scores and source links. It is retrieval only: it does not generate an answer, retain a conversation, read IAM/CV data, or expose the Python runtime publicly.
+
+The public request enters `POST /api/v1/ai/retrievals` on the Go API. Go applies input bounds, concurrency limits, request IDs, and a deadline, then calls `POST /internal/v1/retrievals` on the private Python service. Python loads published projects through the versioned Go API, chunks and embeds them at startup, and searches an immutable in-memory index. Neither service shares another service's database.
+
+The AI path is opt-in and normal `make dev` remains model-independent. Install [Ollama](https://ollama.com/), pull an embedding model explicitly, and put a random internal token plus the selected model in the ignored `.env` file:
+
+```dotenv
+AI_INTERNAL_TOKEN=replace-with-a-random-local-token
+AI_EMBEDDING_MODEL=embeddinggemma:300m
+```
+
+Then run:
+
+```bash
+ollama pull embeddinggemma:300m
+make dev-ai
+```
+
+Model downloads never run during application startup, image builds, automated tests, or CI. The Python service is reachable only on the Compose network and requires the shared internal bearer token on retrieval routes. Health remains unauthenticated so Compose can observe readiness.
 
 Both backend services keep PostgreSQL credentials separate from their connection URLs. The Go resource API uses `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD`; IAM uses the equivalent `IAM_DATABASE_*` variables. Local examples are defined in `.env.example`, while deployed passwords should come from the platform's secret store rather than a committed environment file.
 
@@ -155,13 +178,16 @@ The command exports the source before changing anything locally, never writes to
 
 ```bash
 make lint
+make lint-ai
 make typecheck
 make test
+make test-ai
 make test-integration
 make build
+make build-ai
 ```
 
-`make test-api` and `make test-iam` build each service Dockerfile's `test` stage. `make test-integration` runs both integration-test stages against isolated service-owned tmpfs PostgreSQL databases.
+`make test-api`, `make test-iam`, and `make test-ai` build each service Dockerfile's `test` stage. AI tests use fake corpus and embedding providers and never contact Ollama. `make test-integration` runs the database-backed API and IAM integration-test stages against isolated service-owned tmpfs PostgreSQL databases.
 
 ## Persistence development
 
@@ -195,12 +221,12 @@ make check-dbdiagram
 
 ## CI behavior
 
-- `.github/workflows/tests.yml` runs frontend, API/IAM unit, setup, and multi-service integration tests for pull requests targeting `master`, including every pushed PR commit. It intentionally does not run after merge.
-- `.github/workflows/lint.yml` runs frontend lint/type-checking, API formatting/vet checks, an IAM compile check, ORM persistence boundary/generation checks, and the database-diagram check for pull requests targeting `master` and pushes to `master`.
+- `.github/workflows/tests.yml` runs frontend, API/IAM/AI unit, setup, and multi-service integration tests for pull requests targeting `master`, including every pushed PR commit. It intentionally does not run after merge.
+- `.github/workflows/lint.yml` runs frontend lint/type-checking, API formatting/vet checks, IAM compile, Python lint/type checks, ORM persistence boundary/generation checks, and the database-diagram check for pull requests targeting `master` and pushes to `master`.
 - Both workflows start with a `changes` job that maps a pull request's changed files to CI areas with `scripts/ci/changed-areas.sh`, and each job runs only when its area changed. Shared build files (`Makefile`, `docker-compose.yml`, workflow files), unrecognized paths, and pushes to `master` run every job. Skipped jobs report success, so they never block a required check.
 
 Configure the repository's `master` branch protection to require the PR test and lint checks before merging.
 
 ## Backend module layout
 
-The resource API remains an independent Go module under `apps/api`. IAM is an independent Gradle project under `apps/iam` using Java 25, Spring Boot, Spring Security, Spring Modulith, JPA/Hibernate, Flyway, and PostgreSQL. Make, Docker, and CI enter each application explicitly.
+The resource API remains an independent Go module under `apps/api`. IAM is an independent Gradle project under `apps/iam` using Java 25, Spring Boot, Spring Security, Spring Modulith, JPA/Hibernate, Flyway, and PostgreSQL. The AI runtime is an independent locked Python project under `apps/ai`. Make, Docker, and CI enter each application explicitly.
