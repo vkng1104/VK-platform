@@ -4,7 +4,7 @@ set -eu
 
 repository_root="$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)"
 changed_areas_script="$repository_root/scripts/ci/changed-areas.sh"
-all_areas='web api iam persistence setup dbdiagram'
+all_areas='web api iam ai persistence setup dbdiagram'
 
 fail() {
   echo "changed areas test failed: $1" >&2
@@ -42,6 +42,7 @@ assert_areas 'API code runs API and persistence jobs' 'apps/api/internal/project
 assert_areas 'IAM code runs IAM and persistence jobs' \
   'apps/iam/src/main/java/com/vkplatform/iam/session/domain/AuthenticationSession.java' \
   'iam persistence'
+assert_areas 'AI code runs only AI jobs' 'apps/ai/src/vk_ai/retrieval/service.py' 'ai'
 assert_areas 'markdown inside an app still runs that app' 'apps/api/README.md' 'api persistence'
 assert_areas 'a docs folder inside app source is code' 'apps/web/src/features/docs/page.tsx' 'web'
 assert_areas 'the query registry feeds persistence checks and their tests' \

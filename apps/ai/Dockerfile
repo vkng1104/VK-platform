@@ -24,7 +24,8 @@ CMD ["uvicorn", "vk_ai.main:create_default_app", "--factory", "--host", "0.0.0.0
 
 FROM development AS lint
 
-RUN ruff check src && ruff format --check src && mypy
+COPY tests ./tests
+RUN ruff check src tests && ruff format --check src tests && mypy
 
 FROM development AS test
 

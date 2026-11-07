@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ApiError, getJson } from "./api";
+import { ApiError, getJson, postJson } from "./api";
 
 const baseUrl = "https://api.example.test";
 
@@ -44,6 +44,24 @@ describe("getJson", () => {
         code: "API_REQUEST_FAILED",
         message: "The API request failed.",
         status: 502,
+      }),
+    );
+  });
+
+  it("posts JSON with bounded server-side request defaults", async () => {
+    const fetcher = vi.fn(async () => Response.json({ retrieval: { matches: [] } }));
+
+    await postJson("/api/v1/ai/retrievals", { query: "architecture" }, {
+      baseUrl,
+      fetcher: fetcher as typeof fetch,
+    });
+
+    expect(fetcher).toHaveBeenCalledWith(
+      new URL("https://api.example.test/api/v1/ai/retrievals"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ query: "architecture" }),
+        headers: expect.objectContaining({ "content-type": "application/json" }),
       }),
     );
   });

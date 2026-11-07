@@ -14,6 +14,10 @@ docker compose config --quiet
 make -n dev >/dev/null
 make -n dev-reset >/dev/null
 make -n dev-iam IAM_DATABASE_URL=jdbc:postgresql://example >/dev/null
+make -n dev-ai AI_INTERNAL_TOKEN=example AI_EMBEDDING_MODEL=example >/dev/null
+make -n lint-ai >/dev/null
+make -n test-ai >/dev/null
+make -n build-ai >/dev/null
 make -n db-migrate-iam-up IAM_DATABASE_URL=jdbc:postgresql://example >/dev/null
 make -n db-seed-local SOURCE_ENV=development >/dev/null
 make -n generate-persistence >/dev/null
@@ -37,6 +41,12 @@ grep -Fq 'IAM_BASE_URL: http://iam:8081' docker-compose.yml ||
   fail "the Compose web service does not target the IAM service"
 grep -Fq 'context: ./apps/iam' docker-compose.yml ||
   fail "the Compose IAM service is missing"
+grep -Fq 'context: ./apps/ai' docker-compose.yml ||
+  fail "the private Compose AI service is missing"
+grep -Fq 'AI_RUNTIME_BASE_URL: http://ai:8090' docker-compose.yml ||
+  fail "the API does not target the private AI runtime"
+grep -Fq 'AI_RESOURCE_API_BASE_URL: http://api:8080' docker-compose.yml ||
+  fail "the AI runtime does not target the versioned resource API"
 grep -Fq 'iam-postgres:' docker-compose.yml ||
   fail "the Compose IAM database is missing"
 if grep -Eq '^[[:space:]]+(DATABASE_URL|TEST_DATABASE_URL): postgres://[^[:space:]]+@' docker-compose.yml; then
@@ -67,7 +77,9 @@ fi
 grep -q '^  pull_request:' .github/workflows/lint.yml || fail "PR lint trigger is missing"
 grep -q '^  push:' .github/workflows/lint.yml || fail "master lint trigger is missing"
 grep -q '^          - iam$' .github/workflows/tests.yml || fail "IAM tests are missing from CI"
+grep -q '^          - ai$' .github/workflows/tests.yml || fail "AI tests are missing from CI"
 grep -q '^  iam:$' .github/workflows/lint.yml || fail "IAM compile checks are missing from CI"
+grep -q '^  ai:$' .github/workflows/lint.yml || fail "AI lint checks are missing from CI"
 grep -q '^  persistence:$' .github/workflows/lint.yml || fail "persistence architecture checks are missing from CI"
 grep -q '^  changes:$' .github/workflows/lint.yml || fail "lint does not detect changed areas"
 grep -q '^  changes:$' .github/workflows/tests.yml || fail "PR tests do not detect changed areas"
