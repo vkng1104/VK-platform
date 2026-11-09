@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 
 import httpx
@@ -52,7 +52,7 @@ def settings() -> Settings:
 
 
 @asynccontextmanager
-async def runtime_client(service: FakeService) -> AsyncIterator[httpx.AsyncClient]:
+async def runtime_client(service: FakeService) -> AsyncGenerator[httpx.AsyncClient]:
     app = create_app(settings(), service)
     transport = httpx.ASGITransport(app=app)
     async with (

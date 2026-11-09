@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from typing import Protocol
 
@@ -69,7 +69,7 @@ def create_app(
     expected_authorization = f"Bearer {settings.internal_token}".encode()
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
         try:
             await service.rebuild()
         except Exception:
