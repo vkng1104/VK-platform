@@ -60,17 +60,24 @@ class OllamaEmbeddingProvider:
         if not texts or any(not text.strip() for text in texts):
             raise EmbeddingError("embedding input must contain non-empty text")
         try:
-            response = await self._client.post(
-                "/api/embed", json={"model": self._model, "input": texts, "truncate": True}
-            )
-            response.raise_for_status()
+            async with self._client.stream(
+                "POST",
+                "/api/embed",
+                json={"model": self._model, "input": texts, "truncate": True},
+            ) as response:
+                response.raise_for_status()
+                body = bytearray()
+                async for block in response.aiter_bytes():
+                    if len(body) + len(block) > self._maximum_response_bytes:
+                        raise EmbeddingError(
+                            "embedding provider response exceeded the configured limit"
+                        )
+                    body.extend(block)
         except httpx.HTTPError as error:
             raise EmbeddingError("embedding provider request failed") from error
-        if len(response.content) > self._maximum_response_bytes:
-            raise EmbeddingError("embedding provider response exceeded the configured limit")
 
         try:
-            payload = _EmbeddingResponse.model_validate(response.json())
+            payload = _EmbeddingResponse.model_validate_json(body)
         except (ValueError, TypeError) as error:
             raise EmbeddingError("embedding provider returned an invalid response") from error
         if len(payload.embeddings) != len(texts):
