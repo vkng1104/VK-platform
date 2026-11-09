@@ -66,6 +66,8 @@ def create_app(
     *,
     closeables: Sequence[AsyncCloseable] = (),
 ) -> FastAPI:
+    expected_authorization = f"Bearer {settings.internal_token}".encode()
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         try:
@@ -106,8 +108,9 @@ def create_app(
         request: RetrievalRequest,
         authorization: str | None = Header(default=None),
     ) -> RetrievalResponse:
-        expected = f"Bearer {settings.internal_token}"
-        if authorization is None or not secrets.compare_digest(authorization, expected):
+        if authorization is None or not secrets.compare_digest(
+            authorization.encode(), expected_authorization
+        ):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
         query = request.query.strip()
         if not query:

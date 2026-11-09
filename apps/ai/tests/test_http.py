@@ -79,6 +79,18 @@ async def test_private_retrieval_requires_token_and_rejects_unknown_fields() -> 
 
 
 @pytest.mark.asyncio
+async def test_private_retrieval_rejects_non_ascii_authorization() -> None:
+    async with runtime_client(FakeService()) as client:
+        response = await client.post(
+            "/internal/v1/retrievals",
+            headers={"authorization": b"Bearer caf\xe9"},
+            json={"query": "architecture", "top_k": 1},
+        )
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_private_retrieval_returns_structured_matches_when_ready() -> None:
     async with runtime_client(FakeService()) as client:
         readiness = await client.get("/readyz")
