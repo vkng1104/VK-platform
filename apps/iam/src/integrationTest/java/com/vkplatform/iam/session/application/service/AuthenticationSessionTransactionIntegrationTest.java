@@ -14,6 +14,7 @@ import com.vkplatform.iam.identity.domain.IdentityPolicy;
 import com.vkplatform.iam.session.api.AuthenticationSessionOperations;
 import com.vkplatform.iam.session.api.command.ExchangeAuthenticationGrant;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.application.port.out.OAuthAuthorizationRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
 import com.vkplatform.iam.session.domain.SessionPolicy;
 import com.vkplatform.iam.verification.api.EmailVerificationOperations;
@@ -131,6 +132,21 @@ class AuthenticationSessionTransactionIntegrationTest {
                 }
 
                 @Override
+                public Optional<AuthenticationSession> findOwned(UUID accountId, UUID sessionId) {
+                    return Optional.empty();
+                }
+
+                @Override
+                public SessionPage findActiveByAccount(
+                        UUID accountId,
+                        Instant now,
+                        int page,
+                        int size
+                ) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
                 public Optional<AuthenticationSession> findLockedById(UUID id) {
                     throw new UnsupportedOperationException();
                 }
@@ -196,11 +212,13 @@ class AuthenticationSessionTransactionIntegrationTest {
         AuthenticationSessionOperations transactionTestAuthenticationSessionOperations(
                 PasswordlessIdentityOperations identities,
                 AuthenticationSessionRepository sessions,
+                OAuthAuthorizationRepository authorizations,
                 Clock clock
         ) {
             return new AuthenticationSessionService(
                     identities,
                     sessions,
+                    authorizations,
                     new SessionPolicy("vk-platform-bff", Duration.ofDays(30)),
                     clock
             );

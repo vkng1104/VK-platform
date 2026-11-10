@@ -104,6 +104,7 @@ Table iam_session.sessions {
   compromised_at timestamptz
 
   Indexes {
+    (account_id, status, `created_at DESC`, `id DESC`) [name: 'sessions_account_status_created_id_idx']
     (account_id, status, id) [name: 'sessions_account_status_id_idx']
   }
 

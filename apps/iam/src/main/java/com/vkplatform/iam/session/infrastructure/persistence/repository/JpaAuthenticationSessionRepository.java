@@ -2,10 +2,15 @@ package com.vkplatform.iam.session.infrastructure.persistence.repository;
 
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
+import com.vkplatform.iam.session.domain.SessionStatus;
 import com.vkplatform.iam.session.infrastructure.persistence.entity.SessionEntity;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,6 +33,38 @@ public class JpaAuthenticationSessionRepository implements AuthenticationSession
     @Transactional(readOnly = true)
     public Optional<AuthenticationSession> findById(UUID id) {
         return sessions.findById(id).map(SessionEntity::toDomain);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<AuthenticationSession> findOwned(UUID accountId, UUID sessionId) {
+        return sessions.findByIdAndAccountId(sessionId, accountId).map(SessionEntity::toDomain);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SessionPage findActiveByAccount(
+            UUID accountId,
+            Instant now,
+            int page,
+            int size
+    ) {
+        Page<SessionEntity> result = sessions.findByAccountIdAndStatusAndExpiresAtAfter(
+                accountId,
+                SessionStatus.ACTIVE,
+                now,
+                PageRequest.of(page, size, Sort.by(
+                        Sort.Order.desc("createdAt"),
+                        Sort.Order.desc("id")
+                ))
+        );
+        return new SessionPage(
+                result.getContent().stream().map(SessionEntity::toDomain).toList(),
+                result.getNumber(),
+                result.getSize(),
+                result.getTotalElements(),
+                result.getTotalPages()
+        );
     }
 
     @Override
@@ -67,6 +104,4 @@ public class JpaAuthenticationSessionRepository implements AuthenticationSession
                 .orElseThrow(() -> new IllegalStateException(missingMessage))
                 .apply(session);
     }
-
-
 }

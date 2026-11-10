@@ -7,8 +7,13 @@ import java.util.UUID;
 
 public record SessionResponse(
         UUID id,
+        @JsonProperty("client_id") String clientId,
         String status,
         @JsonProperty("created_at") Instant createdAt,
-        @JsonProperty("expires_at") Instant expiresAt
+        @JsonProperty("last_refreshed_at") Instant lastRefreshedAt,
+        @JsonProperty("expires_at") Instant expiresAt,
+        @JsonProperty("revoked_at") Instant revokedAt,
+        @JsonProperty("compromised_at") Instant compromisedAt,
+        @JsonProperty("revoke_reason") String revokeReason
 ) {
 }

@@ -11,7 +11,16 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 
 import java.security.KeyPair;
 import java.security.interfaces.RSAPrivateKey;
@@ -43,5 +52,27 @@ public class OAuthSigningConfiguration {
     @Bean
     JwtEncoder oauthJwtEncoder(JWKSource<SecurityContext> signingKeys) {
         return new NimbusJwtEncoder(signingKeys);
+    }
+
+    @Bean
+    JwtDecoder oauthJwtDecoder(
+            RSAKey signingKey,
+            OAuthAuthorizationProperties properties
+    ) throws com.nimbusds.jose.JOSEException {
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withPublicKey(signingKey.toRSAPublicKey())
+                .signatureAlgorithm(SignatureAlgorithm.RS256)
+                .build();
+        OAuth2TokenValidator<Jwt> audience = token -> token.getAudience().contains(properties.audience())
+                ? OAuth2TokenValidatorResult.success()
+                : OAuth2TokenValidatorResult.failure(new OAuth2Error(
+                        "invalid_token",
+                        "The required audience is missing.",
+                        null
+                ));
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefaultWithIssuer(properties.issuer().toString()),
+                audience
+        ));
+        return decoder;
     }
 }

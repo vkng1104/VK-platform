@@ -52,7 +52,9 @@ class OAuthAuthorizationServerConfigurationTest {
                 "vk-platform-bff",
                 "b".repeat(32),
                 URI.create("https://web.example.test"),
-                absoluteTtl
+                absoluteTtl,
+                "VK_IAM_SESSION",
+                true
         );
     }
 
