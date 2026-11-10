@@ -1,8 +1,12 @@
 package com.vkplatform.iam.session.application.service;
 
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
+import com.vkplatform.iam.identity.api.SecurityAuditEventType;
+import com.vkplatform.iam.identity.api.SecurityAuditOperations;
+import com.vkplatform.iam.identity.api.command.RecordSecurityAuditEvent;
 import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.application.port.out.IamSecurityTelemetry;
 import com.vkplatform.iam.session.application.port.out.OAuthAuthorizationRepository;
 import com.vkplatform.iam.session.application.port.out.OAuthRefreshTokenRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
@@ -29,6 +33,8 @@ public class OAuthTokenLifecycleService {
     private final OAuthAuthorizationRepository authorizations;
     private final OAuthRefreshTokenRepository refreshTokens;
     private final PasswordlessIdentityOperations identities;
+    private final SecurityAuditOperations audit;
+    private final IamSecurityTelemetry telemetry;
     private final Clock clock;
     private final Duration accessTokenTtl;
 
@@ -37,6 +43,8 @@ public class OAuthTokenLifecycleService {
             OAuthAuthorizationRepository authorizations,
             OAuthRefreshTokenRepository refreshTokens,
             PasswordlessIdentityOperations identities,
+            SecurityAuditOperations audit,
+            IamSecurityTelemetry telemetry,
             Clock clock,
             Duration accessTokenTtl
     ) {
@@ -44,6 +52,8 @@ public class OAuthTokenLifecycleService {
         this.authorizations = Objects.requireNonNull(authorizations);
         this.refreshTokens = Objects.requireNonNull(refreshTokens);
         this.identities = Objects.requireNonNull(identities);
+        this.audit = Objects.requireNonNull(audit);
+        this.telemetry = Objects.requireNonNull(telemetry);
         this.clock = Objects.requireNonNull(clock);
         this.accessTokenTtl = Objects.requireNonNull(accessTokenTtl);
     }
@@ -84,13 +94,20 @@ public class OAuthTokenLifecycleService {
      * authorization is invalidated, and the session is compromised, all at one time.
      */
     @Transactional
-    public RefreshTokenUse useRefreshToken(byte[] tokenDigest, UUID sessionId) {
+    public RefreshTokenUse useRefreshToken(
+            byte[] tokenDigest,
+            UUID sessionId,
+            UUID accountId,
+            String registeredClientId
+    ) {
         OAuthRefreshToken token = refreshTokens.findLockedByTokenDigest(tokenDigest).orElse(null);
         if (token == null) {
             return RefreshTokenUse.UNKNOWN;
         }
         Instant now = clock.instant();
         if (token.consumedAt() != null) {
+            boolean firstReuse = token.reuseDetectedAt() == null;
+            long startedAt = telemetry.start();
             refreshTokens.recordReuse(token.detectReuse(now));
             authorizations.invalidate(
                     token.authorizationId(),
@@ -99,6 +116,21 @@ public class OAuthTokenLifecycleService {
             );
             sessions.findLockedById(sessionId)
                     .ifPresent(session -> sessions.recordCompromise(session.compromise(now)));
+            if (firstReuse) {
+                audit.record(new RecordSecurityAuditEvent(
+                        SecurityAuditEventType.REFRESH_TOKEN_REUSED,
+                        accountId,
+                        sessionId,
+                        registeredClientId,
+                        null,
+                        now
+                ));
+                telemetry.recordAfterCommit(
+                        IamSecurityTelemetry.Operation.REFRESH_REPLAY,
+                        IamSecurityTelemetry.Outcome.REPLAY,
+                        startedAt
+                );
+            }
             return RefreshTokenUse.REUSED;
         }
         return token.isActive(now) ? RefreshTokenUse.ACTIVE : RefreshTokenUse.INACTIVE;
@@ -112,6 +144,8 @@ public class OAuthTokenLifecycleService {
     public void recordRefreshTokenIssued(
             String authorizationId,
             UUID sessionId,
+            UUID accountId,
+            String registeredClientId,
             byte[] previousDigest,
             byte[] currentDigest,
             Instant issuedAt,
@@ -128,6 +162,7 @@ public class OAuthTokenLifecycleService {
 
         OAuthRefreshToken previous = refreshTokens.findLockedByTokenDigest(previousDigest)
                 .orElseThrow(() -> new IllegalStateException("OAuth refresh lineage is missing"));
+        long startedAt = telemetry.start();
         Instant now = clock.instant();
         refreshTokens.recordConsumption(previous.consume(nextId, now));
         refreshTokens.create(
@@ -143,6 +178,19 @@ public class OAuthTokenLifecycleService {
         );
         sessions.findLockedById(sessionId)
                 .ifPresent(session -> sessions.recordRefresh(session.touch(now)));
+        audit.record(new RecordSecurityAuditEvent(
+                SecurityAuditEventType.REFRESH_TOKEN_ROTATED,
+                accountId,
+                sessionId,
+                registeredClientId,
+                null,
+                now
+        ));
+        telemetry.recordAfterCommit(
+                IamSecurityTelemetry.Operation.REFRESH_ROTATION,
+                IamSecurityTelemetry.Outcome.SUCCESS,
+                startedAt
+        );
     }
 
     /**

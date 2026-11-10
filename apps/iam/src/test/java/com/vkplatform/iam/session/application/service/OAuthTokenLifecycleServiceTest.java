@@ -1,8 +1,12 @@
 package com.vkplatform.iam.session.application.service;
 
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
+import com.vkplatform.iam.identity.api.SecurityAuditEventType;
+import com.vkplatform.iam.identity.api.SecurityAuditOperations;
+import com.vkplatform.iam.identity.api.command.RecordSecurityAuditEvent;
 import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.application.port.out.IamSecurityTelemetry;
 import com.vkplatform.iam.session.application.port.out.OAuthAuthorizationRepository;
 import com.vkplatform.iam.session.application.port.out.OAuthRefreshTokenRepository;
 import com.vkplatform.iam.session.application.service.OAuthTokenLifecycleService.AccessTokenWindow;
@@ -41,6 +45,7 @@ class OAuthTokenLifecycleServiceTest {
     private static final UUID ACCOUNT_ID = UUID.fromString("5a3c1d2e-7b8f-4c6d-9e0a-1b2c3d4e5f60");
     private static final UUID SESSION_ID = UUID.fromString("6b4d2e3f-8c9a-4d7e-8f1b-2c3d4e5f6a71");
     private static final String CLIENT_ID = "vk-platform-bff";
+    private static final String REGISTERED_CLIENT_ID = "registered-client-1";
     private static final String AUTHORIZATION_ID = "authorization-1";
     private static final byte[] PREVIOUS_DIGEST = digest(1);
     private static final byte[] CURRENT_DIGEST = digest(2);
@@ -49,6 +54,8 @@ class OAuthTokenLifecycleServiceTest {
     private OAuthAuthorizationRepository authorizations;
     private OAuthRefreshTokenRepository refreshTokens;
     private PasswordlessIdentityOperations identities;
+    private SecurityAuditOperations audit;
+    private IamSecurityTelemetry telemetry;
     private OAuthTokenLifecycleService service;
 
     @BeforeEach
@@ -57,11 +64,15 @@ class OAuthTokenLifecycleServiceTest {
         authorizations = mock(OAuthAuthorizationRepository.class);
         refreshTokens = mock(OAuthRefreshTokenRepository.class);
         identities = mock(PasswordlessIdentityOperations.class);
+        audit = mock(SecurityAuditOperations.class);
+        telemetry = mock(IamSecurityTelemetry.class);
         service = new OAuthTokenLifecycleService(
                 sessions,
                 authorizations,
                 refreshTokens,
                 identities,
+                audit,
+                telemetry,
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 Duration.ofMinutes(5)
         );
@@ -173,15 +184,21 @@ class OAuthTokenLifecycleServiceTest {
     @Test
     void reportsUnknownActiveAndExpiredRefreshTokens() {
         when(refreshTokens.findLockedByTokenDigest(CURRENT_DIGEST)).thenReturn(Optional.empty());
-        assertThat(service.useRefreshToken(CURRENT_DIGEST, SESSION_ID)).isEqualTo(RefreshTokenUse.UNKNOWN);
+        assertThat(service.useRefreshToken(
+                CURRENT_DIGEST, SESSION_ID, ACCOUNT_ID, REGISTERED_CLIENT_ID
+        )).isEqualTo(RefreshTokenUse.UNKNOWN);
 
         when(refreshTokens.findLockedByTokenDigest(CURRENT_DIGEST))
                 .thenReturn(Optional.of(refreshToken(NOW.plusSeconds(1))));
-        assertThat(service.useRefreshToken(CURRENT_DIGEST, SESSION_ID)).isEqualTo(RefreshTokenUse.ACTIVE);
+        assertThat(service.useRefreshToken(
+                CURRENT_DIGEST, SESSION_ID, ACCOUNT_ID, REGISTERED_CLIENT_ID
+        )).isEqualTo(RefreshTokenUse.ACTIVE);
 
         when(refreshTokens.findLockedByTokenDigest(CURRENT_DIGEST))
                 .thenReturn(Optional.of(refreshToken(NOW)));
-        assertThat(service.useRefreshToken(CURRENT_DIGEST, SESSION_ID)).isEqualTo(RefreshTokenUse.INACTIVE);
+        assertThat(service.useRefreshToken(
+                CURRENT_DIGEST, SESSION_ID, ACCOUNT_ID, REGISTERED_CLIENT_ID
+        )).isEqualTo(RefreshTokenUse.INACTIVE);
 
         verifyNoInteractions(authorizations);
         verify(refreshTokens, never()).recordReuse(any());
@@ -196,7 +213,9 @@ class OAuthTokenLifecycleServiceTest {
         when(refreshTokens.findLockedByTokenDigest(PREVIOUS_DIGEST)).thenReturn(Optional.of(consumed));
         when(sessions.findLockedById(SESSION_ID)).thenReturn(Optional.of(session));
 
-        assertThat(service.useRefreshToken(PREVIOUS_DIGEST, SESSION_ID)).isEqualTo(RefreshTokenUse.REUSED);
+        assertThat(service.useRefreshToken(
+                PREVIOUS_DIGEST, SESSION_ID, ACCOUNT_ID, REGISTERED_CLIENT_ID
+        )).isEqualTo(RefreshTokenUse.REUSED);
 
         InOrder order = inOrder(refreshTokens, authorizations, sessions);
         order.verify(refreshTokens).recordReuse(consumed.detectReuse(NOW));
@@ -206,6 +225,18 @@ class OAuthTokenLifecycleServiceTest {
                 NOW
         );
         order.verify(sessions).recordCompromise(session.compromise(NOW));
+        ArgumentCaptor<RecordSecurityAuditEvent> event = ArgumentCaptor.forClass(
+                RecordSecurityAuditEvent.class
+        );
+        verify(audit).record(event.capture());
+        assertThat(event.getValue().type()).isEqualTo(SecurityAuditEventType.REFRESH_TOKEN_REUSED);
+        assertThat(event.getValue().accountId()).isEqualTo(ACCOUNT_ID);
+        assertThat(event.getValue().targetId()).isEqualTo(SESSION_ID);
+        verify(telemetry).recordAfterCommit(
+                IamSecurityTelemetry.Operation.REFRESH_REPLAY,
+                IamSecurityTelemetry.Outcome.REPLAY,
+                0L
+        );
     }
 
     @Test
@@ -213,6 +244,8 @@ class OAuthTokenLifecycleServiceTest {
         service.recordRefreshTokenIssued(
                 AUTHORIZATION_ID,
                 SESSION_ID,
+                ACCOUNT_ID,
+                REGISTERED_CLIENT_ID,
                 null,
                 CURRENT_DIGEST,
                 NOW,
@@ -237,6 +270,8 @@ class OAuthTokenLifecycleServiceTest {
         service.recordRefreshTokenIssued(
                 AUTHORIZATION_ID,
                 SESSION_ID,
+                ACCOUNT_ID,
+                REGISTERED_CLIENT_ID,
                 PREVIOUS_DIGEST,
                 CURRENT_DIGEST,
                 NOW,
@@ -250,6 +285,17 @@ class OAuthTokenLifecycleServiceTest {
         order.verify(refreshTokens).recordConsumption(previous.consume(next.id(), NOW));
         order.verify(refreshTokens).create(eq(next), eq(CURRENT_DIGEST));
         order.verify(sessions).recordRefresh(session.touch(NOW));
+        ArgumentCaptor<RecordSecurityAuditEvent> event = ArgumentCaptor.forClass(
+                RecordSecurityAuditEvent.class
+        );
+        verify(audit).record(event.capture());
+        assertThat(event.getValue().type()).isEqualTo(SecurityAuditEventType.REFRESH_TOKEN_ROTATED);
+        assertThat(event.getValue().targetId()).isEqualTo(SESSION_ID);
+        verify(telemetry).recordAfterCommit(
+                IamSecurityTelemetry.Operation.REFRESH_ROTATION,
+                IamSecurityTelemetry.Outcome.SUCCESS,
+                0L
+        );
     }
 
     @Test
@@ -259,6 +305,8 @@ class OAuthTokenLifecycleServiceTest {
         assertThatThrownBy(() -> service.recordRefreshTokenIssued(
                 AUTHORIZATION_ID,
                 SESSION_ID,
+                ACCOUNT_ID,
+                REGISTERED_CLIENT_ID,
                 PREVIOUS_DIGEST,
                 CURRENT_DIGEST,
                 NOW,

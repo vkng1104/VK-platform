@@ -36,9 +36,11 @@ Table iam_session.oauth_authorizations {
   Indexes {
     access_token_digest [unique, name: 'oauth_authorizations_access_digest_idx', note: 'WHERE (access_token_digest IS NOT NULL)']
     authorization_code_digest [unique, name: 'oauth_authorizations_code_digest_idx', note: 'WHERE (authorization_code_digest IS NOT NULL)']
+    (invalidated_at, id) [name: 'oauth_authorizations_invalidation_cleanup_idx', note: 'WHERE (invalidated_at IS NOT NULL)']
     refresh_token_digest [unique, name: 'oauth_authorizations_refresh_digest_idx', note: 'WHERE (refresh_token_digest IS NOT NULL)']
     session_id [name: 'oauth_authorizations_session_active_idx', note: 'WHERE (invalidated_at IS NULL)']
     session_id [name: 'oauth_authorizations_session_idx']
+    (access_token_expires_at, id) [name: 'oauth_authorizations_sessionless_expiry_idx', note: 'WHERE ((session_id IS NULL) AND (invalidated_at IS NULL))']
     state_digest [unique, name: 'oauth_authorizations_state_digest_idx', note: 'WHERE (state_digest IS NOT NULL)']
   }
 
@@ -69,6 +71,7 @@ Table iam_session.oauth_client_events {
   occurred_at timestamptz [not null]
 
   Indexes {
+    (occurred_at, id) [name: 'oauth_client_events_cleanup_idx']
     (registered_client_id, `occurred_at DESC`) [name: 'oauth_client_events_client_time_idx']
     (operation_id, registered_client_id, event_type) [unique, name: 'oauth_client_events_operation_event_unique']
   }
@@ -163,6 +166,7 @@ Table iam_session.operator_operations {
   completed_at timestamptz [not null]
   request_fingerprint bytea
   result_timestamp timestamptz
+  result_details text
 
   Indexes {
     (operation_type, `completed_at DESC`) [name: 'operator_operations_type_completed_idx']
@@ -173,6 +177,7 @@ Table iam_session.operator_operations {
     - operator_operations_context_check: CHECK (operation_id::text <> ''::text AND operation_id::text = btrim(operation_id::text) AND operation_type::text <> ''::text AND operation_type::text = btrim(operation_type::text) AND actor_id::text <> ''::text AND actor_id::text = btrim(actor_id::text) AND (target_id IS NULL OR target_id::text <> ''::text AND target_id::text = btrim(target_id::text)) AND (result_key_id IS NULL OR result_key_id::text <> ''::text AND result_key_id::text = btrim(result_key_id::text)))
     - operator_operations_request_fingerprint_check: CHECK (request_fingerprint IS NULL OR octet_length(request_fingerprint) = 32)
     - operator_operations_result_count_check: CHECK (result_count IS NULL OR result_count >= 0)
+    - operator_operations_result_details_check: CHECK (result_details IS NULL OR result_details <> ''::text)
   '''
 }
 
@@ -192,6 +197,8 @@ Table iam_session.sessions {
   Indexes {
     (account_id, status, `created_at DESC`, `id DESC`) [name: 'sessions_account_status_created_id_idx']
     (account_id, status, id) [name: 'sessions_account_status_id_idx']
+    (expires_at, id) [name: 'sessions_active_expiry_cleanup_idx', note: 'WHERE (status = \'active\'::text)']
+    (`COALESCE(compromised_at, revoked_at)`, id) [name: 'sessions_terminal_cleanup_idx', note: 'WHERE (status <> \'active\'::text)']
   }
 
   Note: '''
@@ -200,7 +207,7 @@ Table iam_session.sessions {
     - sessions_expiry_check: CHECK (expires_at > created_at)
     - sessions_lifecycle_state_check: CHECK (status = 'active'::text AND revoked_at IS NULL AND compromised_at IS NULL AND revoke_reason IS NULL OR status = 'revoked'::text AND revoked_at IS NOT NULL AND compromised_at IS NULL AND revoke_reason IS NOT NULL OR status = 'compromised'::text AND revoked_at IS NOT NULL AND compromised_at IS NOT NULL AND revoke_reason = 'refresh_token_reused'::text)
     - sessions_lifecycle_timeline_check: CHECK (last_refreshed_at >= created_at AND (revoked_at IS NULL OR revoked_at >= last_refreshed_at) AND (compromised_at IS NULL OR compromised_at >= revoked_at))
-    - sessions_revoke_reason_check: CHECK (revoke_reason IS NULL OR (revoke_reason = ANY (ARRAY['user_request'::text, 'logout'::text, 'all_sessions_revoked'::text, 'account_state_changed'::text, 'refresh_token_reused'::text])))
+    - sessions_revoke_reason_check: CHECK (revoke_reason IS NULL OR (revoke_reason = ANY (ARRAY['user_request'::text, 'logout'::text, 'all_sessions_revoked'::text, 'account_state_changed'::text, 'refresh_token_reused'::text, 'expired'::text])))
     - sessions_status_check: CHECK (status = ANY (ARRAY['active'::text, 'revoked'::text, 'compromised'::text]))
     - sessions_version_check: CHECK (version >= 0)
   '''
@@ -215,6 +222,7 @@ Table iam_session.signing_key_events {
   occurred_at timestamptz [not null]
 
   Indexes {
+    (occurred_at, id) [name: 'signing_key_events_cleanup_idx']
     (key_id, `occurred_at DESC`) [name: 'signing_key_events_key_time_idx']
     (operation_id, key_id, event_type) [unique, name: 'signing_key_events_operation_event_unique']
   }
@@ -254,6 +262,7 @@ Table iam_session.signing_keys {
     status [unique, name: 'signing_keys_one_active_idx', note: 'WHERE ((status)::text = \'ACTIVE\'::text)']
     (protection_key_version, id) [name: 'signing_keys_protection_version_id_idx']
     (status, publish_until, `activated_at DESC`) [name: 'signing_keys_publication_idx']
+    (`COALESCE(retired_at, compromised_at)`, id) [name: 'signing_keys_terminal_cleanup_idx', note: 'WHERE ((status)::text = ANY ((ARRAY[\'RETIRED\'::character varying, \'COMPROMISED\'::character varying])::text[]))']
   }
 
   Note: '''

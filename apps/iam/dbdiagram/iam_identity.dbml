@@ -117,6 +117,7 @@ Table iam_identity.security_events {
 
   Indexes {
     (account_id, `occurred_at DESC`) [name: 'security_events_account_occurred_idx']
+    (occurred_at, id) [name: 'security_events_cleanup_idx']
     (`occurred_at DESC`) [name: 'security_events_occurred_idx']
   }
 
@@ -124,7 +125,7 @@ Table iam_identity.security_events {
     Checks:
     - security_events_actor_check: CHECK (actor_id IS NULL OR actor_id::text <> ''::text AND actor_id::text = btrim(actor_id::text))
     - security_events_request_check: CHECK (request_id IS NULL OR request_id::text <> ''::text AND request_id::text = btrim(request_id::text))
-    - security_events_type_check: CHECK (event_type = ANY (ARRAY['account_created'::text, 'login_identity_linked'::text, 'sign_in_grant_issued'::text, 'sign_in_grant_consumed'::text, 'account_suspended'::text, 'account_reactivated'::text, 'account_deleted'::text]))
+    - security_events_type_check: CHECK (event_type = ANY (ARRAY['account_created'::text, 'login_identity_linked'::text, 'sign_in_grant_issued'::text, 'sign_in_grant_consumed'::text, 'account_suspended'::text, 'account_reactivated'::text, 'account_deleted'::text, 'session_created'::text, 'refresh_token_rotated'::text, 'refresh_token_reused'::text, 'session_revoked'::text, 'all_sessions_revoked'::text]))
   '''
 }
 

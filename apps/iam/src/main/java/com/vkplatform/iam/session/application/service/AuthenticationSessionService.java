@@ -1,7 +1,10 @@
 package com.vkplatform.iam.session.application.service;
 
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
+import com.vkplatform.iam.identity.api.SecurityAuditEventType;
+import com.vkplatform.iam.identity.api.SecurityAuditOperations;
 import com.vkplatform.iam.identity.api.command.ConsumeSignInGrant;
+import com.vkplatform.iam.identity.api.command.RecordSecurityAuditEvent;
 import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.session.api.AuthenticationSessionOperations;
 import com.vkplatform.iam.session.api.command.ExchangeAuthenticationGrant;
@@ -11,6 +14,7 @@ import com.vkplatform.iam.session.api.result.AuthenticationSessionPage;
 import com.vkplatform.iam.session.api.result.AuthenticationSessionSummary;
 import com.vkplatform.iam.session.api.result.EstablishedAuthenticationSession;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.application.port.out.IamSecurityTelemetry;
 import com.vkplatform.iam.session.application.port.out.OAuthAuthorizationRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
 import com.vkplatform.iam.session.domain.OAuthAuthorizationInvalidationReason;
@@ -31,6 +35,8 @@ public class AuthenticationSessionService implements AuthenticationSessionOperat
     private final PasswordlessIdentityOperations identities;
     private final AuthenticationSessionRepository sessions;
     private final OAuthAuthorizationRepository authorizations;
+    private final SecurityAuditOperations audit;
+    private final IamSecurityTelemetry telemetry;
     private final SessionPolicy policy;
     private final Clock clock;
 
@@ -38,12 +44,16 @@ public class AuthenticationSessionService implements AuthenticationSessionOperat
             PasswordlessIdentityOperations identities,
             AuthenticationSessionRepository sessions,
             OAuthAuthorizationRepository authorizations,
+            SecurityAuditOperations audit,
+            IamSecurityTelemetry telemetry,
             SessionPolicy policy,
             Clock clock
     ) {
         this.identities = Objects.requireNonNull(identities);
         this.sessions = Objects.requireNonNull(sessions);
         this.authorizations = Objects.requireNonNull(authorizations);
+        this.audit = Objects.requireNonNull(audit);
+        this.telemetry = Objects.requireNonNull(telemetry);
         this.policy = Objects.requireNonNull(policy);
         this.clock = Objects.requireNonNull(clock);
     }
@@ -66,6 +76,14 @@ public class AuthenticationSessionService implements AuthenticationSessionOperat
                 now.plus(policy.absoluteTtl())
         );
         sessions.create(session);
+        audit.record(new RecordSecurityAuditEvent(
+                SecurityAuditEventType.SESSION_CREATED,
+                account.accountId(),
+                session.id(),
+                policy.bffClientId(),
+                command.requestId(),
+                now
+        ));
         return new EstablishedAuthenticationSession(account.accountId(), session);
     }
 
@@ -113,46 +131,94 @@ public class AuthenticationSessionService implements AuthenticationSessionOperat
     @Transactional
     public void revoke(RevokeAuthenticationSession command) {
         Objects.requireNonNull(command);
+        long startedAt = telemetry.start();
         requireContext(command.requestId());
         UUID accountId = Objects.requireNonNull(command.accountId());
         UUID targetSessionId = Objects.requireNonNull(command.targetSessionId());
         Instant now = clock.instant();
         List<AuthenticationSession> owned = sessions.findAllLockedByAccountId(accountId);
-        requireUsableCurrent(owned, accountId, command.currentSessionId(), now);
+        if (!hasUsableCurrent(owned, accountId, command.currentSessionId(), now)) {
+            telemetry.record(
+                    IamSecurityTelemetry.Operation.SESSION_REVOCATION,
+                    IamSecurityTelemetry.Outcome.FAILURE,
+                    startedAt
+            );
+            throw SessionFailure.sessionUnavailable();
+        }
         AuthenticationSession target = findSession(owned, targetSessionId);
         if (target == null) {
+            telemetry.record(
+                    IamSecurityTelemetry.Operation.SESSION_REVOCATION,
+                    IamSecurityTelemetry.Outcome.NOT_FOUND,
+                    startedAt
+            );
             throw SessionFailure.sessionNotFound();
         }
-        revokeAndInvalidate(target, SessionRevokeReason.USER_REQUEST, now);
+        boolean changed = revokeAndInvalidate(target, SessionRevokeReason.USER_REQUEST, now);
+        if (changed) {
+            recordRevocation(
+                    SecurityAuditEventType.SESSION_REVOKED,
+                    accountId,
+                    targetSessionId,
+                    command.requestId()
+            );
+        }
+        telemetry.recordAfterCommit(
+                IamSecurityTelemetry.Operation.SESSION_REVOCATION,
+                changed ? IamSecurityTelemetry.Outcome.SUCCESS : IamSecurityTelemetry.Outcome.NOOP,
+                startedAt
+        );
     }
 
     @Override
     @Transactional
     public void logout(RevokeAuthenticationSession command) {
         Objects.requireNonNull(command);
+        long startedAt = telemetry.start();
         requireContext(command.requestId());
         if (!Objects.equals(command.currentSessionId(), command.targetSessionId())) {
             throw SessionFailure.invalidRequest();
         }
         UUID accountId = Objects.requireNonNull(command.accountId());
-        sessions.findLockedById(Objects.requireNonNull(command.targetSessionId()))
+        AuthenticationSession target = sessions.findLockedById(
+                        Objects.requireNonNull(command.targetSessionId())
+                )
                 .filter(session -> session.accountId().equals(accountId))
-                .ifPresent(session -> revokeAndInvalidate(
-                        session,
-                        SessionRevokeReason.LOGOUT,
-                        clock.instant()
-                ));
+                .orElse(null);
+        boolean changed = target != null
+                && revokeAndInvalidate(target, SessionRevokeReason.LOGOUT, clock.instant());
+        if (changed) {
+            recordRevocation(
+                    SecurityAuditEventType.SESSION_REVOKED,
+                    accountId,
+                    command.targetSessionId(),
+                    command.requestId()
+            );
+        }
+        telemetry.recordAfterCommit(
+                IamSecurityTelemetry.Operation.SESSION_REVOCATION,
+                changed ? IamSecurityTelemetry.Outcome.SUCCESS : IamSecurityTelemetry.Outcome.NOOP,
+                startedAt
+        );
     }
 
     @Override
     @Transactional
     public int revokeAll(RevokeAllAuthenticationSessions command) {
         Objects.requireNonNull(command);
+        long startedAt = telemetry.start();
         requireContext(command.requestId());
         UUID accountId = Objects.requireNonNull(command.accountId());
         Instant now = clock.instant();
         List<AuthenticationSession> owned = sessions.findAllLockedByAccountId(accountId);
-        requireUsableCurrent(owned, accountId, command.currentSessionId(), now);
+        if (!hasUsableCurrent(owned, accountId, command.currentSessionId(), now)) {
+            telemetry.record(
+                    IamSecurityTelemetry.Operation.SESSION_REVOCATION,
+                    IamSecurityTelemetry.Outcome.FAILURE,
+                    startedAt
+            );
+            throw SessionFailure.sessionUnavailable();
+        }
         int revoked = 0;
         for (AuthenticationSession session : owned) {
             if (session.status() == SessionStatus.ACTIVE) {
@@ -164,10 +230,23 @@ public class AuthenticationSessionService implements AuthenticationSessionOperat
                 revoked++;
             }
         }
+        if (revoked > 0) {
+            recordRevocation(
+                    SecurityAuditEventType.ALL_SESSIONS_REVOKED,
+                    accountId,
+                    command.currentSessionId(),
+                    command.requestId()
+            );
+        }
+        telemetry.recordAfterCommit(
+                IamSecurityTelemetry.Operation.SESSION_REVOCATION,
+                revoked > 0 ? IamSecurityTelemetry.Outcome.SUCCESS : IamSecurityTelemetry.Outcome.NOOP,
+                startedAt
+        );
         return revoked;
     }
 
-    private void requireUsableCurrent(
+    private boolean hasUsableCurrent(
             List<AuthenticationSession> owned,
             UUID accountId,
             UUID currentSessionId,
@@ -177,12 +256,10 @@ public class AuthenticationSessionService implements AuthenticationSessionOperat
                 owned,
                 Objects.requireNonNull(currentSessionId)
         );
-        if (current == null || !current.canAuthorize(accountId, policy.bffClientId(), now)) {
-            throw SessionFailure.sessionUnavailable();
-        }
+        return current != null && current.canAuthorize(accountId, policy.bffClientId(), now);
     }
 
-    private void revokeAndInvalidate(
+    private boolean revokeAndInvalidate(
             AuthenticationSession session,
             SessionRevokeReason reason,
             Instant now
@@ -196,6 +273,7 @@ public class AuthenticationSessionService implements AuthenticationSessionOperat
                 OAuthAuthorizationInvalidationReason.fromSessionReason(revoked.revokeReason()),
                 now
         );
+        return !revoked.equals(session);
     }
 
     private static AuthenticationSession findSession(
@@ -206,6 +284,22 @@ public class AuthenticationSessionService implements AuthenticationSessionOperat
                 .filter(session -> session.id().equals(sessionId))
                 .findFirst()
                 .orElse(null);
+    }
+
+    private void recordRevocation(
+            SecurityAuditEventType type,
+            UUID accountId,
+            UUID targetId,
+            String requestId
+    ) {
+        audit.record(new RecordSecurityAuditEvent(
+                type,
+                accountId,
+                targetId,
+                accountId.toString(),
+                requestId,
+                clock.instant()
+        ));
     }
 
     private static AuthenticationSessionSummary summary(AuthenticationSession session) {

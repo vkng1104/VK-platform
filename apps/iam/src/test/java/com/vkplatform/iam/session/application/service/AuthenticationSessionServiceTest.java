@@ -1,7 +1,10 @@
 package com.vkplatform.iam.session.application.service;
 
 import com.vkplatform.iam.identity.api.PasswordlessIdentityOperations;
+import com.vkplatform.iam.identity.api.SecurityAuditOperations;
+import com.vkplatform.iam.identity.api.SecurityAuditEventType;
 import com.vkplatform.iam.identity.api.command.ConsumeSignInGrant;
+import com.vkplatform.iam.identity.api.command.RecordSecurityAuditEvent;
 import com.vkplatform.iam.identity.api.result.AuthenticatedAccount;
 import com.vkplatform.iam.identity.domain.IdentityFailure;
 import com.vkplatform.iam.session.api.command.ExchangeAuthenticationGrant;
@@ -10,6 +13,7 @@ import com.vkplatform.iam.session.api.command.RevokeAuthenticationSession;
 import com.vkplatform.iam.session.api.result.AuthenticationSessionPage;
 import com.vkplatform.iam.session.api.result.EstablishedAuthenticationSession;
 import com.vkplatform.iam.session.application.port.out.AuthenticationSessionRepository;
+import com.vkplatform.iam.session.application.port.out.IamSecurityTelemetry;
 import com.vkplatform.iam.session.application.port.out.OAuthAuthorizationRepository;
 import com.vkplatform.iam.session.domain.AuthenticationSession;
 import com.vkplatform.iam.session.domain.OAuthAuthorizationInvalidationReason;
@@ -32,6 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -44,6 +49,8 @@ class AuthenticationSessionServiceTest {
     private PasswordlessIdentityOperations identities;
     private AuthenticationSessionRepository sessions;
     private OAuthAuthorizationRepository authorizations;
+    private SecurityAuditOperations audit;
+    private IamSecurityTelemetry telemetry;
     private AuthenticationSessionService service;
 
     @BeforeEach
@@ -51,10 +58,14 @@ class AuthenticationSessionServiceTest {
         identities = mock(PasswordlessIdentityOperations.class);
         sessions = mock(AuthenticationSessionRepository.class);
         authorizations = mock(OAuthAuthorizationRepository.class);
+        audit = mock(SecurityAuditOperations.class);
+        telemetry = mock(IamSecurityTelemetry.class);
         service = new AuthenticationSessionService(
                 identities,
                 sessions,
                 authorizations,
+                audit,
+                telemetry,
                 new SessionPolicy("vk-platform-bff", Duration.ofDays(30)),
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
@@ -87,6 +98,13 @@ class AuthenticationSessionServiceTest {
         assertThat(created.getValue().expiresAt()).isEqualTo(NOW.plus(Duration.ofDays(30)));
         assertThat(established.accountId()).isEqualTo(ACCOUNT_ID);
         assertThat(established.session()).isEqualTo(created.getValue());
+        ArgumentCaptor<RecordSecurityAuditEvent> event = ArgumentCaptor.forClass(
+                RecordSecurityAuditEvent.class
+        );
+        verify(audit).record(event.capture());
+        assertThat(event.getValue().type()).isEqualTo(SecurityAuditEventType.SESSION_CREATED);
+        assertThat(event.getValue().targetId()).isEqualTo(created.getValue().id());
+        assertThat(event.getValue().requestId()).isEqualTo("request-1");
     }
 
     @Test
@@ -225,6 +243,38 @@ class AuthenticationSessionServiceTest {
         when(sessions.findAllLockedByAccountId(ACCOUNT_ID)).thenReturn(List.of());
         assertThatThrownBy(() -> service.revokeAll(command))
                 .isInstanceOf(SessionFailure.class);
+    }
+
+    @Test
+    void idempotentRevocationDoesNotDuplicateAuditAndAuditFailureIsRequired() {
+        UUID currentId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        RevokeAuthenticationSession command = new RevokeAuthenticationSession(
+                ACCOUNT_ID,
+                currentId,
+                targetId,
+                "request-idempotent"
+        );
+        AuthenticationSession current = session(currentId, NOW.minusSeconds(60));
+        AuthenticationSession target = session(targetId, NOW.minusSeconds(30));
+        AuthenticationSession alreadyRevoked = target.revoke(
+                SessionRevokeReason.USER_REQUEST,
+                NOW.minusSeconds(1)
+        );
+        when(sessions.findAllLockedByAccountId(ACCOUNT_ID))
+                .thenReturn(List.of(current, alreadyRevoked));
+
+        service.revoke(command);
+
+        verifyNoInteractions(audit);
+
+        when(sessions.findAllLockedByAccountId(ACCOUNT_ID))
+                .thenReturn(List.of(current, target));
+        doThrow(new IllegalStateException("audit unavailable")).when(audit).record(any());
+
+        assertThatThrownBy(() -> service.revoke(command))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("audit unavailable");
     }
 
     @Test

@@ -1,7 +1,7 @@
 package com.vkplatform.iam.identity.infrastructure.persistence.entity;
 
+import com.vkplatform.iam.identity.api.SecurityAuditEventType;
 import com.vkplatform.iam.identity.domain.SecurityEvent;
-import com.vkplatform.iam.identity.domain.SecurityEventType;
 import com.vkplatform.iam.identity.infrastructure.persistence.converter.SecurityEventTypeConverter;
 import com.vkplatform.iam.platform.persistence.AbstractAssignedIdEntity;
 import jakarta.persistence.Column;
@@ -21,7 +21,7 @@ public class SecurityEventEntity extends AbstractAssignedIdEntity<UUID> {
 
     @Convert(converter = SecurityEventTypeConverter.class)
     @Column(name = "event_type", nullable = false)
-    private SecurityEventType eventType;
+    private SecurityAuditEventType eventType;
 
     @Column(name = "account_id")
     private UUID accountId;
@@ -41,9 +41,27 @@ public class SecurityEventEntity extends AbstractAssignedIdEntity<UUID> {
     protected SecurityEventEntity() {
     }
 
+    public SecurityEventEntity(
+            UUID id,
+            SecurityAuditEventType eventType,
+            UUID accountId,
+            UUID targetId,
+            String actorId,
+            String requestId,
+            Instant occurredAt
+    ) {
+        this.id = id;
+        this.eventType = eventType;
+        this.accountId = accountId;
+        this.targetId = targetId;
+        this.actorId = actorId;
+        this.requestId = requestId;
+        this.occurredAt = occurredAt;
+    }
+
     public SecurityEventEntity(SecurityEvent event) {
         this.id = event.id();
-        this.eventType = event.type();
+        this.eventType = SecurityAuditEventType.fromStoredValue(event.type().wireValue());
         this.accountId = event.accountId();
         this.targetId = event.targetId();
         this.actorId = event.actorId();

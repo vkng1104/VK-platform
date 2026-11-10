@@ -9,6 +9,7 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.vkplatform.iam.session.api.SigningKeyOperations;
 import com.vkplatform.iam.session.api.command.OperatorContext;
 import com.vkplatform.iam.session.api.result.SigningKeySummary;
+import com.vkplatform.iam.session.application.port.out.IamSecurityTelemetry;
 import com.vkplatform.iam.session.domain.SigningKeyEventType;
 import com.vkplatform.iam.session.domain.SigningKeyStatus;
 import com.vkplatform.iam.session.infrastructure.config.OAuthAuthorizationProperties;
@@ -66,6 +67,7 @@ public class JpaSigningKeyStore implements SigningKeyOperations, SigningKeyRunti
     private final OAuthProperties bootstrapProperties;
     private final OAuthAuthorizationProperties authorizationProperties;
     private final Clock clock;
+    private final IamSecurityTelemetry telemetry;
     private final ConcurrentMap<String, CachedSigner> signerCache = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, CachedPublicKey> publicKeyCache = new ConcurrentHashMap<>();
 
@@ -78,6 +80,7 @@ public class JpaSigningKeyStore implements SigningKeyOperations, SigningKeyRunti
             SigningKeyProperties properties,
             OAuthProperties bootstrapProperties,
             OAuthAuthorizationProperties authorizationProperties,
+            IamSecurityTelemetry telemetry,
             Clock clock
     ) {
         this.guard = guard;
@@ -88,6 +91,7 @@ public class JpaSigningKeyStore implements SigningKeyOperations, SigningKeyRunti
         this.properties = properties;
         this.bootstrapProperties = bootstrapProperties;
         this.authorizationProperties = authorizationProperties;
+        this.telemetry = telemetry;
         this.clock = clock;
     }
 
@@ -120,9 +124,15 @@ public class JpaSigningKeyStore implements SigningKeyOperations, SigningKeyRunti
     @Transactional
     public SigningKeySummary rotate(OperatorContext context) {
         Objects.requireNonNull(context);
+        long startedAt = telemetry.start();
         lockOperations();
         OperatorOperationEntity retry = retry(ROTATE, null, context);
         if (retry != null) {
+            telemetry.record(
+                    IamSecurityTelemetry.Operation.SIGNING_KEY_ROTATION,
+                    IamSecurityTelemetry.Outcome.NOOP,
+                    startedAt
+            );
             return completedKey(retry);
         }
         Instant now = clock.instant();
@@ -144,6 +154,11 @@ public class JpaSigningKeyStore implements SigningKeyOperations, SigningKeyRunti
         );
         complete(ROTATE, null, next.id(), null, context, now);
         invalidateAfterCommit();
+        telemetry.recordAfterCommit(
+                IamSecurityTelemetry.Operation.SIGNING_KEY_ROTATION,
+                IamSecurityTelemetry.Outcome.SUCCESS,
+                startedAt
+        );
         return summary(next);
     }
 
@@ -208,10 +223,16 @@ public class JpaSigningKeyStore implements SigningKeyOperations, SigningKeyRunti
     @Transactional
     public SigningKeySummary compromise(String keyId, OperatorContext context) {
         Objects.requireNonNull(context);
+        long startedAt = telemetry.start();
         String requiredKeyId = requireKeyId(keyId);
         lockOperations();
         OperatorOperationEntity retry = retry(COMPROMISE, requiredKeyId, context);
         if (retry != null) {
+            telemetry.record(
+                    IamSecurityTelemetry.Operation.SIGNING_KEY_COMPROMISE,
+                    IamSecurityTelemetry.Outcome.NOOP,
+                    startedAt
+            );
             return completedKey(retry);
         }
         Instant now = clock.instant();
@@ -233,6 +254,11 @@ public class JpaSigningKeyStore implements SigningKeyOperations, SigningKeyRunti
             invalidateAfterCommit();
         }
         complete(COMPROMISE, requiredKeyId, compromised.id(), null, context, now);
+        telemetry.recordAfterCommit(
+                IamSecurityTelemetry.Operation.SIGNING_KEY_COMPROMISE,
+                IamSecurityTelemetry.Outcome.SUCCESS,
+                startedAt
+        );
         return summary(compromised);
     }
 
@@ -247,6 +273,7 @@ public class JpaSigningKeyStore implements SigningKeyOperations, SigningKeyRunti
     @Transactional(readOnly = true)
     @Override
     public List<JWK> select(JWKSelector selector) {
+        long startedAt = telemetry.start();
         Set<String> requestedKeyIds = selector.getMatcher().getKeyIDs();
         if (requestedKeyIds != null && !requestedKeyIds.isEmpty()) {
             List<JWK> candidates = requestedKeyIds.stream()
@@ -254,9 +281,25 @@ public class JpaSigningKeyStore implements SigningKeyOperations, SigningKeyRunti
                     .flatMap(java.util.Optional::stream)
                     .map(key -> (JWK) key)
                     .toList();
-            return selector.select(new JWKSet(candidates));
+            List<JWK> selected = selector.select(new JWKSet(candidates));
+            telemetry.record(
+                    IamSecurityTelemetry.Operation.JWK_LOOKUP,
+                    selected.isEmpty()
+                            ? IamSecurityTelemetry.Outcome.NOT_FOUND
+                            : IamSecurityTelemetry.Outcome.SUCCESS,
+                    startedAt
+            );
+            return selected;
         }
-        return selector.select(new JWKSet(publishedPublicKeys()));
+        List<JWK> selected = selector.select(new JWKSet(publishedPublicKeys()));
+        telemetry.record(
+                IamSecurityTelemetry.Operation.JWK_LOOKUP,
+                selected.isEmpty()
+                        ? IamSecurityTelemetry.Outcome.NOT_FOUND
+                        : IamSecurityTelemetry.Outcome.SUCCESS,
+                startedAt
+        );
+        return selected;
     }
 
     @Transactional(readOnly = true)
