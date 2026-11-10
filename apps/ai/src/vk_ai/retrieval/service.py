@@ -7,7 +7,7 @@ from typing import Protocol
 
 from vk_ai.corpus.chunker import chunk_documents
 from vk_ai.corpus.model import Document
-from vk_ai.retrieval.embedder import EmbeddingProvider
+from vk_ai.retrieval.embedder import EmbeddingDocument, EmbeddingProvider
 from vk_ai.retrieval.index import VectorIndex
 from vk_ai.retrieval.model import Match
 
@@ -61,7 +61,11 @@ class RetrievalService:
             overlap_chars=self._chunk_overlap_chars,
         )
         if chunks:
-            vectors = list(await self._embedder.embed_documents([chunk.text for chunk in chunks]))
+            vectors = list(
+                await self._embedder.embed_documents(
+                    [EmbeddingDocument(text=chunk.text, title=chunk.title) for chunk in chunks]
+                )
+            )
             replacement = VectorIndex.build(chunks, vectors)
         else:
             replacement = VectorIndex()

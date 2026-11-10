@@ -4,6 +4,7 @@ from collections.abc import Sequence
 import pytest
 
 from vk_ai.corpus.model import Document
+from vk_ai.retrieval.embedder import EmbeddingDocument
 from vk_ai.retrieval.model import Vector
 from vk_ai.retrieval.service import RetrievalService
 
@@ -23,10 +24,12 @@ class FakeEmbedder:
     def __init__(self) -> None:
         self.document_calls = 0
         self.query_calls = 0
+        self.documents: list[EmbeddingDocument] = []
 
-    async def embed_documents(self, texts: Sequence[str]) -> Sequence[Vector]:
+    async def embed_documents(self, documents: Sequence[EmbeddingDocument]) -> Sequence[Vector]:
         self.document_calls += 1
-        return [(1.0, 0.0) for _ in texts]
+        self.documents.extend(documents)
+        return [(1.0, 0.0) for _ in documents]
 
     async def embed_query(self, text: str) -> Vector:
         self.query_calls += 1
@@ -66,6 +69,9 @@ async def test_rebuild_publishes_a_complete_index_and_preserves_it_on_failure() 
     assert service.document_count == 1
     assert len(matches) == 1
     assert matches[0].source_url == "/projects/vk-platform"
+    assert embedder.documents == [
+        EmbeddingDocument(text="The API is written in Go.", title="VK Platform")
+    ]
 
 
 @pytest.mark.asyncio
