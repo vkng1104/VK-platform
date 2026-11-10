@@ -15,6 +15,9 @@ make -n dev >/dev/null
 make -n dev-reset >/dev/null
 make -n dev-iam IAM_DATABASE_URL=jdbc:postgresql://example >/dev/null
 make -n dev-ai AI_INTERNAL_TOKEN=example AI_EMBEDDING_MODEL=example >/dev/null
+make -n ai-prepare AI_INTERNAL_TOKEN=example AI_EMBEDDING_MODEL=example >/dev/null
+make -n ai-status >/dev/null
+make -n ai-stop AI_EMBEDDING_MODEL=example >/dev/null
 make -n lint-ai >/dev/null
 make -n test-ai >/dev/null
 make -n build-ai >/dev/null
@@ -92,6 +95,7 @@ fi
 
 "$repository_root/scripts/test/repository-policy_test.sh"
 "$repository_root/scripts/test/db-seed-local_test.sh"
+"$repository_root/scripts/test/ollama-lifecycle_test.sh"
 "$repository_root/scripts/test/changed-areas_test.sh"
 "$repository_root/scripts/test/dbdiagram_test.sh"
 

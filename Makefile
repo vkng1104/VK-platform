@@ -1,7 +1,7 @@
 TEST_COMPOSE_PROJECT ?= vk-platform-test
 SOURCE_ENV ?=
 
-.PHONY: install dev dev-reset dev-prepare dev-web dev-api dev-iam dev-ai dev-monitor down logs \
+.PHONY: install dev dev-reset dev-prepare dev-web dev-api dev-iam dev-ai ai-prepare ai-status ai-stop dev-monitor down logs \
 	db-migrate-up db-migrate-down db-migrate-iam-up db-seed db-seed-local build \
 	build-ai lint lint-web lint-api lint-iam lint-ai typecheck test test-setup test-web test-api test-iam test-ai \
 	test-integration generate-persistence check-persistence-generation \
@@ -37,12 +37,21 @@ dev-api:
 dev-iam:
 	cd apps/iam && ./gradlew bootRun
 
-dev-ai:
-	@test -n "$(AI_INTERNAL_TOKEN)" || (echo "AI_INTERNAL_TOKEN is required" >&2; exit 2)
-	@test -n "$(AI_EMBEDDING_MODEL)" || (echo "AI_EMBEDDING_MODEL is required" >&2; exit 2)
+dev-ai: ai-prepare
 	$(MAKE) dev-prepare
 	docker compose run --rm seed
 	AI_ENABLED=true docker compose --profile ai up --build api iam ai web
+
+ai-prepare:
+	./scripts/ollama-lifecycle.sh prepare
+
+ai-status:
+	./scripts/ollama-lifecycle.sh status
+
+ai-stop:
+	@docker compose --profile ai stop ai >/dev/null 2>&1 || \
+		echo "AI container is already stopped or Docker is unavailable."
+	./scripts/ollama-lifecycle.sh stop
 
 dev-monitor:
 	docker compose logs --follow api iam

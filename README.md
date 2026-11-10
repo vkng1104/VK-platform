@@ -46,21 +46,22 @@ Neither service runs migrations automatically. Compose runs each service's migra
 
 The public request enters `POST /api/v1/ai/retrievals` on the Go API. Go applies input bounds, concurrency limits, request IDs, and a deadline, then calls `POST /internal/v1/retrievals` on the private Python service. Python loads published projects through the versioned Go API, chunks and embeds them at startup, and searches an immutable in-memory index. Neither service shares another service's database.
 
-The AI path is opt-in and normal `make dev` remains model-independent. Install [Ollama](https://ollama.com/), pull an embedding model explicitly, and put a random internal token plus the selected model in the ignored `.env` file:
+The AI path is opt-in and normal `make dev` remains model-independent. Install [Ollama](https://ollama.com/), start Ollama explicitly by opening the application or running `ollama serve`, and put a random internal token plus the selected model in the ignored `.env` file:
 
 ```dotenv
 AI_INTERNAL_TOKEN=replace-with-a-random-local-token
 AI_EMBEDDING_MODEL=embeddinggemma:300m
 ```
 
-Then run:
+Then run the AI development stack explicitly:
 
 ```bash
-ollama pull embeddinggemma:300m
 make dev-ai
 ```
 
-Model downloads never run during application startup, image builds, automated tests, or CI. The Python service is reachable only on the Compose network and requires the shared internal bearer token on retrieval routes. Health remains unauthenticated so Compose can observe readiness.
+`make dev-ai` verifies that Ollama is reachable and downloads the selected model only when it is missing. Use `make ai-status` to see whether Ollama is reachable and which models are loaded. When finished, run `make ai-stop` to stop the Python AI container and immediately unload the selected model from memory; an Ollama application or server started outside this repository remains running but idle. Only the explicit `make dev-ai` path can download a model; `make dev`, image builds, automated tests, and CI never do.
+
+The Python service is reachable only on the Compose network and requires the shared internal bearer token on retrieval routes. Health remains unauthenticated so Compose can observe readiness.
 
 Both backend services keep PostgreSQL credentials separate from their connection URLs. The Go resource API uses `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD`; IAM uses the equivalent `IAM_DATABASE_*` variables. Local examples are defined in `.env.example`, while deployed passwords should come from the platform's secret store rather than a committed environment file.
 

@@ -1,0 +1,11 @@
+#!/bin/sh
+
+set -eu
+
+printf 'curl' >>"$CALL_LOG"
+for argument in "$@"; do
+  printf '\t%s' "$argument" >>"$CALL_LOG"
+done
+printf '\n' >>"$CALL_LOG"
+
+[ "${FAKE_OLLAMA_REACHABLE:-true}" = true ]
