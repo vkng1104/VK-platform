@@ -38,5 +38,7 @@ interface SpringDataOAuthAuthorizationRepository extends JpaRepository<OAuthAuth
         String getPrincipalName();
 
         String getRegisteredClientId();
+
+        String getAuthorizationGrantType();
     }
 }
