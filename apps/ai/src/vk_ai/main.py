@@ -5,12 +5,14 @@ from fastapi import FastAPI
 
 from vk_ai.config import Settings
 from vk_ai.corpus.project_api import ProjectAPI
+from vk_ai.logging_config import configure_logging
 from vk_ai.retrieval.embedder import OllamaEmbeddingProvider
 from vk_ai.retrieval.service import RetrievalService
 from vk_ai.transport.http import create_app
 
 
 def create_default_app() -> FastAPI:
+    configure_logging()
     settings = Settings.from_env()
     timeout = httpx.Timeout(settings.upstream_timeout_seconds)
     resource_client = httpx.AsyncClient(
