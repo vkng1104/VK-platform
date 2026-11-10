@@ -4,7 +4,11 @@ from collections.abc import AsyncIterator
 import httpx
 import pytest
 
-from vk_ai.retrieval.embedder import EmbeddingError, OllamaEmbeddingProvider
+from vk_ai.retrieval.embedder import (
+    EmbeddingDocument,
+    EmbeddingError,
+    OllamaEmbeddingProvider,
+)
 
 
 class ChunkedResponseStream(httpx.AsyncByteStream):
@@ -22,7 +26,7 @@ class ChunkedResponseStream(httpx.AsyncByteStream):
 
 
 @pytest.mark.asyncio
-async def test_ollama_adapter_batches_documents_and_maps_vectors() -> None:
+async def test_ollama_adapter_batches_documents_and_preserves_raw_fallback() -> None:
     batches: list[list[str]] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -39,10 +43,51 @@ async def test_ollama_adapter_batches_documents_and_maps_vectors() -> None:
             batch_size=2,
             maximum_response_bytes=10_000,
         )
-        vectors = await provider.embed_documents(["one", "two", "three"])
+        vectors = await provider.embed_documents(
+            [
+                EmbeddingDocument(text="one", title="First"),
+                EmbeddingDocument(text="two", title="Second"),
+                EmbeddingDocument(text="three", title="Third"),
+            ]
+        )
 
     assert batches == [["one", "two"], ["three"]]
     assert vectors == [(1.0, 0.0), (1.0, 0.0), (1.0, 0.0)]
+
+
+@pytest.mark.asyncio
+async def test_ollama_adapter_formats_embeddinggemma_retrieval_inputs() -> None:
+    inputs: list[list[str]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        inputs.append(payload["input"])
+        return httpx.Response(200, json={"embeddings": [[1.0, 0.0] for _ in payload["input"]]})
+
+    async with httpx.AsyncClient(
+        base_url="http://ollama.example", transport=httpx.MockTransport(handler)
+    ) as client:
+        provider = OllamaEmbeddingProvider(
+            client,
+            model="embeddinggemma:300m",
+            batch_size=2,
+            maximum_response_bytes=10_000,
+        )
+        await provider.embed_documents(
+            [
+                EmbeddingDocument(text="The API is written in Go.", title=" VK Platform "),
+                EmbeddingDocument(text="A document without a title."),
+            ]
+        )
+        await provider.embed_query("Which language is the API written in?")
+
+    assert inputs == [
+        [
+            "title: VK Platform | text: The API is written in Go.",
+            "title: none | text: A document without a title.",
+        ],
+        ["task: search result | query: Which language is the API written in?"],
+    ]
 
 
 @pytest.mark.asyncio
