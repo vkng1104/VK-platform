@@ -53,6 +53,38 @@ export async function getJson<T>(
   return (await response.json()) as T;
 }
 
+export async function postJson<TResponse, TBody>(
+  path: string,
+  body: TBody,
+  {
+    baseUrl = process.env.API_BASE_URL ?? defaultApiBaseUrl,
+    fetcher = fetch,
+    timeoutMs = 7000,
+  }: ApiRequestOptions = {},
+): Promise<TResponse> {
+  const response = await fetcher(new URL(path, baseUrl), {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+
+  if (!response.ok) {
+    const payload = await readErrorPayload(response);
+    throw new ApiError(
+      response.status,
+      payload.code ?? "API_REQUEST_FAILED",
+      payload.message ?? "The API request failed.",
+    );
+  }
+
+  return (await response.json()) as TResponse;
+}
+
 async function readErrorPayload(response: Response): Promise<ErrorPayload> {
   try {
     return (await response.json()) as ErrorPayload;

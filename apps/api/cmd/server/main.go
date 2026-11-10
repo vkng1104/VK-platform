@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/vkng1104/VK-platform/apps/api/internal/airetrieval"
 	"github.com/vkng1104/VK-platform/apps/api/internal/platform/apidocs"
 	"github.com/vkng1104/VK-platform/apps/api/internal/platform/config"
 	"github.com/vkng1104/VK-platform/apps/api/internal/platform/database"
@@ -73,7 +74,33 @@ func main() {
 		slog.Error("construct project handler failed", "error", err)
 		os.Exit(1)
 	}
-	registrars := []httpserver.RouteRegistrar{apidocs.NewHandler(), projectHandler}
+	var aiRuntime airetrieval.Runtime
+	if configuration.AI.Enabled {
+		aiRuntime, err = airetrieval.NewRuntimeClient(airetrieval.RuntimeClientSettings{
+			BaseURL:    configuration.AI.RuntimeBaseURL,
+			Token:      configuration.AI.InternalToken,
+			HTTPClient: &http.Client{},
+		})
+		if err != nil {
+			slog.Error("construct AI runtime client failed", "error", err)
+			os.Exit(1)
+		}
+	}
+	aiService, err := airetrieval.NewService(aiRuntime, airetrieval.ServiceSettings{
+		Enabled:               configuration.AI.Enabled,
+		Timeout:               configuration.AI.RequestTimeout,
+		MaxConcurrentRequests: configuration.AI.MaxConcurrentRequests,
+	})
+	if err != nil {
+		slog.Error("construct AI retrieval service failed", "error", err)
+		os.Exit(1)
+	}
+	aiHandler, err := airetrieval.NewHandler(aiService, slog.Default())
+	if err != nil {
+		slog.Error("construct AI retrieval handler failed", "error", err)
+		os.Exit(1)
+	}
+	registrars := []httpserver.RouteRegistrar{apidocs.NewHandler(), projectHandler, aiHandler}
 
 	server := &http.Server{
 		Addr:              configuration.Address,

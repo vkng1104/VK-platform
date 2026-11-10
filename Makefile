@@ -1,9 +1,9 @@
 TEST_COMPOSE_PROJECT ?= vk-platform-test
 SOURCE_ENV ?=
 
-.PHONY: install dev dev-reset dev-prepare dev-web dev-api dev-iam dev-monitor down logs \
+.PHONY: install dev dev-reset dev-prepare dev-web dev-api dev-iam dev-ai ai-prepare ai-status ai-stop dev-monitor down logs \
 	db-migrate-up db-migrate-down db-migrate-iam-up db-seed db-seed-local build \
-	lint lint-web lint-api lint-iam typecheck test test-setup test-web test-api test-iam \
+	build-ai lint lint-web lint-api lint-iam lint-ai typecheck test test-setup test-web test-api test-iam test-ai \
 	test-integration generate-persistence check-persistence-generation \
 	check-persistence-boundaries test-persistence check-persistence dbdiagram check-dbdiagram check
 
@@ -37,6 +37,22 @@ dev-api:
 dev-iam:
 	cd apps/iam && ./gradlew bootRun
 
+dev-ai: ai-prepare
+	$(MAKE) dev-prepare
+	docker compose run --rm seed
+	AI_ENABLED=true docker compose --profile ai up --build api iam ai web
+
+ai-prepare:
+	./scripts/ollama-lifecycle.sh prepare
+
+ai-status:
+	./scripts/ollama-lifecycle.sh status
+
+ai-stop:
+	@docker compose --profile ai stop ai >/dev/null 2>&1 || \
+		echo "AI container is already stopped or Docker is unavailable."
+	./scripts/ollama-lifecycle.sh stop
+
 dev-monitor:
 	docker compose logs --follow api iam
 
@@ -68,12 +84,15 @@ db-seed-local:
 	docker compose run --rm migrate
 	SOURCE_ENV=$(SOURCE_ENV) docker compose --profile tools run --rm db-seed-local
 
-build:
+build: build-ai
 	npm run build:web
 	docker build --target runtime --tag vk-platform-api:local apps/api
 	docker build --target runtime --tag vk-platform-iam:local apps/iam
 
-lint: lint-web lint-api lint-iam
+build-ai:
+	docker build --target runtime --tag vk-platform-ai:local apps/ai
+
+lint: lint-web lint-api lint-iam lint-ai
 
 lint-web:
 	npm run lint:web
@@ -90,10 +109,13 @@ lint-api:
 lint-iam:
 	docker build --target build --tag vk-platform-iam:build apps/iam
 
+lint-ai:
+	docker build --target lint --tag vk-platform-ai:lint apps/ai
+
 typecheck:
 	npm run typecheck:web
 
-test: test-setup test-persistence test-web test-api test-iam
+test: test-setup test-persistence test-web test-api test-iam test-ai
 
 test-setup:
 	./scripts/test/local-setup_test.sh
@@ -106,6 +128,9 @@ test-api:
 
 test-iam:
 	docker build --target test --tag vk-platform-iam:test apps/iam
+
+test-ai:
+	docker build --target test --tag vk-platform-ai:test apps/ai
 
 test-integration:
 	@status=0; \

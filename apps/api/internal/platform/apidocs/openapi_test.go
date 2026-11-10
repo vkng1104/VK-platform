@@ -27,6 +27,7 @@ func TestOpenAPIContractHasExpectedOperations(t *testing.T) {
 		"GET /healthz":                "getHealth",
 		"GET /api/v1/projects":        "listProjects",
 		"GET /api/v1/projects/{slug}": "getProjectBySlug",
+		"POST /api/v1/ai/retrievals":  "retrievePublishedContent",
 	}
 
 	got := make(map[string]string)

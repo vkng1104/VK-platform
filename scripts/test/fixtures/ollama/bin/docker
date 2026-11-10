@@ -1,0 +1,17 @@
+#!/bin/sh
+
+set -eu
+
+printf 'docker' >>"$CALL_LOG"
+for argument in "$@"; do
+  printf '\t%s' "$argument" >>"$CALL_LOG"
+done
+printf '\n' >>"$CALL_LOG"
+
+if [ "$#" -ne 3 ] || [ "$1" != compose ] || [ "$2" != config ] || [ "$3" != --environment ]; then
+  echo "unexpected fake docker command" >&2
+  exit 2
+fi
+
+printf 'AI_INTERNAL_TOKEN=%s\n' "${FAKE_COMPOSE_AI_INTERNAL_TOKEN:-}"
+printf 'AI_EMBEDDING_MODEL=%s\n' "${FAKE_COMPOSE_AI_EMBEDDING_MODEL:-}"

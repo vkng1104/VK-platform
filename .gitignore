@@ -12,6 +12,11 @@
 /node_modules/
 /.next/
 /coverage/
+/apps/ai/.venv/
+/apps/ai/.mypy_cache/
+/apps/ai/.pytest_cache/
+/apps/ai/.ruff_cache/
+/apps/ai/**/__pycache__/
 
 # Local environment values
 .env

@@ -3,6 +3,7 @@ package config_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/vkng1104/VK-platform/apps/api/internal/platform/config"
 	"github.com/vkng1104/VK-platform/apps/api/internal/platform/database"
@@ -79,6 +80,61 @@ func TestLoadDatabaseRequiresEveryValue(t *testing.T) {
 			_, err := config.LoadDatabase()
 			if !errors.Is(err, test.wantError) {
 				t.Fatalf("LoadDatabase() error = %v, want %v", err, test.wantError)
+			}
+		})
+	}
+}
+
+func TestLoadAIUsesDisabledSafeDefaults(t *testing.T) {
+	t.Setenv("AI_ENABLED", "")
+	t.Setenv("AI_RUNTIME_BASE_URL", "")
+	t.Setenv("AI_INTERNAL_TOKEN", "")
+	t.Setenv("AI_REQUEST_TIMEOUT", "")
+	t.Setenv("AI_MAX_CONCURRENT_REQUESTS", "")
+
+	settings, err := config.LoadAI()
+	if err != nil {
+		t.Fatalf("LoadAI() error = %v", err)
+	}
+	if settings.Enabled || settings.RuntimeBaseURL != "http://ai:8090" ||
+		settings.RequestTimeout != 5*time.Second || settings.MaxConcurrentRequests != 2 {
+		t.Fatalf("AI settings = %#v", settings)
+	}
+}
+
+func TestLoadAIRequiresTokenOnlyWhenEnabled(t *testing.T) {
+	t.Setenv("AI_ENABLED", "true")
+	t.Setenv("AI_INTERNAL_TOKEN", " ")
+
+	_, err := config.LoadAI()
+	if !errors.Is(err, config.ErrMissingAIInternalToken) {
+		t.Fatalf("LoadAI() error = %v, want ErrMissingAIInternalToken", err)
+	}
+}
+
+func TestLoadAIRejectsInvalidBounds(t *testing.T) {
+	tests := []struct {
+		name      string
+		variable  string
+		value     string
+		wantError error
+	}{
+		{name: "enabled", variable: "AI_ENABLED", value: "yes", wantError: config.ErrInvalidAIEnabled},
+		{name: "URL", variable: "AI_RUNTIME_BASE_URL", value: "file:///tmp/ai", wantError: config.ErrInvalidAIRuntimeBaseURL},
+		{name: "timeout", variable: "AI_REQUEST_TIMEOUT", value: "0s", wantError: config.ErrInvalidAIRequestTimeout},
+		{name: "capacity", variable: "AI_MAX_CONCURRENT_REQUESTS", value: "0", wantError: config.ErrInvalidAIMaxConcurrent},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("AI_ENABLED", "false")
+			t.Setenv("AI_RUNTIME_BASE_URL", "http://ai:8090")
+			t.Setenv("AI_REQUEST_TIMEOUT", "5s")
+			t.Setenv("AI_MAX_CONCURRENT_REQUESTS", "2")
+			t.Setenv(test.variable, test.value)
+
+			_, err := config.LoadAI()
+			if !errors.Is(err, test.wantError) {
+				t.Fatalf("LoadAI() error = %v, want %v", err, test.wantError)
 			}
 		})
 	}

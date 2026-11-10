@@ -1,0 +1,27 @@
+#!/bin/sh
+
+set -eu
+
+printf 'ollama' >>"$CALL_LOG"
+for argument in "$@"; do
+  printf '\t%s' "$argument" >>"$CALL_LOG"
+done
+printf '\n' >>"$CALL_LOG"
+
+case "${1:-}" in
+  show)
+    [ "${FAKE_MODEL_PRESENT:-true}" = true ]
+    ;;
+  pull | stop)
+    ;;
+  ps)
+    printf 'NAME ID SIZE PROCESSOR UNTIL\n'
+    if [ "${FAKE_MODEL_LOADED:-false}" = true ]; then
+      printf '%s fake-id 622 MB 100%% CPU 4 minutes\n' "${FAKE_MODEL_NAME:-embedding-model}"
+    fi
+    ;;
+  *)
+    echo "unexpected fake ollama command: ${1:-}" >&2
+    exit 2
+    ;;
+esac

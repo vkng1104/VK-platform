@@ -26,6 +26,7 @@ jobs:
       web: ${{ steps.areas.outputs.web }}
       api: ${{ steps.areas.outputs.api }}
       iam: ${{ steps.areas.outputs.iam }}
+      ai: ${{ steps.areas.outputs.ai }}
       setup: ${{ steps.areas.outputs.setup }}
 
     steps:
@@ -66,7 +67,7 @@ jobs:
   backend-unit:
     name: ${{ matrix.service }} unit tests
     needs: changes
-    if: needs.changes.outputs.api == 'true' || needs.changes.outputs.iam == 'true'
+    if: needs.changes.outputs.api == 'true' || needs.changes.outputs.iam == 'true' || needs.changes.outputs.ai == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -75,6 +76,7 @@ jobs:
         service:
           - api
           - iam
+          - ai
 
     # Job conditions cannot read the matrix, so each service skips its own steps.
     steps:

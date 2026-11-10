@@ -24,6 +24,7 @@ jobs:
       web: ${{ steps.areas.outputs.web }}
       api: ${{ steps.areas.outputs.api }}
       iam: ${{ steps.areas.outputs.iam }}
+      ai: ${{ steps.areas.outputs.ai }}
       persistence: ${{ steps.areas.outputs.persistence }}
       dbdiagram: ${{ steps.areas.outputs.dbdiagram }}
 
@@ -101,6 +102,20 @@ jobs:
 
       - name: Compile IAM in Docker
         run: make lint-iam
+
+  ai:
+    name: AI lint and type check
+    needs: changes
+    if: needs.changes.outputs.ai == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Lint and type-check AI runtime in Docker
+        run: make lint-ai
 
   persistence:
     name: Persistence architecture

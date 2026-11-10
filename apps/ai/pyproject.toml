@@ -1,0 +1,48 @@
+[project]
+name = "vk-platform-ai"
+version = "0.1.0"
+description = "Private retrieval runtime for VK Platform"
+requires-python = ">=3.13"
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "httpx>=0.28,<1.0",
+  "pydantic>=2.0,<3.0",
+  "uvicorn>=0.34,<1.0",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.15,<2.0",
+  "pytest>=8.3,<10.0",
+  "pytest-asyncio>=0.25,<2.0",
+  "respx>=0.22,<1.0",
+  "ruff>=0.11,<1.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.9,<0.10"]
+build-backend = "uv_build"
+
+[tool.uv]
+package = true
+
+[tool.uv.build-backend]
+module-name = "vk_ai"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
