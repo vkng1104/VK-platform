@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -9,6 +10,8 @@ import httpx
 from pydantic import BaseModel, ConfigDict
 
 from vk_ai.retrieval.model import Vector
+
+logger = logging.getLogger(__name__)
 
 
 class EmbeddingError(RuntimeError):
@@ -34,12 +37,17 @@ class _EmbeddingResponse(BaseModel):
 
 
 class _OllamaInputFormatter(Protocol):
+    @property
+    def name(self) -> str: ...
+
     def document(self, document: EmbeddingDocument) -> str: ...
 
     def query(self, text: str) -> str: ...
 
 
 class _RawInputFormatter:
+    name = "raw"
+
     def document(self, document: EmbeddingDocument) -> str:
         return document.text
 
@@ -48,6 +56,8 @@ class _RawInputFormatter:
 
 
 class _EmbeddingGemmaInputFormatter:
+    name = "embeddinggemma"
+
     def document(self, document: EmbeddingDocument) -> str:
         title = document.title.strip() if document.title and document.title.strip() else "none"
         return f"title: {title} | text: {document.text}"
@@ -61,6 +71,18 @@ def _input_formatter_for_model(model: str) -> _OllamaInputFormatter:
     if untagged_model.casefold() == "embeddinggemma":
         return _EmbeddingGemmaInputFormatter()
     return _RawInputFormatter()
+
+
+def _log_input_format(model: str, formatter: _OllamaInputFormatter) -> None:
+    fields = {"embedding_model": model, "embedding_input_format": formatter.name}
+    logger.info("embedding input format selected: %s", formatter.name, extra=fields)
+    if formatter.name == _RawInputFormatter.name and "embeddinggemma" in model.casefold():
+        logger.warning(
+            "embedding model %r looks like EmbeddingGemma but is not a recognized "
+            "EmbeddingGemma name; sending raw text without its retrieval prompts",
+            model,
+            extra=fields,
+        )
 
 
 class OllamaEmbeddingProvider:
@@ -81,6 +103,7 @@ class OllamaEmbeddingProvider:
         self._batch_size = batch_size
         self._maximum_response_bytes = maximum_response_bytes
         self._input_formatter = _input_formatter_for_model(self._model)
+        _log_input_format(self._model, self._input_formatter)
 
     async def embed_documents(self, documents: Sequence[EmbeddingDocument]) -> Sequence[Vector]:
         texts = [self._format_document(document) for document in documents]
