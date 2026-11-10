@@ -15,6 +15,7 @@ VK Platform is a systems-focused engineering portfolio. The monorepo contains a 
 - Node.js 22+ and npm 10+ for host-side checks
 - Go 1.25+ only when running the resource API or its checks outside Docker
 - Java 25 only when running the IAM service or its checks outside Docker
+- Ollama only when running the optional vector-search AI lab
 
 ## Local development
 
@@ -46,14 +47,43 @@ Neither service runs migrations automatically. Compose runs each service's migra
 
 The public request enters `POST /api/v1/ai/retrievals` on the Go API. Go applies input bounds, concurrency limits, request IDs, and a deadline, then calls `POST /internal/v1/retrievals` on the private Python service. Python loads published projects through the versioned Go API, chunks and embeds them at startup, and searches an immutable in-memory index. Neither service shares another service's database.
 
-The AI path is opt-in and normal `make dev` remains model-independent. Install [Ollama](https://ollama.com/), start Ollama explicitly by opening the application or running `ollama serve`, and put a random internal token plus the selected model in the ignored `.env` file:
+The AI path is opt-in and normal `make dev` remains model-independent.
+
+Before the first AI run, install Ollama using the official installer:
+
+```bash
+# macOS or Linux
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+On macOS, you can alternatively download and install [Ollama.app](https://ollama.com/download/mac). Windows developers can use the [official Windows installer](https://ollama.com/download/windows).
+
+Confirm that the command is available:
+
+```bash
+ollama --version
+```
+
+Ollama does not need to run for normal development. When you want to use the AI lab, start it explicitly by opening `Ollama.app` or by keeping this command running in a separate terminal:
+
+```bash
+ollama serve
+```
+
+Verify the local server before starting the repository:
+
+```bash
+curl http://localhost:11434/api/tags
+```
+
+Then put a random internal token and the selected model in the ignored `.env` file:
 
 ```dotenv
 AI_INTERNAL_TOKEN=replace-with-a-random-local-token
 AI_EMBEDDING_MODEL=embeddinggemma:300m
 ```
 
-Then run the AI development stack explicitly:
+Start the AI development stack explicitly:
 
 ```bash
 make dev-ai
