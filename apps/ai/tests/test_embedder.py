@@ -1,4 +1,5 @@
 import json
+import logging
 from collections.abc import AsyncIterator
 
 import httpx
@@ -9,6 +10,9 @@ from vk_ai.retrieval.embedder import (
     EmbeddingError,
     OllamaEmbeddingProvider,
 )
+
+_QUERY = "Which language is the API written in?"
+_PROMPTED_QUERY = f"task: search result | query: {_QUERY}"
 
 
 class ChunkedResponseStream(httpx.AsyncByteStream):
@@ -77,17 +81,103 @@ async def test_ollama_adapter_formats_embeddinggemma_retrieval_inputs() -> None:
             [
                 EmbeddingDocument(text="The API is written in Go.", title=" VK Platform "),
                 EmbeddingDocument(text="A document without a title."),
+                EmbeddingDocument(text="A document with a blank title.", title="   "),
             ]
         )
-        await provider.embed_query("Which language is the API written in?")
+        await provider.embed_query(_QUERY)
 
     assert inputs == [
         [
             "title: VK Platform | text: The API is written in Go.",
             "title: none | text: A document without a title.",
         ],
-        ["task: search result | query: Which language is the API written in?"],
+        ["title: none | text: A document with a blank title."],
+        [_PROMPTED_QUERY],
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("model", "expected_input", "expected_format", "expects_warning"),
+    [
+        ("embeddinggemma", _PROMPTED_QUERY, "embeddinggemma", False),
+        ("EmbeddingGemma:latest", _PROMPTED_QUERY, "embeddinggemma", False),
+        ("library/embeddinggemma:300m", _PROMPTED_QUERY, "embeddinggemma", False),
+        (
+            "registry.ollama.ai/library/embeddinggemma:300m-qat-q4_0",
+            _PROMPTED_QUERY,
+            "embeddinggemma",
+            False,
+        ),
+        ("nomic-embed-text", _QUERY, "raw", False),
+        ("hf.co/unsloth/embeddinggemma-300m-GGUF:Q8_0", _QUERY, "raw", True),
+    ],
+)
+async def test_ollama_adapter_selects_and_reports_input_format_from_model_name(
+    model: str,
+    expected_input: str,
+    expected_format: str,
+    expects_warning: bool,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="vk_ai.retrieval.embedder")
+    inputs: list[list[str]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        inputs.append(payload["input"])
+        return httpx.Response(200, json={"embeddings": [[1.0, 0.0] for _ in payload["input"]]})
+
+    async with httpx.AsyncClient(
+        base_url="http://ollama.example", transport=httpx.MockTransport(handler)
+    ) as client:
+        provider = OllamaEmbeddingProvider(
+            client,
+            model=model,
+            batch_size=2,
+            maximum_response_bytes=10_000,
+        )
+        await provider.embed_query(_QUERY)
+
+    assert inputs == [[expected_input]]
+    expected_levels = [logging.INFO, logging.WARNING] if expects_warning else [logging.INFO]
+    records = [record for record in caplog.records if record.name == "vk_ai.retrieval.embedder"]
+    assert [record.levelno for record in records] == expected_levels
+    for record in records:
+        assert record.__dict__["embedding_model"] == model
+        assert record.__dict__["embedding_input_format"] == expected_format
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model", ["embeddinggemma:300m", "embedding-model"])
+async def test_ollama_adapter_rejects_blank_inputs_before_sending(model: str) -> None:
+    requests_sent = 0
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal requests_sent
+        requests_sent += 1
+        return httpx.Response(200, json={"embeddings": [[1.0, 0.0]]})
+
+    async with httpx.AsyncClient(
+        base_url="http://ollama.example", transport=httpx.MockTransport(handler)
+    ) as client:
+        provider = OllamaEmbeddingProvider(
+            client,
+            model=model,
+            batch_size=2,
+            maximum_response_bytes=10_000,
+        )
+        with pytest.raises(EmbeddingError, match="non-empty text"):
+            await provider.embed_query("   ")
+        with pytest.raises(EmbeddingError, match="non-empty text"):
+            await provider.embed_documents(
+                [
+                    EmbeddingDocument(text="A valid document."),
+                    EmbeddingDocument(text=" \n ", title="VK Platform"),
+                ]
+            )
+
+    assert requests_sent == 0
 
 
 @pytest.mark.asyncio
