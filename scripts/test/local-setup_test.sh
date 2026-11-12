@@ -18,6 +18,7 @@ make -n dev-ai AI_INTERNAL_TOKEN=example AI_EMBEDDING_MODEL=example >/dev/null
 make -n ai-prepare AI_INTERNAL_TOKEN=example AI_EMBEDDING_MODEL=example >/dev/null
 make -n ai-status >/dev/null
 make -n ai-stop AI_EMBEDDING_MODEL=example >/dev/null
+make -n eval-ai >/dev/null
 make -n lint-ai >/dev/null
 make -n test-ai >/dev/null
 make -n build-ai >/dev/null
