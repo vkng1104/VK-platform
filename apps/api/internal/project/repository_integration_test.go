@@ -345,8 +345,8 @@ func TestDevelopmentSeedIsIdempotentAndUpdatesExistingRowsIntegration(t *testing
 
 	for table, want := range map[string]int{
 		"projects":             1,
-		"technologies":         5,
-		"project_technologies": 5,
+		"technologies":         14,
+		"project_technologies": 14,
 	} {
 		if got := tableCount(t, database.sql, table); got != want {
 			t.Errorf("seeded %s count = %d, want %d", table, got, want)
@@ -383,7 +383,22 @@ func TestDevelopmentSeedIsIdempotentAndUpdatesExistingRowsIntegration(t *testing
 	if err != nil {
 		t.Fatalf("find seeded project: %v", err)
 	}
-	wantTechnologies := []string{"Next.js", "React", "TypeScript", "Go", "Tailwind CSS"}
+	wantTechnologies := []string{
+		"Next.js",
+		"React",
+		"TypeScript",
+		"Tailwind CSS",
+		"Go",
+		"Java",
+		"Spring Boot",
+		"Spring Security",
+		"Python",
+		"FastAPI",
+		"PostgreSQL",
+		"Docker",
+		"GitHub Actions",
+		"Ollama",
+	}
 	if !reflect.DeepEqual(seededProject.Technologies, wantTechnologies) {
 		t.Errorf("seeded technologies = %#v, want %#v", seededProject.Technologies, wantTechnologies)
 	}
