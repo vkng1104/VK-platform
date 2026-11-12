@@ -23,3 +23,4 @@ Keep this file small. Load the relevant repository skill for detailed workflow g
 - Never open or merge a pull request unless the user explicitly asks. The user owns PR creation by default.
 - Store every new AI-authored plan at `plans/<Mon-YYYY>/<DD>-<Weekday>-<kebab-case-purpose>.md`. Use the plan's local creation date in `Asia/Ho_Chi_Minh`.
 - `plans/` and `docs/` are intentionally Git-ignored but remain available locally. Do not force-add their contents unless the user explicitly asks.
+- Before writing portfolio project content, AI corpus or evaluation fixtures, or golden queries, read the local `docs/portfolio-source-research.md` and follow its publication boundary: public repository facts only, never CV-only, client, contact, or secret details.

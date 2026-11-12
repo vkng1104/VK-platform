@@ -26,6 +26,15 @@ var developmentTechnologies = []struct {
 	{uuid.MustParse("00000000-0000-4000-8000-000000000103"), "typescript", "TypeScript", "language"},
 	{uuid.MustParse("00000000-0000-4000-8000-000000000104"), "go", "Go", "language"},
 	{uuid.MustParse("00000000-0000-4000-8000-000000000105"), "tailwind-css", "Tailwind CSS", "frontend"},
+	{uuid.MustParse("00000000-0000-4000-8000-000000000106"), "java", "Java", "language"},
+	{uuid.MustParse("00000000-0000-4000-8000-000000000107"), "spring-boot", "Spring Boot", "backend"},
+	{uuid.MustParse("00000000-0000-4000-8000-000000000108"), "spring-security", "Spring Security", "backend"},
+	{uuid.MustParse("00000000-0000-4000-8000-000000000109"), "python", "Python", "language"},
+	{uuid.MustParse("00000000-0000-4000-8000-000000000110"), "fastapi", "FastAPI", "backend"},
+	{uuid.MustParse("00000000-0000-4000-8000-000000000111"), "postgresql", "PostgreSQL", "database"},
+	{uuid.MustParse("00000000-0000-4000-8000-000000000112"), "docker", "Docker", "infrastructure"},
+	{uuid.MustParse("00000000-0000-4000-8000-000000000113"), "github-actions", "GitHub Actions", "infrastructure"},
+	{uuid.MustParse("00000000-0000-4000-8000-000000000114"), "ollama", "Ollama", "ai"},
 }
 
 const developmentProjectMarkdown = `## Why it exists
@@ -34,19 +43,26 @@ VK Platform treats the portfolio itself as an engineering project. The public si
 
 ## Current architecture
 
-The first architecture is deliberately small:
+The platform is a monorepo of independently deployable services, each owning its own data:
 
-- a Next.js frontend for the portfolio and system views;
-- a Go HTTP API for backend capabilities;
-- a PostgreSQL-backed, read-only project catalog.
+- a Next.js frontend for the portfolio, experience timeline, system status, and interactive labs;
+- a Go HTTP API that serves the PostgreSQL-backed project catalog and the public AI search endpoint;
+- a Java identity and access management service built with Spring Boot, Spring Security, and Spring Authorization Server, with its own PostgreSQL database;
+- a private Python AI runtime built with FastAPI that embeds published content with a local Ollama model and searches it by cosine similarity.
+
+Services communicate through versioned HTTP contracts, and no service reads another service's database.
 
 ## What is implemented
 
-The monorepo includes a responsive frontend, a live API status view, shared local verification commands, and isolated frontend and backend tests. The database-backed project showcase is the first content-driven feature built on that foundation.
+- A database-backed project showcase and an experience timeline.
+- CV access protected by email one-time-password verification through the identity service.
+- Passwordless sign-in challenges, an OAuth 2 authorization-code flow with PKCE, refresh-token rotation with reuse detection, and session revocation in the identity service.
+- A vector search lab that shows the published content most similar to a visitor's question, with similarity scores and source links.
+- A live system status view, Docker Compose environments, and GitHub Actions checks that run only for the areas a change touches.
 
 ## How it evolves
 
-Future components must earn their place through a product or learning requirement. Observability, data pipelines, AI runtimes, and deployment infrastructure arrive as the platform gains behaviors that justify them.`
+Future components must earn their place through a product or learning requirement. Next come grounded answers that cite the published portfolio, IAM-issued service tokens between internal services, and AWS infrastructure managed with Terraform.`
 
 func Development(ctx context.Context, client *persistenceent.Client) error {
 	if client == nil {
@@ -126,7 +142,22 @@ func Development(ctx context.Context, client *persistenceent.Client) error {
 		return fmt.Errorf("replace development project technologies: %w", err)
 	}
 
-	technologySlugs := []string{"next-js", "react", "typescript", "go", "tailwind-css"}
+	technologySlugs := []string{
+		"next-js",
+		"react",
+		"typescript",
+		"tailwind-css",
+		"go",
+		"java",
+		"spring-boot",
+		"spring-security",
+		"python",
+		"fastapi",
+		"postgresql",
+		"docker",
+		"github-actions",
+		"ollama",
+	}
 	links := make([]*persistenceent.ProjectTechnologyCreate, 0, len(technologySlugs))
 	for displayOrder, slug := range technologySlugs {
 		links = append(links, transaction.ProjectTechnology.
