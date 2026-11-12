@@ -1,0 +1,174 @@
+{
+  "version": 1,
+  "description": "Golden retrieval queries for the public evaluation corpus. An in-scope query is answered by any of its expected chunks; an out-of-scope query must not be answered by any chunk.",
+  "queries": [
+    {
+      "id": "vk-database",
+      "question": "Which database does VK Platform use?",
+      "kind": "in_scope",
+      "expected": [
+        {"source_url": "/projects/vk-platform", "heading": "Current architecture"},
+        {"source_url": "/projects/vk-platform", "heading": "VK Platform"}
+      ]
+    },
+    {
+      "id": "vk-purpose",
+      "question": "Why was VK Platform built?",
+      "kind": "in_scope",
+      "expected": [{"source_url": "/projects/vk-platform", "heading": "Why it exists"}]
+    },
+    {
+      "id": "vk-cv-access",
+      "question": "How is access to the CV protected?",
+      "kind": "in_scope",
+      "expected": [{"source_url": "/projects/vk-platform", "heading": "What is implemented"}]
+    },
+    {
+      "id": "vk-roadmap",
+      "question": "What is planned next for VK Platform?",
+      "kind": "in_scope",
+      "expected": [{"source_url": "/projects/vk-platform", "heading": "How it evolves"}]
+    },
+    {
+      "id": "vk-identity-framework",
+      "question": "Which framework is the identity service built with?",
+      "kind": "in_scope",
+      "expected": [{"source_url": "/projects/vk-platform", "heading": "Current architecture"}]
+    },
+    {
+      "id": "vk-oauth",
+      "question": "Does VK Platform support OAuth sign-in?",
+      "kind": "in_scope",
+      "expected": [{"source_url": "/projects/vk-platform", "heading": "What is implemented"}]
+    },
+    {
+      "id": "bittorrent-node-modes",
+      "question": "What modes can a BitTorrent node be switched to?",
+      "kind": "in_scope",
+      "expected": [
+        {"source_url": "/projects/bittorrent-network-dashboard", "heading": "Node management"}
+      ]
+    },
+    {
+      "id": "bittorrent-node-logs",
+      "question": "How can I see what a peer node is doing?",
+      "kind": "in_scope",
+      "expected": [
+        {"source_url": "/projects/bittorrent-network-dashboard", "heading": "Logs and file search"}
+      ]
+    },
+    {
+      "id": "bittorrent-backend",
+      "question": "Which backend API does the BitTorrent dashboard call?",
+      "kind": "in_scope",
+      "expected": [
+        {"source_url": "/projects/bittorrent-network-dashboard", "heading": "Architecture"}
+      ]
+    },
+    {
+      "id": "bittorrent-file-search",
+      "question": "How do I find a file shared on the torrent network?",
+      "kind": "in_scope",
+      "expected": [
+        {"source_url": "/projects/bittorrent-network-dashboard", "heading": "Logs and file search"}
+      ]
+    },
+    {
+      "id": "nft-audio-storage",
+      "question": "Where are the music files for the NFTs stored?",
+      "kind": "in_scope",
+      "expected": [
+        {"source_url": "/projects/music-nft-marketplace", "heading": "Music storage on IPFS"}
+      ]
+    },
+    {
+      "id": "nft-listing-fee",
+      "question": "How much does it cost to list a beat for sale?",
+      "kind": "in_scope",
+      "expected": [{"source_url": "/projects/music-nft-marketplace", "heading": "Smart contract"}]
+    },
+    {
+      "id": "nft-network",
+      "question": "Which blockchain network does the music marketplace use?",
+      "kind": "in_scope",
+      "expected": [
+        {"source_url": "/projects/music-nft-marketplace", "heading": "Wallet and network"},
+        {"source_url": "/projects/music-nft-marketplace", "heading": "Music NFT Marketplace"}
+      ]
+    },
+    {
+      "id": "nft-purchase",
+      "question": "What happens when someone buys a music NFT?",
+      "kind": "in_scope",
+      "expected": [
+        {"source_url": "/projects/music-nft-marketplace", "heading": "Buying and selling"}
+      ]
+    },
+    {
+      "id": "nft-token-standard",
+      "question": "Which token standard do the music NFTs follow?",
+      "kind": "in_scope",
+      "expected": [{"source_url": "/projects/music-nft-marketplace", "heading": "Smart contract"}]
+    },
+    {
+      "id": "dictionary-storage",
+      "question": "How does the dictionary store its words?",
+      "kind": "in_scope",
+      "expected": [{"source_url": "/projects/trie-kmp-dictionary", "heading": "Trie storage"}]
+    },
+    {
+      "id": "dictionary-meaning-search",
+      "question": "How can I find a word when I only remember its meaning?",
+      "kind": "in_scope",
+      "expected": [
+        {"source_url": "/projects/trie-kmp-dictionary", "heading": "Search by definition with KMP"}
+      ]
+    },
+    {
+      "id": "dictionary-quizzes",
+      "question": "Can I practise vocabulary with quizzes?",
+      "kind": "in_scope",
+      "expected": [
+        {"source_url": "/projects/trie-kmp-dictionary", "heading": "Quizzes and random words"}
+      ]
+    },
+    {
+      "id": "dictionary-history",
+      "question": "Does the dictionary remember the words I looked up?",
+      "kind": "in_scope",
+      "expected": [
+        {"source_url": "/projects/trie-kmp-dictionary", "heading": "History and favorites"}
+      ]
+    },
+    {
+      "id": "dictionary-dataset-size",
+      "question": "How large is the English-Vietnamese word list?",
+      "kind": "in_scope",
+      "expected": [{"source_url": "/projects/trie-kmp-dictionary", "heading": "Data sets"}]
+    },
+    {
+      "id": "out-of-scope-geography",
+      "question": "What is the capital of France?",
+      "kind": "out_of_scope",
+      "expected": []
+    },
+    {
+      "id": "out-of-scope-cooking",
+      "question": "How do I bake sourdough bread?",
+      "kind": "out_of_scope",
+      "expected": []
+    },
+    {
+      "id": "out-of-scope-mobile-app",
+      "question": "Does the portfolio include a mobile app?",
+      "kind": "out_of_scope",
+      "expected": []
+    },
+    {
+      "id": "out-of-scope-private-contact",
+      "question": "What is the owner's phone number?",
+      "kind": "out_of_scope",
+      "expected": []
+    }
+  ]
+}

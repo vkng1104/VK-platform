@@ -13,6 +13,9 @@ from vk_ai.retrieval.model import Vector
 
 logger = logging.getLogger(__name__)
 
+INPUT_FORMAT_AUTO = "auto"
+INPUT_FORMATS = (INPUT_FORMAT_AUTO, "embeddinggemma", "raw")
+
 
 class EmbeddingError(RuntimeError):
     """Raised when the configured embedding provider fails safely."""
@@ -66,20 +69,35 @@ class _EmbeddingGemmaInputFormatter:
         return f"task: search result | query: {text}"
 
 
-def _input_formatter_for_model(model: str) -> _OllamaInputFormatter:
+def _input_formatter_for(model: str, input_format: str) -> _OllamaInputFormatter:
+    if input_format == _EmbeddingGemmaInputFormatter.name:
+        return _EmbeddingGemmaInputFormatter()
+    if input_format == _RawInputFormatter.name:
+        return _RawInputFormatter()
+    if input_format != INPUT_FORMAT_AUTO:
+        raise ValueError(f"input_format must be one of {', '.join(INPUT_FORMATS)}")
     untagged_model = model.rsplit("@", 1)[0].rsplit("/", 1)[-1].split(":", 1)[0]
     if untagged_model.casefold() == "embeddinggemma":
         return _EmbeddingGemmaInputFormatter()
     return _RawInputFormatter()
 
 
-def _log_input_format(model: str, formatter: _OllamaInputFormatter) -> None:
-    fields = {"embedding_model": model, "embedding_input_format": formatter.name}
+def _log_input_format(model: str, input_format: str, formatter: _OllamaInputFormatter) -> None:
+    fields = {
+        "embedding_model": model,
+        "embedding_input_format": formatter.name,
+        "embedding_input_format_setting": input_format,
+    }
     logger.info("embedding input format selected: %s", formatter.name, extra=fields)
-    if formatter.name == _RawInputFormatter.name and "embeddinggemma" in model.casefold():
+    if (
+        input_format == INPUT_FORMAT_AUTO
+        and formatter.name == _RawInputFormatter.name
+        and "embeddinggemma" in model.casefold()
+    ):
         logger.warning(
             "embedding model %r looks like EmbeddingGemma but is not a recognized "
-            "EmbeddingGemma name; sending raw text without its retrieval prompts",
+            "EmbeddingGemma name; sending raw text without its retrieval prompts. "
+            "Set AI_EMBEDDING_INPUT_FORMAT=embeddinggemma to apply them",
             model,
             extra=fields,
         )
@@ -93,6 +111,7 @@ class OllamaEmbeddingProvider:
         model: str,
         batch_size: int,
         maximum_response_bytes: int,
+        input_format: str = INPUT_FORMAT_AUTO,
     ) -> None:
         if not model.strip():
             raise ValueError("model is required")
@@ -102,8 +121,12 @@ class OllamaEmbeddingProvider:
         self._model = model.strip()
         self._batch_size = batch_size
         self._maximum_response_bytes = maximum_response_bytes
-        self._input_formatter = _input_formatter_for_model(self._model)
-        _log_input_format(self._model, self._input_formatter)
+        self._input_formatter = _input_formatter_for(self._model, input_format)
+        _log_input_format(self._model, input_format, self._input_formatter)
+
+    @property
+    def input_format(self) -> str:
+        return self._input_formatter.name
 
     async def embed_documents(self, documents: Sequence[EmbeddingDocument]) -> Sequence[Vector]:
         texts = [self._format_document(document) for document in documents]

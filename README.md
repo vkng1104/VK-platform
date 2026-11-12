@@ -93,6 +93,28 @@ make dev-ai
 
 The Python service is reachable only on the Compose network and requires the shared internal bearer token on retrieval routes. Health remains unauthenticated so Compose can observe readiness.
 
+When `AI_EMBEDDING_MODEL` names an EmbeddingGemma model, the runtime adds that model's retrieval prompts to queries and documents. Other models receive raw text. If an EmbeddingGemma build has a different name, for example one pulled from Hugging Face, set `AI_EMBEDDING_INPUT_FORMAT=embeddinggemma`; `raw` turns the prompts off. Changing the model or the format changes every vector, and the index is rebuilt when the runtime restarts.
+
+### Retrieval evaluation
+
+`make eval-ai` measures retrieval quality with the real model. It reads a public evaluation corpus and golden queries from `apps/ai/src/vk_ai/evaluation/data/`. The corpus holds four projects, written from public repository facts only. The command sweeps chunk sizes, overlaps, input formats and title modes, then prints these figures:
+
+- the top-1 and top-3 hit rate and the mean reciprocal rank;
+- the lowest score of a correct chunk and the highest score of an out-of-scope question;
+- a suggested minimum score;
+- index-build, query-embedding and scan latency.
+
+It needs a running Ollama with the model already pulled, and it never downloads one. It isn't part of CI. Narrow a run with, for example, `make eval-ai EVAL_ARGS="--chunk-sizes 1200 --overlaps 120"`, or add `--format json`.
+
+The defaults come from the 2026-11-13 baseline with `embeddinggemma:300m`:
+
+- **Prompts:** EmbeddingGemma's prompts raised top-1 accuracy from 60% to 80%.
+- **Chunk settings:** they made no difference, because every section is shorter than 600 characters, so 1200/120 stays.
+- **Section headings in titles:** adding them did not help.
+- **Score threshold:** `AI_RETRIEVAL_MIN_SCORE=0.26` keeps every answerable question and rejects unrelated ones. Near-miss questions about the portfolio can still pass, and generated answers have to handle those.
+
+Re-run the evaluation after changing the model, the chunking or the published content.
+
 Both backend services keep PostgreSQL credentials separate from their connection URLs. The Go resource API uses `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD`; IAM uses the equivalent `IAM_DATABASE_*` variables. Local examples are defined in `.env.example`, while deployed passwords should come from the platform's secret store rather than a committed environment file.
 
 ## API documentation

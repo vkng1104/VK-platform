@@ -4,6 +4,8 @@ import os
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
+from vk_ai.retrieval.embedder import INPUT_FORMAT_AUTO, INPUT_FORMATS
+
 
 class ConfigurationError(ValueError):
     """Raised when required runtime configuration is invalid."""
@@ -16,9 +18,10 @@ class Settings:
     embedding_base_url: str
     embedding_model: str
     embedding_batch_size: int = 16
+    embedding_input_format: str = INPUT_FORMAT_AUTO
     chunk_max_chars: int = 1_200
     chunk_overlap_chars: int = 120
-    retrieval_min_score: float = 0.0
+    retrieval_min_score: float = 0.26
     upstream_timeout_seconds: float = 10.0
     maximum_response_bytes: int = 4 * 1024 * 1024
 
@@ -34,9 +37,12 @@ class Settings:
             embedding_base_url=_url("AI_EMBEDDING_BASE_URL", "http://host.docker.internal:11434"),
             embedding_model=_required("AI_EMBEDDING_MODEL"),
             embedding_batch_size=_positive_int("AI_EMBEDDING_BATCH_SIZE", 16),
+            embedding_input_format=_choice(
+                "AI_EMBEDDING_INPUT_FORMAT", INPUT_FORMAT_AUTO, INPUT_FORMATS
+            ),
             chunk_max_chars=_positive_int("AI_CHUNK_MAX_CHARS", 1_200),
             chunk_overlap_chars=_non_negative_int("AI_CHUNK_OVERLAP_CHARS", 120),
-            retrieval_min_score=_bounded_float("AI_RETRIEVAL_MIN_SCORE", 0.0, -1.0, 1.0),
+            retrieval_min_score=_bounded_float("AI_RETRIEVAL_MIN_SCORE", 0.26, -1.0, 1.0),
             upstream_timeout_seconds=_positive_float("AI_UPSTREAM_TIMEOUT_SECONDS", 10.0),
             maximum_response_bytes=_positive_int("AI_MAXIMUM_RESPONSE_BYTES", 4 * 1024 * 1024),
         )
@@ -51,6 +57,13 @@ def _required(name: str) -> str:
     value = os.getenv(name, "").strip()
     if not value:
         raise ConfigurationError(f"{name} is required")
+    return value
+
+
+def _choice(name: str, default: str, choices: tuple[str, ...]) -> str:
+    value = os.getenv(name, default).strip().casefold()
+    if value not in choices:
+        raise ConfigurationError(f"{name} must be one of {', '.join(choices)}")
     return value
 
 
