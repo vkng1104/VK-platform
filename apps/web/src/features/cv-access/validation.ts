@@ -44,16 +44,4 @@ export function validateVerificationCode(value: unknown): ValidationResult {
   return { value: value.trim() };
 }
 
-export function hasOnlyExpectedFormFields(
-  formData: FormData,
-  expectedFields: readonly string[],
-): boolean {
-  const fieldNames = [...formData.keys()].filter(
-    (name) => !name.startsWith("$ACTION_"),
-  );
-
-  return (
-    fieldNames.length === expectedFields.length &&
-    fieldNames.every((name) => expectedFields.includes(name))
-  );
-}
+export { hasOnlyExpectedFormFields } from "@/lib/form-fields";

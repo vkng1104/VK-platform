@@ -1,6 +1,7 @@
 "use server";
 
 import { ApiError } from "@/lib/api";
+import { hasOnlyExpectedFormFields } from "@/lib/form-fields";
 
 import { retrievePublishedContent } from "./api";
 import type { VectorSearchActionState } from "./model";
@@ -11,7 +12,7 @@ export async function searchPublishedContent(
   _previousState: VectorSearchActionState,
   formData: FormData,
 ): Promise<VectorSearchActionState> {
-  if ([...formData.keys()].some((key) => key !== "query")) {
+  if (!hasOnlyExpectedFormFields(formData, ["query"])) {
     return { status: "error", query: "", error: invalidQueryMessage };
   }
   const value = formData.get("query");
