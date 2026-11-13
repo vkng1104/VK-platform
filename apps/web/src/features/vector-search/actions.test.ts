@@ -37,6 +37,22 @@ describe("vector-search action", () => {
     expect(result).toEqual({ status: "success", query: "architecture", matches: [] });
   });
 
+  it("accepts the hidden fields React adds to server-action forms", async () => {
+    const result = await searchPublishedContent(
+      initialVectorSearchState,
+      form({
+        $ACTION_REF_1: "",
+        "$ACTION_1:0": "{}",
+        "$ACTION_1:1": "[]",
+        $ACTION_KEY: "key",
+        query: "architecture",
+      }),
+    );
+
+    expect(mocks.retrieve).toHaveBeenCalledWith("architecture");
+    expect(result.status).toBe("success");
+  });
+
   it("rejects empty and unexpected fields without calling the API", async () => {
     const empty = await searchPublishedContent(initialVectorSearchState, form({ query: " " }));
     const unexpected = await searchPublishedContent(
