@@ -1,7 +1,7 @@
 TEST_COMPOSE_PROJECT ?= vk-platform-test
 SOURCE_ENV ?=
 
-.PHONY: install dev dev-reset dev-prepare dev-web dev-api dev-iam dev-ai ai-prepare ai-status ai-stop dev-monitor down logs \
+.PHONY: install dev dev-reset dev-prepare dev-web dev-api dev-iam dev-ai ai-prepare ai-status ai-stop eval-ai dev-monitor down logs \
 	db-migrate-up db-migrate-down db-migrate-iam-up db-seed db-seed-local build \
 	build-ai lint lint-web lint-api lint-iam lint-ai typecheck test test-setup test-web test-api test-iam test-ai \
 	test-integration generate-persistence check-persistence-generation \
@@ -52,6 +52,10 @@ ai-stop:
 	@docker compose --profile ai stop ai >/dev/null 2>&1 || \
 		echo "AI container is already stopped or Docker is unavailable."
 	./scripts/ollama-lifecycle.sh stop
+
+# Opt-in: needs a running Ollama with the model already pulled. Never part of CI.
+eval-ai:
+	docker compose --profile ai run --rm --no-deps --build ai python -m vk_ai.evaluation $(EVAL_ARGS)
 
 dev-monitor:
 	docker compose logs --follow api iam

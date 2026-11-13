@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "description": "Public evaluation corpus for retrieval calibration. Each project mirrors the resource API's published project detail shape. Content comes only from public repositories and this repository's published VK Platform project.",
+  "projects": [
+    {
+      "slug": "vk-platform",
+      "title": "VK Platform",
+      "summary": "A systems-focused engineering portfolio that grows alongside practical backend, infrastructure, data, and AI experiments.",
+      "period": "2026 — Present",
+      "role": "Creator and software engineer",
+      "technologies": [
+        "Next.js",
+        "React",
+        "TypeScript",
+        "Tailwind CSS",
+        "Go",
+        "Java",
+        "Spring Boot",
+        "Spring Security",
+        "Python",
+        "FastAPI",
+        "PostgreSQL",
+        "Docker",
+        "GitHub Actions",
+        "Ollama"
+      ],
+      "featured": true,
+      "repository_url": "https://github.com/vkng1104/VK-platform",
+      "live_url": null,
+      "content_markdown": "## Why it exists\n\nVK Platform treats the portfolio itself as an engineering project. The public site presents the work, while the repository provides a place to learn systems concepts by adding them only when a real feature needs them.\n\n## Current architecture\n\nThe platform is a monorepo of independently deployable services, each owning its own data:\n\n- a Next.js frontend for the portfolio, experience timeline, system status, and interactive labs;\n- a Go HTTP API that serves the PostgreSQL-backed project catalog and the public AI search endpoint;\n- a Java identity and access management service built with Spring Boot, Spring Security, and Spring Authorization Server, with its own PostgreSQL database;\n- a private Python AI runtime built with FastAPI that embeds published content with a local Ollama model and searches it by cosine similarity.\n\nServices communicate through versioned HTTP contracts, and no service reads another service's database.\n\n## What is implemented\n\n- A database-backed project showcase and an experience timeline.\n- CV access protected by email one-time-password verification through the identity service.\n- Passwordless sign-in challenges, an OAuth 2 authorization-code flow with PKCE, refresh-token rotation with reuse detection, and session revocation in the identity service.\n- A vector search lab that shows the published content most similar to a visitor's question, with similarity scores and source links.\n- A live system status view, Docker Compose environments, and GitHub Actions checks that run only for the areas a change touches.\n\n## How it evolves\n\nFuture components must earn their place through a product or learning requirement. Next come grounded answers that cite the published portfolio, IAM-issued service tokens between internal services, and AWS infrastructure managed with Terraform."
+    },
+    {
+      "slug": "bittorrent-network-dashboard",
+      "title": "BitTorrent Network Dashboard",
+      "summary": "A web dashboard for running and observing a BitTorrent-style peer-to-peer network: start the tracker, create nodes, share and download files, and read node logs.",
+      "period": "May 2024",
+      "role": "Creator",
+      "technologies": [
+        "React",
+        "TypeScript",
+        "Vite",
+        "Material UI",
+        "Flask"
+      ],
+      "featured": false,
+      "repository_url": "https://github.com/vkng1104/bittorrent-network-dashboard",
+      "live_url": null,
+      "content_markdown": "## Overview\n\nThe dashboard is the control panel for a BitTorrent network project. Instead of typing commands into one terminal per peer, an operator starts the tracker, creates peer nodes, and drives every node from the browser.\n\n## Node management\n\nEach peer node appears as a card with its node ID and the files it holds. A node can be switched into one of four modes: upload a new file into the network, download a file shared by other peers, send the files it already holds, or exit the network. Node IDs must be non-negative integers, and every action reports its success or failure in a notification.\n\n## Logs and file search\n\nOperators can fetch the log of any node to see what it is doing and to troubleshoot transfers. The download mode offers an autocomplete search over the torrent files currently available in the network, so a file can be found by name before it is requested.\n\n## Architecture\n\nThe frontend is a React and TypeScript single-page application built with Vite and styled with Material UI. It calls a Flask REST API on port 5000, which controls the tracker and peer processes through pexpect. The API covers starting the tracker, creating and listing nodes, uploading files, setting a node's mode, reading logs, and getting or setting the server IP address. The backend currently runs on Windows only.\n\n## Implementation notes\n\nApplication state lives in two React context providers: one for nodes, available torrent files, and the selected log, and one for interface state such as notifications and each node's chosen mode and file. Every endpoint has a small hook built on axios-hooks with success and error callbacks. A dialog lets the operator change the backend IP address without rebuilding the app."
+    },
+    {
+      "slug": "music-nft-marketplace",
+      "title": "Music NFT Marketplace",
+      "summary": "A marketplace where music beats are minted as NFTs, listed for sale, previewed in the browser, and bought with MetaMask on the Sepolia test network.",
+      "period": "Nov 2023",
+      "role": "Creator",
+      "technologies": [
+        "Solidity",
+        "Hardhat",
+        "OpenZeppelin",
+        "React",
+        "ethers.js",
+        "IPFS"
+      ],
+      "featured": false,
+      "repository_url": "https://github.com/vkng1104/Marketplace-NFT-music",
+      "live_url": null,
+      "content_markdown": "## Overview\n\nCreators upload an audio beat, set a price, and mint it as an NFT that is immediately listed for sale. Visitors browse the marketplace, play each beat in the browser, and buy it with their wallet. A profile page shows the NFTs a wallet has listed or bought.\n\n## Smart contract\n\nThe NFTMarketplace contract is an ERC-721 token built on OpenZeppelin's ERC721URIStorage and written in Solidity 0.8.20. Minting with createToken requires the listing fee, 0.01 ETH by default and adjustable only by the contract owner, and a price above zero. The new token moves into the contract's custody and a TokenListedSuccess event is emitted. The contract also returns every listed token and the tokens that belong to the caller.\n\n## Buying and selling\n\nTo buy, a visitor calls executeSale with exactly the listed price. The contract rejects tokens that are not for sale and buyers who are the seller, then transfers the NFT to the buyer and pays the seller. The sold token is marked as no longer listed.\n\n## Music storage on IPFS\n\nAudio files never live on-chain. The app uploads the beat to IPFS through Pinata, then uploads a JSON metadata document that points to the audio, and stores the metadata URL as the token URI when minting.\n\n## Wallet and network\n\nThe React frontend connects to MetaMask through ethers.js. When a wallet is connected on another chain, the app asks MetaMask to switch to the Sepolia test network, and it shows a dedicated screen when no wallet provider is installed. Contracts are compiled and deployed with Hardhat."
+    },
+    {
+      "slug": "trie-kmp-dictionary",
+      "title": "Trie & KMP Dictionary",
+      "summary": "A Qt desktop dictionary for English and Vietnamese, slang, and emoticons, built on tries with KMP-based search, quizzes, history, and favorites.",
+      "period": "Jul 2022 — Aug 2022",
+      "role": "Creator",
+      "technologies": [
+        "C++",
+        "Qt",
+        "CMake"
+      ],
+      "featured": false,
+      "repository_url": "https://github.com/vkng1104/Dictionary",
+      "live_url": null,
+      "content_markdown": "## Overview\n\nThe dictionary is a C++ desktop application with a Qt interface. It looks up English-English and English-Vietnamese definitions, explains slang terms and emoticons, and helps learners practise vocabulary.\n\n## Trie storage\n\nWords are stored in tries, so a lookup costs time proportional to the length of the word rather than the size of the dictionary. The English-English dictionary uses a 128-way trie over ASCII characters. The main trie stores each word's English meaning, Vietnamese meaning, phonetic transcription, and word type, and supports adding, editing, and removing words. Slang terms live in a compressed trie with labelled edges that can be saved to and loaded from files, so the data does not have to be rebuilt on every start.\n\n## Search by definition with KMP\n\nWhen a learner remembers a meaning but not the word, the app searches definitions with the Knuth-Morris-Pratt algorithm. Each keyword of the query is matched against a definition in linear time, and words are ranked by how many of the keywords their meaning contains.\n\n## Quizzes and random words\n\nThe app generates four-option quizzes with one correct answer and three random distractors. A quiz can show a word and ask for its meaning, or show a meaning and ask for the word, in English or Vietnamese. A random-word feature suggests new vocabulary.\n\n## History and favorites\n\nEvery search is saved to a history list, and words can be marked as favorites for later review. Users can also reset the dictionary data to its original state.\n\n## Data sets\n\nThe English-Vietnamese dataset has about 58,000 lines with phonetic transcriptions and meanings. Separate datasets cover slang terms and emoticons."
+    }
+  ]
+}

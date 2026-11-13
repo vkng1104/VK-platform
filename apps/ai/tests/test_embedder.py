@@ -218,3 +218,61 @@ async def test_ollama_adapter_stops_reading_responses_over_the_limit() -> None:
             await provider.embed_query("query")
 
     assert stream.chunks_read == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("model", "input_format", "expected_input", "expected_format"),
+    [
+        (
+            "hf.co/unsloth/embeddinggemma-300m-GGUF:Q8_0",
+            "embeddinggemma",
+            _PROMPTED_QUERY,
+            "embeddinggemma",
+        ),
+        ("embeddinggemma:300m", "raw", _QUERY, "raw"),
+    ],
+)
+async def test_ollama_adapter_explicit_input_format_overrides_the_model_name(
+    model: str,
+    input_format: str,
+    expected_input: str,
+    expected_format: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="vk_ai.retrieval.embedder")
+    inputs: list[list[str]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        inputs.append(payload["input"])
+        return httpx.Response(200, json={"embeddings": [[1.0, 0.0] for _ in payload["input"]]})
+
+    async with httpx.AsyncClient(
+        base_url="http://ollama.example", transport=httpx.MockTransport(handler)
+    ) as client:
+        provider = OllamaEmbeddingProvider(
+            client,
+            model=model,
+            batch_size=2,
+            maximum_response_bytes=10_000,
+            input_format=input_format,
+        )
+        await provider.embed_query(_QUERY)
+
+    assert provider.input_format == expected_format
+    assert inputs == [[expected_input]]
+    records = [record for record in caplog.records if record.name == "vk_ai.retrieval.embedder"]
+    assert [record.levelno for record in records] == [logging.INFO]
+    assert records[0].__dict__["embedding_input_format_setting"] == input_format
+
+
+def test_ollama_adapter_rejects_unknown_input_format() -> None:
+    with pytest.raises(ValueError, match="input_format"):
+        OllamaEmbeddingProvider(
+            httpx.AsyncClient(base_url="http://ollama.example"),
+            model="embeddinggemma:300m",
+            batch_size=2,
+            maximum_response_bytes=10_000,
+            input_format="nomic",
+        )

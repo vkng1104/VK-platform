@@ -232,3 +232,10 @@ The Python runtime owns corpus synchronization through versioned HTTP, determini
 The runtime never connects directly to the resource or IAM databases and is never published to the browser or host network. It indexes only published project responses from the resource API. Model weights are external runtime dependencies and are not downloaded by ordinary development, builds, tests, or CI.
 
 The API starts and serves non-AI routes when AI is disabled or unavailable. The AI runtime becomes ready only after a complete corpus load and index build; requests never observe a partial index. Generated answers, chat history, IAM integration, private CV data, tool calling, and streaming are separate follow-on capabilities.
+
+`vk_ai.evaluation` is opt-in tooling (`make eval-ai`), not part of the runtime.
+
+- **What it reuses:** the production corpus loader, chunker, embedding provider and vector index, so its measurements describe the code that serves requests.
+- **Its data:** a public corpus and golden queries, which may contain only public repository facts.
+- **Boundaries:** runtime modules must not import it, and CI runs only its model-free unit tests.
+- **Retrieval defaults:** change the score threshold, chunk settings or input format only with a recorded re-run of the evaluation.

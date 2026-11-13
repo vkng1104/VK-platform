@@ -31,6 +31,7 @@ def create_default_app() -> FastAPI:
         model=settings.embedding_model,
         batch_size=settings.embedding_batch_size,
         maximum_response_bytes=settings.maximum_response_bytes,
+        input_format=settings.embedding_input_format,
     )
     service = RetrievalService(
         loader,
